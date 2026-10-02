@@ -376,6 +376,37 @@ async def test_a_write_lands_on_a_file_the_session_may_not_read():
     assert vfs._store.files["/log"] == b"line1\nmore\nab\n"
 
 
+class _SecondPwriteFails:
+    def __init__(self, ops):
+        self._inner = ops
+        self.calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def pwrite(self, path, data, offset):
+        self.calls += 1
+        if self.calls == 2:
+            raise PermissionError(errno.EACCES, "denied", path)
+        await self._inner.pwrite(path, data, offset)
+
+
+@pytest.mark.asyncio
+async def test_a_flush_that_fails_after_a_run_landed_still_refreshes():
+    vfs = RAMVFS()
+    ws = Workspace({"/": vfs}, mode=MountMode.WRITE)
+    await ws.shell("printf abcdefgh > /f")
+    core = MountCore(_SecondPwriteFails(ws.vfs))
+    reader = core.open("/f", os.O_RDONLY)
+    assert core.read("/f", 8, 0, reader) == b"abcdefgh"
+    fh = core.open("/f", os.O_WRONLY)
+    core.write("/f", b"X", 0, fh)
+    core.write("/f", b"Y", 5, fh)
+    with pytest.raises(PermissionError):
+        core.flush("/f", fh)
+    assert core.read("/f", 8, 0, reader) == b"Xbcdefgh"
+
+
 @pytest.mark.asyncio
 async def test_buffered_write_flush_lands_in_the_stored_bytes():
     # A mount that renders this extension must not get the rendering

@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { chmod, readFile, writeFile } from 'node:fs/promises'
+import { chmod, open, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiskAccessor } from '../../accessor/disk.ts'
 import { spec, tmpRoot } from '../../test-utils.ts'
 import { pwrite } from './pwrite.ts'
@@ -53,5 +53,29 @@ describe('core/disk/pwrite', () => {
       await chmod(join(root, 'f'), 0o600)
     }
     expect(await readFile(join(root, 'f'), 'utf-8')).toBe('abcdeZ')
+  })
+
+  it('finishes a write the file took only part of', async () => {
+    await writeFile(join(root, 'f'), 'hello')
+    const probe = await open(join(root, 'f'))
+    const proto = Object.getPrototypeOf(probe) as {
+      write: (...args: unknown[]) => Promise<{ bytesWritten: number }>
+    }
+    await probe.close()
+    const real = proto.write
+    const spy = vi.spyOn(proto, 'write').mockImplementation(function (
+      this: unknown,
+      ...args: unknown[]
+    ) {
+      const [data, at, length, position] = args as [Uint8Array, number, number, number]
+      return real.call(this, data, at, Math.min(length, 2), position)
+    })
+    try {
+      await pwrite(accessor, spec('/f'), ENC.encode('ABCDE'), 1)
+      expect(spy).toHaveBeenCalledTimes(3)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(await readFile(join(root, 'f'), 'utf-8')).toBe('hABCDE')
   })
 })

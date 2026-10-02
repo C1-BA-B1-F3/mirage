@@ -318,14 +318,18 @@ export class MountCore {
    * Land buffered writes on the mount, one pwrite per run. A pwrite keeps
    * every stored byte the handle did not write, so nothing is read through
    * the door first: a session that may write a file and not read it writes
-   * through FUSE, as through a write-only descriptor.
+   * through FUSE, as through a write-only descriptor. A run that fails still
+   * invalidates what the core holds, since the runs before it have landed.
    */
   private async applyWrites(path: string, writes: [number, Uint8Array][]): Promise<void> {
     const target = this.resolve(path)
-    for (const [offset, data] of writeRuns(writes)) {
-      await this.op(() => this.ops.pwrite(target, data, offset))
+    try {
+      for (const [offset, data] of writeRuns(writes)) {
+        await this.op(() => this.ops.pwrite(target, data, offset))
+      }
+    } finally {
+      await this.changed(path)
     }
-    await this.changed(path)
   }
 
   // ── POSIX surface (throws; adapters classify) ────────────────────

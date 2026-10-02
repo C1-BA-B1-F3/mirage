@@ -232,6 +232,20 @@ async def test_native_pwrite_skips_emulation():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("native", [True, False])
+async def test_pwrite_refuses_a_negative_offset_before_any_io(native):
+    table = make_table(
+        write=AsyncMock(), pwrite=AsyncMock() if native else None
+    )
+    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    with pytest.raises(OSError) as exc:
+        await op.fn(NOOPAccessor(), PATH, b"Z", -1)
+    assert exc.value.errno == errno.EINVAL
+    table.read_bytes.assert_not_awaited()
+    table.write.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_emulated_truncate_pads_and_cuts():
     table = make_table(write=AsyncMock())
     ops = make_generic_ops("x", table, emulate_truncate=True)

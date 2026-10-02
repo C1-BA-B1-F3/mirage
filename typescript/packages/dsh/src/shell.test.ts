@@ -467,6 +467,24 @@ describe('run', () => {
     expect(await ws.vfs.exists('/data/out.txt')).toBe(false)
   })
 
+  it('lets a preparation a cancel lands in finish before rejecting', async () => {
+    // Preparing applies the bound session's DSH_* snapshot, so one left
+    // running after execute rejected could land it over a later call's.
+    const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
+    const controller = new AbortController()
+    const pending = shell.execute(
+      shell.resolve({
+        command: 'echo ran > /data/out.txt',
+        signal: controller.signal,
+        dshEnv: { DSH_HOME: '/a' },
+      }),
+    )
+    controller.abort()
+    await expect(pending).rejects.toThrow()
+    expect(ws.getSession('agent').env.DSH_HOME).toBe('/a')
+    expect(await ws.vfs.exists('/data/out.txt')).toBe(false)
+  })
+
   it("arms no deadline under onExpiry 'none'", async () => {
     const { shell } = await makeShell()
     const result = await runOn(

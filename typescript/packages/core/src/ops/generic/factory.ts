@@ -18,7 +18,7 @@ import type { OpKwargs, RegisteredOp } from '../registry.ts'
 import type { MakeGenericOpsOptions, OpsTable } from './types.ts'
 import { isUnsatisfiableRange, sliceWindow, spliceWindow } from '../../utils/ranges.ts'
 import { DEFAULT_MAX_GLOB_MATCHES, resolveGlobWith } from '../../utils/glob_walk.ts'
-import { eisdir, isMissingPath } from '../../utils/errors.ts'
+import { einval, eisdir, isMissingPath } from '../../utils/errors.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
 
 const expectPathSpec = (value: unknown, op: string): PathSpec => {
@@ -41,10 +41,11 @@ const expectLength = (value: unknown): number => {
   return value
 }
 
-const expectOffset = (value: unknown): number => {
+const expectOffset = (value: unknown, path: PathSpec): number => {
   if (typeof value !== 'number') {
     throw new TypeError('pwrite op requires a number offset as the second arg')
   }
+  if (!Number.isInteger(value) || value < 0) throw einval(path)
   return value
 }
 
@@ -216,7 +217,7 @@ export function makeGenericOps<A extends Accessor>(
     emit(
       'pwrite',
       (accessor, path, args) =>
-        pwrite(asA(accessor), path, extractWriteData(args), expectOffset(args[1])),
+        pwrite(asA(accessor), path, extractWriteData(args), expectOffset(args[1], path)),
       true,
     )
   } else if (write) {
@@ -224,7 +225,7 @@ export function makeGenericOps<A extends Accessor>(
       'pwrite',
       async (accessor, path, args, kwargs) => {
         const data = extractWriteData(args)
-        const offset = expectOffset(args[1])
+        const offset = expectOffset(args[1], path)
         // The read is this op's own, below the door that judged it a write:
         // a session that may write a file and not read it still writes at
         // an offset, as pwrite(2) on a write-only descriptor does. It takes

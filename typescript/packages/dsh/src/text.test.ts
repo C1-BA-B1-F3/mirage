@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { TailBuffer, tailCap } from './text.ts'
+import { StreamTail, TailBuffer, tailCap } from './text.ts'
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text)
 
@@ -71,5 +71,34 @@ describe('TailBuffer', () => {
     const buffer = new TailBuffer(5)
     buffer.append(bytes('hello world'))
     expect(buffer.take()).toBe(tailCap('hello world', 5).text)
+  })
+})
+
+describe('StreamTail', () => {
+  it('leaves a character it holds only part of for the next read', () => {
+    const tail = new StreamTail(64)
+    const e = bytes('é')
+    tail.append(bytes('a'))
+    tail.append(e.subarray(0, 1))
+    const first = tail.readFrom(0)
+    expect(first).toMatchObject({ text: 'a', nextOffset: 1, lossy: false })
+    tail.append(e.subarray(1))
+    expect(tail.readFrom(first.nextOffset)).toMatchObject({ text: 'é', nextOffset: 3 })
+  })
+
+  it('decodes through the last byte once the stream has ended', () => {
+    const tail = new StreamTail(64)
+    tail.append(bytes('a'))
+    tail.append(bytes('é').subarray(0, 1))
+    tail.end()
+    expect(tail.readFrom(0)).toMatchObject({ text: 'a\uFFFD', nextOffset: 2 })
+  })
+
+  it('reads lossy once the offset slid out of the tail', () => {
+    const tail = new StreamTail(3)
+    tail.append(bytes('abc'))
+    tail.append(bytes('def'))
+    expect(tail.truncated).toBe(true)
+    expect(tail.readFrom(1)).toMatchObject({ text: 'def', nextOffset: 6, lossy: true })
   })
 })

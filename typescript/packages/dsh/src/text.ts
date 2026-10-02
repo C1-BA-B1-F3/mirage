@@ -95,6 +95,19 @@ function charBoundary(bytes: Uint8Array, from: number): number {
   return start
 }
 
+// The end of the last whole UTF-8 sequence, so a read of a stream still
+// arriving leaves a character it holds only part of for the next read.
+function charEnd(bytes: Uint8Array): number {
+  const end = bytes.byteLength
+  for (let back = 1; back <= Math.min(4, end); back++) {
+    const byte = bytes[end - back] ?? 0
+    if ((byte & 0xc0) === 0x80) continue
+    const width = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1
+    return width > back ? end - back : end
+  }
+  return end
+}
+
 // Byte-accurate tail cap: keep the LAST maxBytes bytes of the encoded text,
 // re-aligned to a UTF-8 sequence boundary so the kept tail still decodes.
 export function tailCap(text: string, maxBytes: number): { text: string; truncated: boolean } {
@@ -153,6 +166,26 @@ export class TailBuffer {
     return true
   }
 
+  /** How many bytes are held. */
+  get size(): number {
+    return this.bytes
+  }
+
+  /**
+   * Everything held, joined, leaving it held.
+   *
+   * @returns the held bytes, oldest first.
+   */
+  peek(): Uint8Array {
+    const joined = new Uint8Array(this.bytes)
+    let at = 0
+    for (const part of this.parts) {
+      joined.set(part, at)
+      at += part.byteLength
+    }
+    return joined
+  }
+
   /**
    * Drain everything held, decoded as text.
    *
@@ -164,12 +197,7 @@ export class TailBuffer {
    */
   take(): string {
     if (this.parts.length === 0) return ''
-    const joined = new Uint8Array(this.bytes)
-    let at = 0
-    for (const part of this.parts) {
-      joined.set(part, at)
-      at += part.byteLength
-    }
+    const joined = this.peek()
     this.parts = []
     this.bytes = 0
     return new TextDecoder('utf-8', { fatal: false }).decode(
@@ -184,34 +212,44 @@ export class TailBuffer {
  * offset that slid out of the tail reads `lossy` with the whole tail.
  */
 export class StreamTail implements SubprocessOutputReader {
-  private bytes = Buffer.alloc(0)
+  private readonly tail: TailBuffer
   private offset = 0
-  constructor(private readonly max: number) {}
+  private ended = false
+
+  constructor(max: number) {
+    this.tail = new TailBuffer(max)
+  }
 
   /** Whether the tail has lost its head, so the stream is truncated. */
   get truncated(): boolean {
-    return this.offset > this.bytes.length
+    return this.offset > this.tail.size
   }
 
   append(chunk: Uint8Array): void {
-    this.offset += chunk.length
-    this.bytes = Buffer.concat([this.bytes, chunk]).subarray(-this.max)
-    if (this.max === 0) this.bytes = Buffer.alloc(0)
+    this.offset += chunk.byteLength
+    this.tail.append(chunk)
+  }
+
+  /** Mark the stream finished, so a read decodes through its last byte. */
+  end(): void {
+    this.ended = true
   }
 
   readFrom(fromByte: number): SubprocessOutputRead {
     if (!Number.isSafeInteger(fromByte) || fromByte < 0 || fromByte > this.offset)
       throw new Error('invalid output offset')
-    const start = this.offset - this.bytes.length
+    const bytes = this.tail.peek()
+    const start = this.offset - bytes.byteLength
     let from = Math.max(0, fromByte - start)
     // A tail that lost its head can begin mid-character; the reader is
     // handed whole characters only, so the stray continuation bytes go.
-    if (from === 0 && start > 0) {
-      while (from < this.bytes.length && ((this.bytes[from] ?? 0) & 0xc0) === 0x80) from += 1
-    }
+    if (from === 0 && start > 0) from = charBoundary(bytes, 0)
+    // A stream still arriving can stop mid-character too: the read ends
+    // before it, so the next read decodes it whole.
+    const stop = Math.max(from, this.ended ? bytes.byteLength : charEnd(bytes))
     return {
-      text: this.bytes.subarray(from).toString('utf8'),
-      nextOffset: this.offset,
+      text: new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(from, stop)),
+      nextOffset: start + stop,
       lossy: fromByte < start,
     }
   }

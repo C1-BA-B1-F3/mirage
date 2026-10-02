@@ -211,6 +211,19 @@ describe('makeGenericOps', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it.each([true, false])('refuses a negative offset before any I/O (native %s)', async (native) => {
+    const write = vi.fn()
+    const pwrite = vi.fn()
+    const table = makeTable(native ? { write, pwrite } : { write })
+    const op = makeGenericOps('x', table).find((o) => o.name === 'pwrite')
+    await expect(
+      Promise.resolve().then(() => op?.fn(ACCESSOR, PATH, [new Uint8Array([1]), -1], {})),
+    ).rejects.toMatchObject({ code: 'EINVAL' })
+    expect(pwrite).not.toHaveBeenCalled()
+    expect(table.readBytes).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+  })
+
   it('emulated append reads current bytes and creates missing files', async () => {
     const write = vi.fn()
     const readBytes = vi

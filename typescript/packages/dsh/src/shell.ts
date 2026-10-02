@@ -164,29 +164,6 @@ interface Prepared {
   workdir: string
 }
 
-/**
- * Run `work` unless `signal` has fired, and stop waiting for it once it
- * does: the reason the signal carries is the rejection.
- *
- * @param work the step to start, never started under a fired signal.
- * @param signal the signal that ends the wait.
- * @returns what the step resolved with.
- */
-function untilAborted<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason as Error)
-  return new Promise<T>((resolve, reject) => {
-    const abort = (): void => {
-      reject(signal.reason as Error)
-    }
-    signal.addEventListener('abort', abort, { once: true })
-    work()
-      .then(resolve, reject)
-      .finally(() => {
-        signal.removeEventListener('abort', abort)
-      })
-  })
-}
-
 /** How a settled execution ended, read once it has: the first cause wins. */
 interface Classification {
   timedOut: boolean
@@ -384,6 +361,8 @@ class MirageShellExecution implements ShellExecution {
     // Every emit was awaited as it was made, so everything the command
     // printed has landed by now and a read after `done` is whole.
     await this.console.finish(outcome)
+    this.stdoutTail.end()
+    this.stderrTail.end()
     const stderr = this.stderrTail.readFrom(0).text
     const sandbox = this.parts.verdict(result, stderr)
     if (sandbox !== undefined) this.sandbox = sandbox
@@ -820,7 +799,13 @@ export class MirageShellExecutor extends ShellExecutor {
     }
     let prepared: Prepared
     try {
-      prepared = await untilAborted(() => this.prepare(spec), controller.signal)
+      // Preparing binds the session and applies its DSH_* snapshot, so it
+      // runs to the end once started: one abandoned midway could land that
+      // snapshot after a later execution's. A signal that fired before or
+      // during it is answered once it is done.
+      controller.signal.throwIfAborted()
+      prepared = await this.prepare(spec)
+      controller.signal.throwIfAborted()
     } catch (err) {
       // Expiry while the command was still being prepared settles a
       // timed-out handle with no output; a caller's cancellation or a

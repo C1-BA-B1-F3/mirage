@@ -151,6 +151,7 @@ export class MirageSubprocess extends SubprocessRuntime {
         else if (!inherited.write(chunk))
           await new Promise<void>((resolve) => inherited.once('drain', resolve))
       }
+      tail?.end()
     }
     const done = this.ctx.mirage.ready
       .then(async (ws) => {

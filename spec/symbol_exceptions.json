@@ -5,9 +5,6 @@
    "python_only": {
     "_make_pwrite": "Python builds every emitted op through a named `_make_*` closure builder; TypeScript writes the same closure inline in makeGenericOps, as it does for the module's older builders.",
     "_make_emulated_pwrite": "The read/splice/write pwrite for a table without a native one, built by a named `_make_*` builder in Python and inline in makeGenericOps in TypeScript, like emulated append."
-   },
-   "typescript_only": {
-    "expectOffset": "TypeScript ops take positional args, so the factory checks each one's type beside expectLength and extractWriteData; Python ops take keywords and check nothing."
    }
   }
  }

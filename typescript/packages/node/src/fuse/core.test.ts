@@ -177,6 +177,25 @@ describe('MountCore', () => {
     expect(new TextDecoder().decode(vfs.store.files.get('/log'))).toBe('line1\nmore\nab\n')
   })
 
+  it('refreshes what it holds when a flush fails after a run landed', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell('printf abcdefgh > /data/f')
+    const realPwrite = ws.vfs.pwrite.bind(ws.vfs)
+    vi.spyOn(ws.vfs, 'pwrite')
+      .mockImplementationOnce(realPwrite)
+      .mockRejectedValueOnce(errnoError('EACCES', 'denied'))
+    const core = new MountCore(ws.vfs)
+    const dec = new TextDecoder()
+    const enc = new TextEncoder()
+    const reader = await core.open('/data/f', fsConstants.O_RDONLY)
+    expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('abcdefgh')
+    const fd = await core.open('/data/f', fsConstants.O_WRONLY)
+    await core.write('/data/f', fd, enc.encode('X'), 0)
+    await core.write('/data/f', fd, enc.encode('Y'), 5)
+    await expect(core.flush('/data/f', fd)).rejects.toMatchObject({ code: 'EACCES' })
+    expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('Xbcdefgh')
+  })
+
   it('reports a file with its real size', async () => {
     const core = await mkCore()
     const attr = await core.getattr('/data/greeting.txt')

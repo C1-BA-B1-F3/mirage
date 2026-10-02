@@ -33,7 +33,16 @@ export async function pwrite(
   try {
     const handle = await open(full, constants.O_WRONLY | constants.O_CREAT, 0o666)
     try {
-      await handle.write(data, 0, data.byteLength, offset)
+      let done = 0
+      while (done < data.byteLength) {
+        const { bytesWritten } = await handle.write(
+          data,
+          done,
+          data.byteLength - done,
+          offset + done,
+        )
+        done += bytesWritten
+      }
     } finally {
       await handle.close()
     }

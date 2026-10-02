@@ -20,7 +20,7 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.ops.generic.types import OpFn, OpsTable
 from mirage.ops.registry import RegisteredOp
 from mirage.types import FileType, PathSpec
-from mirage.utils.errors import enotsup
+from mirage.utils.errors import einval, enotsup
 from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.ranges import (
     is_unsatisfiable_range,
@@ -169,12 +169,18 @@ def _make_emulated_append(
     return append
 
 
+def _expect_offset(offset: int, path: PathSpec) -> int:
+    if offset < 0:
+        raise einval(path)
+    return offset
+
+
 def _make_pwrite(fn: OpFn) -> OpFn:
 
     async def pwrite(
         accessor: Accessor, path: PathSpec, data: bytes, offset: int, **kwargs
     ) -> None:
-        await fn(accessor, path, data, offset)
+        await fn(accessor, path, data, _expect_offset(offset, path))
 
     return pwrite
 
@@ -194,6 +200,7 @@ def _make_emulated_pwrite(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
         # write: a session that may write a file and not read it still
         # writes at an offset, as pwrite(2) on a write-only descriptor
         # does. It takes the caller's index for the reason append does.
+        offset = _expect_offset(offset, path)
         try:
             existing = await read_bytes(accessor, path, index)
         except FileNotFoundError:

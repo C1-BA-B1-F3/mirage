@@ -679,4 +679,20 @@ describe('MountCore chunks', () => {
     const far = 2 * READ_CHUNK + 5
     expect(await core.read('/data/a.bin', early, far, 4)).toEqual(body.slice(far, far + 4))
   })
+
+  it('reads nothing to hold a target when a link to it goes', async () => {
+    // unlink(2) on a link takes the link entry, never the pointee's bytes.
+    // Mirrors Python's test_removing_a_link_leaves_its_targets_handles_alone.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.vfs.writeFile('/data/real.bin', new Uint8Array(2 * READ_CHUNK).fill(1))
+    await ws.shell('ln -s real.bin /data/alias')
+    const core = new MountCore(ws.vfs)
+    const fd = await core.open('/data/real.bin')
+    await core.read('/data/real.bin', fd, 0, 1)
+    const reads = vi.spyOn(ws.vfs, 'readFile')
+    await core.unlink('/data/alias')
+    expect(reads).not.toHaveBeenCalled()
+    reads.mockRestore()
+    await core.release(fd)
+  })
 })

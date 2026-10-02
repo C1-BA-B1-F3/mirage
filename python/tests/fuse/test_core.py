@@ -567,3 +567,19 @@ async def test_holding_reads_once_and_never_blocks_the_removal(monkeypatch):
     monkeypatch.undo()
     with pytest.raises(FileNotFoundError):
         await ws.vfs.stat("/b.bin")
+
+
+@pytest.mark.asyncio
+async def test_removing_a_link_leaves_its_targets_handles_alone():
+    # unlink(2) on a link takes the link entry, never the pointee's bytes,
+    # so nothing is read to hold an open handle on the target.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.vfs.write("/real.bin", b"x" * (2 * READ_CHUNK))
+    await ws.shell("ln -s real.bin /alias")
+    core = MountCore(ws.vfs)
+    fh = core.open("/real.bin")
+    core.read("/real.bin", 1, 0, fh)
+    before = len(ws.vfs.records)
+    core.unlink("/alias")
+    assert "read" not in [r.op for r in ws.vfs.records[before:]]
+    core.release(fh)

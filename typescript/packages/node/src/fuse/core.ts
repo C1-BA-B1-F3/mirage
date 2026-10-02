@@ -309,7 +309,13 @@ export class MountCore {
    * there too would let two renames that cross wait on each other.
    */
   private removing(path: string, fn: () => Promise<void>): Promise<void> {
+    if (this.namesLink(path)) return fn()
     return this.queue(this.removals, this.identity(path), fn)
+  }
+
+  /** Whether `path` names a link entry: removing it takes the link, never its target's bytes. */
+  private namesLink(path: string): boolean {
+    return this.ops.links?.isLink(this.resolve(path)) === true
   }
 
   /**
@@ -734,6 +740,7 @@ export class MountCore {
    * Mirrors Python's `MountCore._hold`.
    */
   private async hold(path: string): Promise<void> {
+    if (this.namesLink(path)) return
     const key = this.identity(path)
     const held = [...this.handles.values()].filter(
       (ctx) => ctx.key === key && ctx.chunked !== undefined,

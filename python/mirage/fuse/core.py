@@ -729,6 +729,11 @@ class MountCore:
         Args:
             path (str): mount path about to be removed or replaced.
         """
+        links = self._ops.links
+        if links is not None and links.is_link(self.resolve(path)):
+            # Removing a link entry takes the link, never its target's
+            # bytes.
+            return
         key = self.identity(path)
         held = [
             ctx

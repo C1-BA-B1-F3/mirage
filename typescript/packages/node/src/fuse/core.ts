@@ -86,28 +86,6 @@ export interface MountCoreOptions {
  * `drainOps`. Reaching `ws.dispatch` from here instead would skip the
  * record; reaching a backend directly would skip the door.
  */
-/**
- * Run `fn` after every call already queued under `key` in `queues`, and let
- * the next one wait for it, whether it resolves or throws.
- */
-function queue<T>(
-  queues: Map<string, Promise<void>>,
-  key: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  const prev = queues.get(key) ?? Promise.resolve()
-  const run = prev.then(fn, fn)
-  const tail: Promise<void> = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  queues.set(key, tail)
-  void tail.then(() => {
-    if (queues.get(key) === tail) queues.delete(key)
-  })
-  return run
-}
-
 export class MountCore {
   readonly ops: Ops
   readonly session: SessionState | null
@@ -318,7 +296,7 @@ export class MountCore {
    * truncate that would then be undone when the flush completes.
    */
   private mutate<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    return queue(this.pending, key, fn)
+    return this.queue(this.pending, key, fn)
   }
 
   /**
@@ -331,7 +309,29 @@ export class MountCore {
    * there too would let two renames that cross wait on each other.
    */
   private removing(path: string, fn: () => Promise<void>): Promise<void> {
-    return queue(this.removals, this.identity(path), fn)
+    return this.queue(this.removals, this.identity(path), fn)
+  }
+
+  /**
+   * Run `fn` after every call already queued under `key` in `queues`, and
+   * let the next one wait for it, whether it resolves or throws.
+   */
+  private queue<T>(
+    queues: Map<string, Promise<void>>,
+    key: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const prev = queues.get(key) ?? Promise.resolve()
+    const run = prev.then(fn, fn)
+    const tail: Promise<void> = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    queues.set(key, tail)
+    void tail.then(() => {
+      if (queues.get(key) === tail) queues.delete(key)
+    })
+    return run
   }
 
   /** Drain and return accumulated op records (mirrors Python's drainOps). */

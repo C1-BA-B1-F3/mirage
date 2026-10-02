@@ -716,20 +716,36 @@ class MountCore:
         return self._run(self._ops.read(self.resolve(ctx.path), offset, size))
 
     def _hold(self, path: str) -> None:
-        """Read the rest of every chunked handle on ``path`` before it goes.
+        """Read the rest of the chunked handles on ``path`` before it goes.
 
         POSIX keeps an open descriptor on the bytes it had, and a chunked
         handle holds one chunk of them, so an unlink or a rename onto the
-        file would leave the rest unreadable.
+        file would leave the rest unreadable. One read serves every such
+        handle. A read that fails (a policy may allow the removal and
+        refuse the read) leaves them chunked rather than refusing a
+        mutation the caller is allowed.
 
         Args:
             path (str): mount path about to be removed or replaced.
         """
         key = self.identity(path)
-        for ctx in self._handles.values():
-            if ctx.key == key and ctx.chunked is not None:
-                ctx.data = self._run(self._ops.read(self.resolve(ctx.path)))
-                ctx.chunked = None
+        held = [
+            ctx
+            for ctx in self._handles.values()
+            if ctx.key == key and ctx.chunked is not None
+        ]
+        if not held:
+            return
+        try:
+            data = self._run(self._ops.read(self.resolve(path)))
+        except Exception as err:
+            logger.warning(
+                "fuse: holding %s before it goes failed: %r", path, err
+            )
+            return
+        for ctx in held:
+            ctx.data = data
+            ctx.chunked = None
 
     def release(self, fh: int) -> None:
         ctx = self._handles.get(fh)

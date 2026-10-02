@@ -630,4 +630,29 @@ describe('MountCore chunks', () => {
       await core.release(fd)
     },
   )
+
+  it('holds with one read, and a refused read never blocks the removal', async () => {
+    // One read serves every open handle; a read a policy refuses leaves
+    // them chunked rather than refusing the unlink it allows. Mirrors
+    // Python's test_holding_reads_once_and_never_blocks_the_removal.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    for (const name of ['/data/a.bin', '/data/b.bin']) {
+      await ws.vfs.writeFile(name, new Uint8Array(2 * READ_CHUNK).fill(1))
+    }
+    const core = new MountCore(ws.vfs)
+    const shared = [await core.open('/data/a.bin'), await core.open('/data/a.bin')]
+    for (const fd of shared) await core.read('/data/a.bin', fd, 0, 1)
+    const reads = vi.spyOn(ws.vfs, 'readFile')
+    await core.unlink('/data/a.bin')
+    expect(reads).toHaveBeenCalledTimes(1)
+    const refused = await core.open('/data/b.bin')
+    await core.read('/data/b.bin', refused, 0, 1)
+    reads.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await core.unlink('/data/b.bin')
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
+    reads.mockRestore()
+    await expect(ws.vfs.stat('/data/b.bin')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 })

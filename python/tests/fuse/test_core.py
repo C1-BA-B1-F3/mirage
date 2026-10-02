@@ -540,3 +540,30 @@ async def test_an_open_chunked_handle_outlives_a_rename_or_unlink(change):
     far = 2 * READ_CHUNK + 5
     assert core.read("/big.bin", 4, far, fh) == body[far : far + 4]
     core.release(fh)
+
+
+@pytest.mark.asyncio
+async def test_holding_reads_once_and_never_blocks_the_removal(monkeypatch):
+    # One read serves every open handle; a read a policy refuses leaves
+    # them chunked rather than refusing the unlink it allows.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    for name in ("/a.bin", "/b.bin"):
+        await ws.vfs.write(name, b"x" * (2 * READ_CHUNK))
+    core = MountCore(ws.vfs)
+    shared = [core.open("/a.bin") for _ in range(2)]
+    for fh in shared:
+        core.read("/a.bin", 1, 0, fh)
+    before = len(ws.vfs.records)
+    core.unlink("/a.bin")
+    assert [r.op for r in ws.vfs.records[before:]].count("read") == 1
+    refused = core.open("/b.bin")
+    core.read("/b.bin", 1, 0, refused)
+
+    async def refuse(*args, **kwargs):
+        raise PermissionError(errno.EACCES, os.strerror(errno.EACCES))
+
+    monkeypatch.setattr(ws.vfs, "read", refuse)
+    core.unlink("/b.bin")
+    monkeypatch.undo()
+    with pytest.raises(FileNotFoundError):
+        await ws.vfs.stat("/b.bin")

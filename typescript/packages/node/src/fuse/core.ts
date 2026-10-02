@@ -691,18 +691,30 @@ export class MountCore {
   }
 
   /**
-   * Read the rest of every chunked handle on `path` before it goes. POSIX
+   * Read the rest of the chunked handles on `path` before it goes. POSIX
    * keeps an open descriptor on the bytes it had, and a chunked handle
    * holds one chunk of them, so an unlink or a rename onto the file would
-   * leave the rest unreadable. Mirrors Python's `MountCore._hold`.
+   * leave the rest unreadable. One read serves every such handle. A read
+   * that fails (a policy may allow the removal and refuse the read) leaves
+   * them chunked rather than refusing a mutation the caller is allowed.
+   * Mirrors Python's `MountCore._hold`.
    */
   private async hold(path: string): Promise<void> {
     const key = this.identity(path)
-    for (const ctx of this.handles.values()) {
-      if (ctx.key === key && ctx.chunked !== undefined) {
-        ctx.data = await this.op(() => this.ops.readFile(this.resolve(ctx.path)))
-        delete ctx.chunked
-      }
+    const held = [...this.handles.values()].filter(
+      (ctx) => ctx.key === key && ctx.chunked !== undefined,
+    )
+    if (held.length === 0) return
+    let data: Uint8Array
+    try {
+      data = await this.op(() => this.ops.readFile(this.resolve(path)))
+    } catch (err) {
+      console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
+      return
+    }
+    for (const ctx of held) {
+      ctx.data = data
+      delete ctx.chunked
     }
   }
 

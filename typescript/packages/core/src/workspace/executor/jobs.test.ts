@@ -111,20 +111,24 @@ describe('handleKill', () => {
     [['-9'], 2, KILL_USAGE],
     [['--'], 2, KILL_USAGE],
     [['-?'], 2, KILL_USAGE],
-    [['-s'], 1, 'kill: -s: option requires an argument\n'],
-    [['-n'], 1, 'kill: -n: option requires an argument\n'],
-    [['-FOO'], 1, 'kill: FOO: invalid signal specification\n'],
-    [['-s', 'FOO', '1'], 1, 'kill: FOO: invalid signal specification\n'],
-    [['-65', '1'], 1, 'kill: 65: invalid signal specification\n'],
-    [['abc'], 1, 'kill: abc: arguments must be process or job IDs\n'],
-    [['0x1'], 1, 'kill: 0x1: arguments must be process or job IDs\n'],
-    [['--', '-'], 1, 'kill: -: arguments must be process or job IDs\n'],
-    [[''], 1, "kill: `': not a pid or valid job spec\n"],
-    [['999'], 1, 'kill: (999) - No such process\n'],
-    [['-0', '999'], 1, 'kill: (999) - No such process\n'],
-    [['%3'], 1, 'kill: %3: no such job\n'],
-    [['%abc'], 1, 'kill: %abc: no such job\n'],
-    [['999', '998'], 1, 'kill: (999) - No such process\nkill: (998) - No such process\n'],
+    [['-s'], 1, 'bash: kill: -s: option requires an argument\n'],
+    [['-n'], 1, 'bash: kill: -n: option requires an argument\n'],
+    [['-FOO'], 1, 'bash: kill: FOO: invalid signal specification\n'],
+    [['-s', 'FOO', '1'], 1, 'bash: kill: FOO: invalid signal specification\n'],
+    [['-65', '1'], 1, 'bash: kill: 65: invalid signal specification\n'],
+    [['abc'], 1, 'bash: kill: abc: arguments must be process or job IDs\n'],
+    [['0x1'], 1, 'bash: kill: 0x1: arguments must be process or job IDs\n'],
+    [['--', '-'], 1, 'bash: kill: -: arguments must be process or job IDs\n'],
+    [[''], 1, "bash: kill: `': not a pid or valid job spec\n"],
+    [['999'], 1, 'bash: kill: (999) - No such process\n'],
+    [['-0', '999'], 1, 'bash: kill: (999) - No such process\n'],
+    [['%3'], 1, 'bash: kill: %3: no such job\n'],
+    [['%abc'], 1, 'bash: kill: %abc: no such job\n'],
+    [
+      ['999', '998'],
+      1,
+      'bash: kill: (999) - No such process\nbash: kill: (998) - No such process\n',
+    ],
   ] as const)('refuses %j in bash words', async (args, code, stderr) => {
     const [, io] = await handleKill(new JobTable(), ['kill', ...args])
     expect([io.exitCode, decode(io.stderr as Uint8Array)]).toEqual([code, stderr])
@@ -446,7 +450,7 @@ describe('job builtins honor the process profile', () => {
       const io = await ws.shell(stop, { sessionId: 'audit' })
       expect([stdoutStr(io), new TextDecoder().decode(io.stderr)]).toEqual([
         'rc=1\n',
-        `kill: (${pid}) - Operation not permitted\n`,
+        `bash: kill: (${pid}) - Operation not permitted\n`,
       ])
       expect(stdoutStr(await ws.shell(stop, { sessionId: 'ops' }))).toBe('rc=0\n')
     } finally {
@@ -563,8 +567,8 @@ it('kill succeeds when any operand was signalled', async () => {
     const result = await ws.shell(`kill 999999 %9 abc ${pid}; echo rc=$?`)
     expect(stdoutStr(result)).toBe('rc=0\n')
     expect(stderrStr(result)).toBe(
-      'kill: (999999) - No such process\nkill: %9: no such job\n' +
-        'kill: abc: arguments must be process or job IDs\n',
+      'bash: kill: (999999) - No such process\nbash: kill: %9: no such job\n' +
+        'bash: kill: abc: arguments must be process or job IDs\n',
     )
   } finally {
     await ws.close()

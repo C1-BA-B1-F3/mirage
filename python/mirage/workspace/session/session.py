@@ -276,6 +276,13 @@ class SessionState:
     # Empty in a fresh shell, as bash's is: the first `${PIPESTATUS[*]}`
     # expands to nothing until a statement records one.
     pipe_status: tuple[int, ...] = ()
+    # `${FUNCNAME[@]}`: the function frames on the call stack, innermost
+    # first, a sourced file as `source` (`CallStack.function_names`).
+    # Written where a frame is pushed and popped, and answered by the
+    # arrays view before the store, so an assignment to it is ignored.
+    # None once `unset FUNCNAME` has made it an ordinary name, as bash's
+    # unset does for the rest of the shell.
+    function_names: tuple[str, ...] | None = ()
     # Which line stamped the two fields above, so a cancelled line puts
     # back only what it overwrote. Two `execute()` calls can share one
     # session, and a restore of a snapshot older than a concurrent
@@ -344,9 +351,6 @@ class SessionState:
     # came from a short-circuited &&/|| branch or a `!`-negated command,
     # which bash exempts from errexit. Reset on every node execution.
     errexit_immune: bool = field(default=False, repr=False)
-    # Depth of nested `source`/`.` execution: `return` is legal and the
-    # program loop absorbs its signal only while a file is being sourced.
-    source_depth: int = field(default=0, repr=False)
     # Variables shadowed by `local` / `declare` in the running function;
     # a None value means the caller had no variable of that name. One
     # stack, not one per container: a local shadows the whole record, so

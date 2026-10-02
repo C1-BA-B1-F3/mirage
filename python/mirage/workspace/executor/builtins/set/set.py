@@ -68,7 +68,7 @@ async def handle_set(
             # line is dropped. Without this a typo -- or an option mirage
             # has yet to wire, as `physical` once was -- reads as success.
             if option not in SET_OPTION_NAMES:
-                err = f"set: {option}: invalid option name\n".encode()
+                err = f"bash: set: {option}: invalid option name\n".encode()
                 return (
                     None,
                     IOResult(exit_code=2, stderr=err),

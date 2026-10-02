@@ -81,7 +81,7 @@ export async function handleGetopts(
   state: SessionView | null = null,
 ): Promise<Result> {
   if (args.length < 2) {
-    const err = new TextEncoder().encode('getopts: usage: getopts optstring name [arg]\n')
+    const err = new TextEncoder().encode('getopts: usage: getopts optstring name [arg ...]\n')
     return [
       null,
       new IOResult({ exitCode: 2, stderr: err }),

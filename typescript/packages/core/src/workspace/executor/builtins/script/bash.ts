@@ -158,10 +158,9 @@ export async function handleBash(
   // bash starts every shell with the default IFS and never reads one from
   // its environment, so `IFS=, bash -c ...` splits on blanks.
   seedVar(session, 'IFS', IFS_DEFAULT)
-  // A child shell is outside every `source` its caller is inside, so a
-  // top-level `return` in the script it runs is the error bash reports
-  // rather than an early exit the program loop absorbs.
-  session.sourceDepth = 0
+  // A child shell is outside every function and `source` its caller is
+  // inside: it runs on a call stack of its own, and `FUNCNAME` is empty.
+  session.functionNames = []
   for (const [option, enable] of parsed.settings) session.shellOptions[option] = enable
   let io
   // A nested shell is a program of its own: the builtins it runs are its

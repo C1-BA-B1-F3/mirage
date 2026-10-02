@@ -17,6 +17,7 @@ export interface CallFrameInit {
   locals?: Record<string, string>
   functionName?: string
   loopLevel?: number
+  sourced?: boolean
 }
 
 export class CallFrame {
@@ -24,19 +25,29 @@ export class CallFrame {
   locals: Record<string, string>
   functionName: string
   loopLevel: number
+  sourced: boolean
 
   constructor(init: CallFrameInit = {}) {
     this.positional = init.positional ?? []
     this.locals = init.locals ?? {}
     this.functionName = init.functionName ?? ''
     this.loopLevel = init.loopLevel ?? 0
+    this.sourced = init.sourced ?? false
   }
 }
 
 export class CallStack {
   private readonly frames: CallFrame[] = [new CallFrame()]
+  // A fork is a child shell's stack: an error that discards the rest of
+  // the line ends the child instead of resuming.
+  subshell = false
 
-  fork(): CallStack {
+  /**
+   * The stack a child shell runs on, a copy of every frame. `loops` keeps
+   * the loops the caller is in, as a pipeline stage and `$( )` do; a `( )`
+   * or `&` child starts outside every loop (bash 5.2, POSIX interp 842).
+   */
+  fork(loops = true): CallStack {
     const child = new CallStack()
     child.frames.splice(
       0,
@@ -47,10 +58,12 @@ export class CallStack {
             positional: [...frame.positional],
             locals: { ...frame.locals },
             functionName: frame.functionName,
-            loopLevel: frame.loopLevel,
+            loopLevel: loops ? frame.loopLevel : 0,
+            sourced: frame.sourced,
           }),
       ),
     )
+    child.subshell = true
     return child
   }
 
@@ -60,8 +73,20 @@ export class CallStack {
     return frame
   }
 
-  push(positional: string[] = [], functionName = ''): void {
-    this.frames.push(new CallFrame({ positional, functionName }))
+  /**
+   * Enter a function, or a sourced file (`functionName` is `source`). A
+   * function starts outside every loop, so `break` in it cannot end its
+   * caller's; a sourced file runs in its caller's loops.
+   */
+  push(positional: string[] = [], functionName = '', sourced = false): void {
+    this.frames.push(
+      new CallFrame({
+        positional,
+        functionName,
+        loopLevel: sourced ? this.current.loopLevel : 0,
+        sourced,
+      }),
+    )
   }
 
   pop(): CallFrame {
@@ -73,6 +98,28 @@ export class CallStack {
 
   get depth(): number {
     return this.frames.length
+  }
+
+  /** Count a loop the current frame runs, for `break` and `continue`. */
+  async loop<T>(run: () => Promise<T>): Promise<T> {
+    const frame = this.current
+    frame.loopLevel++
+    try {
+      return await run()
+    } finally {
+      frame.loopLevel--
+    }
+  }
+
+  /**
+   * `${FUNCNAME[@]}`: the frames innermost first, a sourced file as
+   * `source`. Empty while no function runs, as bash hides a sourced file's
+   * entry outside one.
+   */
+  functionNames(): readonly string[] {
+    const frames = this.frames.slice(1)
+    if (frames.every((frame) => frame.sourced)) return []
+    return frames.reverse().map((frame) => frame.functionName)
   }
 
   getPositional(index: number): string {
@@ -104,7 +151,7 @@ export class CallStack {
   getLocal(name: string): string | null {
     for (let i = this.frames.length - 1; i >= 0; i--) {
       const frame = this.frames[i]
-      if (frame !== undefined && name in frame.locals) {
+      if (frame !== undefined && Object.hasOwn(frame.locals, name)) {
         return frame.locals[name] ?? null
       }
     }

@@ -153,10 +153,12 @@ async def handle_cd(
                     replace(walk, dotted=dotted),
                 )
             except CycleError:
-                error = f"cd: {named}: Too many levels of symbolic links\n"
+                error = (
+                    f"bash: cd: {named}: Too many levels of symbolic links\n"
+                )
                 continue
             if refusal is not None:
-                error = f"cd: {named}: {fs_strerror(refusal)}\n"
+                error = f"bash: cd: {named}: {fs_strerror(refusal)}\n"
                 continue
         # The logical name is the candidate with `..` simplified textually
         # and links left alone; the physical one follows them. `-P`
@@ -167,7 +169,9 @@ async def handle_cd(
             try:
                 resolved = resolve_target(candidate, table, physical)
             except CycleError:
-                error = f"cd: {named}: Too many levels of symbolic links\n"
+                error = (
+                    f"bash: cd: {named}: Too many levels of symbolic links\n"
+                )
                 continue
         else:
             resolved = logical
@@ -185,10 +189,10 @@ async def handle_cd(
         except FileNotFoundError:
             not_found = True
         except FS_ERRORS as exc:
-            error = f"cd: {named}: {fs_strerror(exc)}\n"
+            error = f"bash: cd: {named}: {fs_strerror(exc)}\n"
             continue
         except ValueError as exc:
-            error = f"cd: {named}: {exc}\n"
+            error = f"bash: cd: {named}: {exc}\n"
             continue
         if s is None or not_found:
             if is_mount_root(resolved):
@@ -200,15 +204,15 @@ async def handle_cd(
                     raw,
                     print_path or announce,
                 )
-            error = f"cd: {named}: No such file or directory\n"
+            error = f"bash: cd: {named}: No such file or directory\n"
             continue
         if s.type != FileType.DIRECTORY:
-            error = f"cd: {named}: Not a directory\n"
+            error = f"bash: cd: {named}: Not a directory\n"
             continue
         return _cd_success(
             session, resolved, logical, spelled, raw, print_path or announce
         )
-    err = (error or f"cd: {named}: No such file or directory\n").encode()
+    err = (error or f"bash: cd: {named}: No such file or directory\n").encode()
     return (
         None,
         IOResult(exit_code=1, stderr=err),
@@ -262,14 +266,14 @@ async def cd_builtin(call: BuiltinCall) -> Result:
         list(call.argv.operands), default=shell_physical
     )
     if bad_opt is not None:
-        err = f"cd: -{bad_opt}: invalid option\n{CD_USAGE}".encode()
+        err = f"bash: cd: -{bad_opt}: invalid option\n{CD_USAGE}".encode()
         return (
             None,
             IOResult(exit_code=2, stderr=err),
             ExecutionNode(command="cd", exit_code=2, stderr=err),
         )
     if len(cd_operands) > 1:
-        err = b"cd: too many arguments\n"
+        err = b"bash: cd: too many arguments\n"
         return (
             None,
             IOResult(exit_code=1, stderr=err),
@@ -278,7 +282,7 @@ async def cd_builtin(call: BuiltinCall) -> Result:
     if not cd_operands:
         home = home_dir(session)
         if home is None:
-            err = b"cd: HOME not set\n"
+            err = b"bash: cd: HOME not set\n"
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
@@ -297,7 +301,7 @@ async def cd_builtin(call: BuiltinCall) -> Result:
     if raw_str == "-":
         old = session.env.get("OLDPWD")
         if not old:
-            err = b"cd: OLDPWD not set\n"
+            err = b"bash: cd: OLDPWD not set\n"
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),

@@ -32,6 +32,7 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "readonly_functions",
     "last_exit_code",
     "pipe_status",
+    "function_names",
     "shell_options",
     "shopts",
     "aliases",
@@ -71,11 +72,10 @@ INHERITED_FIELDS: tuple[str, ...] = (
 )
 
 # State that belongs to the line being executed, not to the shell, so a
-# fork starts it fresh: the errexit marker, the source nesting depth and
-# the running function's locals.
+# fork starts it fresh: the errexit marker and the running function's
+# locals.
 TRANSIENT_FIELDS: tuple[str, ...] = (
     "errexit_immune",
-    "source_depth",
     "_local_vars",
     "_local_frames",
     "_local_random",
@@ -106,7 +106,7 @@ TRANSIENT_FIELDS: tuple[str, ...] = (
 CHILD_SHELL_FIELDS: tuple[str, ...] = (
     "cwd",
     "logical_cwd",
-    "source_depth",
+    "function_names",
     "vars",
     "functions",
     "readonly_functions",

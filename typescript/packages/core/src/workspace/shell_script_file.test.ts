@@ -283,7 +283,7 @@ describe('sh/bash script file', () => {
     const { ws } = await makeIntegrationWS()
     try {
       const [code, , err] = await runResult(ws, 'cd /data; source nope.sh')
-      expect(err).toBe('source: nope.sh: No such file or directory\n')
+      expect(err).toBe('bash: nope.sh: No such file or directory\n')
       expect(code).toBe(1)
     } finally {
       await ws.close()
@@ -294,7 +294,7 @@ describe('sh/bash script file', () => {
     const { ws } = await makeIntegrationWS({ 'sub/keep.txt': 'x\n' })
     try {
       const [code, , err] = await runResult(ws, 'source /data/sub')
-      expect(err).toBe('source: /data/sub: Is a directory\n')
+      expect(err).toBe('bash: source: /data/sub: is a directory\n')
       expect(code).toBe(1)
     } finally {
       await ws.close()
@@ -306,7 +306,7 @@ describe('sh/bash script file', () => {
     try {
       const [code, out, err] = await runResult(ws, 'source; echo after=$?')
       expect(err).toBe(
-        'source: filename argument required\nsource: usage: source filename [arguments]\n',
+        'bash: source: filename argument required\nsource: usage: source filename [arguments]\n',
       )
       expect(out).toBe('after=2\n')
       expect(code).toBe(0)
@@ -355,7 +355,7 @@ describe('sh/bash script file', () => {
     try {
       const [code, out, err] = await runResult(ws, 'source /data/lib.sh; echo done')
       expect(out).toBe('child-after\nafter=0\ndone\n')
-      expect(err).toBe("return: can only `return' from a function or sourced script\n")
+      expect(err).toBe("bash: return: can only `return' from a function or sourced script\n")
       expect(code).toBe(0)
     } finally {
       await ws.close()

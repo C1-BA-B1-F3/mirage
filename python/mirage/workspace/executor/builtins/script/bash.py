@@ -161,10 +161,9 @@ async def handle_bash(
     # bash starts every shell with the default IFS and never reads one
     # from its environment, so `IFS=, bash -c ...` splits on blanks.
     seed_var(session, "IFS", IFS_DEFAULT)
-    # A child shell is outside every `source` its caller is inside, so a
-    # top-level `return` in the script it runs is the error bash reports
-    # rather than an early exit the program loop absorbs.
-    session.source_depth = 0
+    # A child shell is outside every function and `source` its caller is
+    # inside: it runs on a call stack of its own, and `FUNCNAME` is empty.
+    session.function_names = ()
     for option, enable in parsed.settings:
         session.shell_options[option] = enable
     # A nested shell is a program of its own: the builtins it runs are

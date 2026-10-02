@@ -33,6 +33,7 @@ from mirage.shell.constants import RANDOM
 from mirage.shell.errors import (
     ArithError,
     BadSubstitution,
+    DiscardSignal,
     ExitSignal,
     UnboundVariable,
     named,
@@ -145,22 +146,22 @@ def guard_expansion_write(session: SessionState, *names: str) -> None:
         try:
             ensure_var_visible(session, name)
         except PolicyDenied as exc:
-            raise ExitSignal(
-                1, stderr=f"bash: {exc.strerror}\n".encode(), contained_code=1
-            ) from exc
+            raise DiscardSignal(f"bash: {exc.strerror}\n".encode()) from exc
 
 
 def _write_refusal(exc: PolicyDenied | ArithError) -> ExitSignal:
     """The line's death for a refused expansion-time write.
 
-    The gate's own reason, or the ``-i`` coercion refusing the text;
-    status 1, the shape ``${var:?}`` uses.
+    The gate's own reason discards the line, as a readonly name's does;
+    the ``-i`` coercion refusing the text ends the shell with 1, as
+    ``n=1+`` does.
 
     Args:
         exc (PolicyDenied | ArithError): the refusal.
     """
-    why = exc.strerror if isinstance(exc, PolicyDenied) else str(exc)
-    return ExitSignal(1, stderr=f"bash: {why}\n".encode(), contained_code=1)
+    if isinstance(exc, PolicyDenied):
+        return DiscardSignal(f"bash: {exc.strerror}\n".encode())
+    return ExitSignal(1, stderr=f"bash: {exc}\n".encode(), contained_code=1)
 
 
 async def _expansion_index(
@@ -264,10 +265,8 @@ async def expansion_write(
     if status == "readonly":
         raise ReadonlyVariableError(name)
     if status != "ok":
-        raise ExitSignal(
-            1,
-            stderr=(f"bash: {name}[{key}]: bad array subscript\n").encode(),
-            contained_code=1,
+        raise DiscardSignal(
+            f"bash: {name}[{key}]: bad array subscript\n".encode()
         )
 
 
@@ -1430,18 +1429,14 @@ async def _expand_braces(
     return [value_piece(_value_op(p.op, val, groups), quoted)]
 
 
-def _bad_subscript(p: _BraceParse) -> ExitSignal:
+def _bad_subscript(p: _BraceParse) -> DiscardSignal:
     """The refusal of a ``:=`` that names no single element.
 
     Args:
         p (_BraceParse): the parsed expansion.
     """
-    return ExitSignal(
-        1,
-        stderr=(
-            f"bash: {p.var_name}[{p.subscript}]: bad array subscript\n"
-        ).encode(),
-        contained_code=1,
+    return DiscardSignal(
+        f"bash: {p.var_name}[{p.subscript}]: bad array subscript\n".encode()
     )
 
 
@@ -1577,12 +1572,8 @@ async def _expand_splat(
         if triggered and p.subscript is not None:
             raise _bad_subscript(p)
         if triggered:
-            raise ExitSignal(
-                1,
-                stderr=(
-                    f"bash: ${p.var_name}: cannot assign in this way\n"
-                ).encode(),
-                contained_code=1,
+            raise DiscardSignal(
+                f"bash: ${p.var_name}: cannot assign in this way\n".encode()
             )
     if star and quoted:
         return [value_piece(joiner.join(items), True)]

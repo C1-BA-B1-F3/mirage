@@ -49,7 +49,7 @@ function probe(
   for (const name of rest) {
     const kind = classify(name, session, registry)
     if (kind === null) {
-      if (mode === 'V') errLines.push(`command: ${name}: not found`)
+      if (mode === 'V') errLines.push(`bash: command: ${name}: not found`)
       continue
     }
     anyFound = true
@@ -97,7 +97,7 @@ export async function handleCommandBuiltin(
 ): Promise<Result> {
   const scan = scanOptions(args, 'pvV')
   if (scan.bad !== null) {
-    const err = new TextEncoder().encode(`command: ${scan.bad}: invalid option\n${USAGE}`)
+    const err = new TextEncoder().encode(`bash: command: ${scan.bad}: invalid option\n${USAGE}`)
     return [
       null,
       new IOResult({ exitCode: 2, stderr: err }),

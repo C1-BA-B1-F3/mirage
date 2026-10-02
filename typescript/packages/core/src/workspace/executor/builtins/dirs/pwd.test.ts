@@ -52,7 +52,7 @@ describe('handlePwd', () => {
     expect(none).toBeNull()
     expect(bad.exitCode).toBe(2)
     expect(DEC.decode(bad.stderr as Uint8Array)).toBe(
-      'pwd: -x: invalid option\npwd: usage: pwd [-LP]\n',
+      'bash: pwd: -x: invalid option\npwd: usage: pwd [-LP]\n',
     )
   })
 })

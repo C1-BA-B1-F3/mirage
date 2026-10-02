@@ -17,6 +17,7 @@ from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.array import array_extent, array_unset
+from mirage.shell.constants import FUNCNAME
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.workspace.executor.builtins.constants import TARGET_RE
 from mirage.workspace.executor.builtins.shared import refusal, require_view
@@ -46,6 +47,8 @@ def _unset_variable(session: SessionState, name: str) -> None:
     """
     if name == "OPTIND":
         session._getopts_optind = None
+    if name == FUNCNAME:
+        session.function_names = None
 
 
 async def _fatal_index(

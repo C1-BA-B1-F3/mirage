@@ -23,7 +23,7 @@ import {
   buildAssocLiteral,
   buildIndexedLiteral,
 } from '../../shell/array.ts'
-import { ArithError, ExitSignal } from '../../shell/errors.ts'
+import { ArithError, DiscardSignal, ExitSignal } from '../../shell/errors.ts'
 import { getText } from '../../shell/helpers.ts'
 import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
 import { type ShellValue, VarAttr } from '../../shell/variable.ts'
@@ -95,12 +95,12 @@ async function assignVar(view: SessionView, key: string, value: ShellValue): Pro
     await view.set(key, value)
   } catch (err) {
     if (err instanceof PolicyDenied) {
-      const denied = new TextEncoder().encode(`${err.message}\n`)
-      throw new ExitSignal(1, denied, null, 1)
+      throw new DiscardSignal(new TextEncoder().encode(`${err.message}\n`))
     }
     if (err instanceof ArithError) {
-      // The `-i` coercion refused the text. GNU aborts the line the way
-      // a bad subscript does, in the evaluator's voice with the text led.
+      // The `-i` coercion refused the text. GNU ends the shell with 1 the
+      // way a subscript that does not evaluate does, in the evaluator's
+      // voice with the text led.
       throw new ExitSignal(1, new TextEncoder().encode(`bash: ${err.message}\n`), null, 1)
     }
     throw err
@@ -205,12 +205,10 @@ export async function executeAssignment(
   const key = deref(session, spelled) || spelled
   const append = node.children.some((c) => c.type === '+=')
   if (session.readonlyVars.has(key)) {
-    // A bare assignment to a readonly variable is a fatal
-    // variable-assignment error in non-interactive bash: the rest of
-    // the line is abandoned (builtins like `export` merely fail with
-    // 1 and continue).
-    const err = new TextEncoder().encode(`bash: ${key}: readonly variable\n`)
-    throw new ExitSignal(1, err, null, 1)
+    // A bare assignment to a readonly variable is a variable-assignment
+    // error: the rest of the line is discarded (builtins like `export`
+    // merely fail with 1 and continue).
+    throw new DiscardSignal(new TextEncoder().encode(`bash: ${key}: readonly variable\n`))
   }
   const valNodes = node.namedChildren.filter(
     (c) => c.type !== NT.VARIABLE_NAME && c.type !== 'subscript',
@@ -297,18 +295,13 @@ export async function executeAssignment(
     const heldMap = session.assocs[key]
     const rawSub = subscriptNode.text.slice(spelled.length + 1, -1)
     if (rawSub.trim() === '' || (heldMap !== undefined && subText === '')) {
-      // bash aborts the whole line on a bad assignment subscript
+      // bash discards the rest of the line on a bad assignment subscript
       // (status 1), naming the raw spelling (`m[$e]: bad array
       // subscript`). An indexed subscript that merely *expands*
       // empty stays legal (arithmetic on nothing is 0), so only the
       // associative kind checks the expanded text.
       const nameText = text.slice(0, eq).replace(/\+$/, '')
-      throw new ExitSignal(
-        1,
-        new TextEncoder().encode(`bash: ${nameText}: bad array subscript\n`),
-        null,
-        1,
-      )
+      throw new DiscardSignal(new TextEncoder().encode(`bash: ${nameText}: bad array subscript\n`))
     }
     if (heldMap !== undefined) {
       // The subscript is the key: no arithmetic, `m[1+1]` writes the
@@ -336,12 +329,7 @@ export async function executeAssignment(
     if (idx < 0) {
       // Same fatal shape as the empty subscript above.
       const nameText = text.slice(0, eq).replace(/\+$/, '')
-      throw new ExitSignal(
-        1,
-        new TextEncoder().encode(`bash: ${nameText}: bad array subscript\n`),
-        null,
-        1,
-      )
+      throw new DiscardSignal(new TextEncoder().encode(`bash: ${nameText}: bad array subscript\n`))
     }
     arraySet(arr, idx, append ? arrayGet(arr, idx) + val : val)
     await assignVar(view, key, arr)

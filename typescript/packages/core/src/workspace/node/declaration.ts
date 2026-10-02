@@ -14,7 +14,7 @@
 
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
-import { ExitSignal } from '../../shell/errors.ts'
+import { DiscardSignal } from '../../shell/errors.ts'
 import { getDeclarationKeyword, getText } from '../../shell/helpers.ts'
 import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
 import { VarAttr } from '../../shell/variable.ts'
@@ -444,7 +444,7 @@ export async function executeDeclaration(
         ensureVarVisible(session, bare)
       } catch (err) {
         if (!(err instanceof PolicyDenied)) throw err
-        throw new ExitSignal(1, new TextEncoder().encode(`${err.message}\n`), null, 1)
+        throw new DiscardSignal(new TextEncoder().encode(`${err.message}\n`))
       }
       if (wantAssoc && Object.hasOwn(session.arrays, bare)) {
         conversionErrors.push(

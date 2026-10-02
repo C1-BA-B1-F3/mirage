@@ -58,6 +58,8 @@ export async function executeShellFunction(
   // Positional args carry the word as typed ($1 stays sub/a.txt).
   const textArgs = restParts.map(wordText)
   cs.push(textArgs, cmdName)
+  const outerNames = session.functionNames
+  if (outerNames !== null) session.functionNames = cs.functionNames()
   // One stack: a local shadows the whole record, so the caller's value
   // and attributes are saved and put back together.
   const savedLocals = new Map<string, ShellVar | null>()
@@ -124,6 +126,7 @@ export async function executeShellFunction(
     })
   } finally {
     cs.pop()
+    if (session.functionNames !== null) session.functionNames = outerNames
     restoreLocals(session, savedLocals)
     session.localFrames.pop()
     session.localVars = outerLocals

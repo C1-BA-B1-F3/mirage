@@ -186,7 +186,7 @@ async def test_getopts_usage_error_too_few_operands():
     assert io.exit_code == 2
     assert (
         await materialize(io.stderr)
-    ) == b"getopts: usage: getopts optstring name [arg]\n"
+    ) == b"getopts: usage: getopts optstring name [arg ...]\n"
 
 
 @pytest.mark.asyncio

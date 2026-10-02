@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { isProgramInvocation } from '../../../../context/session_context.ts'
 import { IOResult } from '../../../../io/types.ts'
 import { ExitSignal } from '../../../../shell/errors.ts'
 import type { PathSpec } from '../../../../types.ts'
@@ -57,7 +58,10 @@ export async function handleTest(
     }
   } catch (exc) {
     if (!(exc instanceof CondError)) throw exc
-    const stderr = new TextEncoder().encode(exc.message + '\n')
+    // The builtin's own diagnostic is in bash's voice; the program
+    // (`find -exec test`) keeps its bare one.
+    const own = exc.message.startsWith(`${name}: `) && !isProgramInvocation(session)
+    const stderr = new TextEncoder().encode(`${own ? 'bash: ' : ''}${exc.message}\n`)
     if (name === '[[' && exc.fatal) {
       // A bad [[ ]] operator is a bash PARSE error: the whole input
       // line dies, not just this command.
@@ -87,7 +91,8 @@ export async function testBuiltin(call: BuiltinCall): Promise<Result> {
     if (last !== undefined && wordText(last) === ']') {
       testArgs = testArgs.slice(0, -1)
     } else {
-      const err = new TextEncoder().encode("[: missing `]'\n")
+      const voice = isProgramInvocation(call.session) ? '' : 'bash: '
+      const err = new TextEncoder().encode(`${voice}[: missing \`]'\n`)
       return [
         null,
         new IOResult({ exitCode: 2, stderr: err }),

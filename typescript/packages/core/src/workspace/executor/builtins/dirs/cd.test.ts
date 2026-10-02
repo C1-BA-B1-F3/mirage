@@ -84,7 +84,7 @@ describe('handleCd', () => {
     const s = session('/data')
     const [, io] = await handleCd(dispatch, noMountRoot, 'nope', s)
     expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toBe('cd: nope: No such file or directory\n')
+    expect(decode(io.stderr as Uint8Array)).toBe('bash: cd: nope: No such file or directory\n')
     expect(s.cwd).toBe('/data')
   })
 
@@ -93,7 +93,7 @@ describe('handleCd', () => {
     const s = session('/data')
     const [, io] = await handleCd(dispatch, noMountRoot, 'f.txt', s)
     expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toBe('cd: f.txt: Not a directory\n')
+    expect(decode(io.stderr as Uint8Array)).toBe('bash: cd: f.txt: Not a directory\n')
   })
 
   it('searches CDPATH before the cwd-relative candidate', async () => {
@@ -147,7 +147,9 @@ describe('handleCd', () => {
       ]),
     )
     expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toBe('cd: /a: Too many levels of symbolic links\n')
+    expect(decode(io.stderr as Uint8Array)).toBe(
+      'bash: cd: /a: Too many levels of symbolic links\n',
+    )
     expect(s.cwd).toBe('/data')
   })
 

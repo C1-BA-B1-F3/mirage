@@ -64,7 +64,7 @@ import {
   handleXargs,
 } from './builtins/index.ts'
 import { parseDuration, parseSignal, signalName } from './builtins/timeout/timeout.ts'
-import { ReturnSignal } from '../../shell/errors.ts'
+import { ExitSignal, ReturnSignal } from '../../shell/errors.ts'
 
 function wireMount(mount: MountEntry): void {
   for (const cmd of mount.vfs.commands()) {
@@ -529,9 +529,12 @@ describe('handlePrintf', () => {
     expect(await stdout(['%q\n', byteChar(0xff)])).toBe("$'\\377'\n")
   })
 
-  it('empty args → empty output', async () => {
-    const [out] = await handlePrintf([], new SessionState({ sessionId: 'test' }))
-    expect((out as Uint8Array).byteLength).toBe(0)
+  it('empty args is a usage error', async () => {
+    const [out, io] = await handlePrintf([], new SessionState({ sessionId: 'test' }))
+    expect([out, io.exitCode]).toEqual([null, 2])
+    expect(decode(io.stderr as Uint8Array)).toBe(
+      'printf: usage: printf [-v var] format [arguments]\n',
+    )
   })
 
   // bash's `internal_getopt` takes single letters, so it reports the first
@@ -550,7 +553,7 @@ describe('handlePrintf', () => {
     const [, io, node] = await handlePrintf(args, new SessionState({ sessionId: 'test' }))
     expect(io.exitCode).toBe(2)
     expect(decode(io.stderr as Uint8Array)).toBe(
-      `printf: ${bad}: invalid option\nprintf: usage: printf [-v var] format [arguments]\n`,
+      `bash: printf: ${bad}: invalid option\nprintf: usage: printf [-v var] format [arguments]\n`,
     )
     expect(node.exitCode).toBe(2)
   })
@@ -672,17 +675,17 @@ describe('handlePrintf', () => {
     const s = new SessionState({ sessionId: 'test' })
     const [, io] = await handlePrintf(['-v', '1bad', 'x'], s)
     expect(io.exitCode).toBe(2)
-    expect(decode(io.stderr as Uint8Array)).toBe("printf: `1bad': not a valid identifier\n")
+    expect(decode(io.stderr as Uint8Array)).toBe("bash: printf: `1bad': not a valid identifier\n")
     const [, io2] = await handlePrintf(['-v', '1bad', '%d', 'nope'], s)
     expect(io2.exitCode).toBe(2)
-    expect(decode(io2.stderr as Uint8Array)).toBe("printf: `1bad': not a valid identifier\n")
+    expect(decode(io2.stderr as Uint8Array)).toBe("bash: printf: `1bad': not a valid identifier\n")
   })
 
   it('-v rejects an empty subscript but allows a blank one', async () => {
     const s = new SessionState({ sessionId: 'test' })
     const [, io] = await handlePrintf(['-v', 'a[]', 'x'], s)
     expect(io.exitCode).toBe(2)
-    expect(decode(io.stderr as Uint8Array)).toBe("printf: `a[]': not a valid identifier\n")
+    expect(decode(io.stderr as Uint8Array)).toBe("bash: printf: `a[]': not a valid identifier\n")
     expect('a' in s.arrays).toBe(false)
     // `a[ ]` is a valid arithmetic 0, not an empty subscript.
     const [, io2] = await handlePrintf(['-v', 'a[ ]', 'x'], s)
@@ -702,7 +705,7 @@ describe('handlePrintf', () => {
     const [, io2] = await handlePrintf(['-v', 'A[0]', '%d', 'nope'], s)
     expect(io2.exitCode).toBe(1)
     expect(decode(io2.stderr as Uint8Array)).toBe(
-      'printf: nope: invalid number\nbash: A: readonly variable\n',
+      'bash: printf: nope: invalid number\nbash: A: readonly variable\n',
     )
     expect(s.arrays.A).toEqual(['x', 'y'])
   })
@@ -756,9 +759,9 @@ describe('handlePrintf', () => {
     const [out, io, node] = await handlePrintf(['\\x|'], new SessionState({ sessionId: 'test' }))
     expect(decode(out as Uint8Array)).toBe('\\x|')
     expect(io.exitCode).toBe(0)
-    expect(decode(io.stderr as Uint8Array)).toBe('printf: missing hex digit for \\x\n')
+    expect(decode(io.stderr as Uint8Array)).toBe('bash: printf: missing hex digit for \\x\n')
     expect(node.exitCode).toBe(0)
-    expect(decode(node.stderr)).toBe('printf: missing hex digit for \\x\n')
+    expect(decode(node.stderr)).toBe('bash: printf: missing hex digit for \\x\n')
   })
 
   it('-v warns for an escape missing its digits and still assigns', async () => {
@@ -766,7 +769,7 @@ describe('handlePrintf', () => {
     const [out, io] = await handlePrintf(['-v', 'V', '%b', '\\U'], s)
     expect(out).toBeNull()
     expect(io.exitCode).toBe(0)
-    expect(decode(io.stderr as Uint8Array)).toBe('printf: missing unicode digit for \\U\n')
+    expect(decode(io.stderr as Uint8Array)).toBe('bash: printf: missing unicode digit for \\U\n')
     expect(s.env.V).toBe('\\U')
   })
 
@@ -776,7 +779,7 @@ describe('handlePrintf', () => {
     const [, io] = await handlePrintf(['-v', 'R', '\\x'], s)
     expect(io.exitCode).toBe(1)
     expect(decode(io.stderr as Uint8Array)).toBe(
-      'printf: missing hex digit for \\x\nbash: R: readonly variable\n',
+      'bash: printf: missing hex digit for \\x\nbash: R: readonly variable\n',
     )
     expect(s.env.R).toBe('orig')
   })
@@ -791,7 +794,7 @@ describe('handlePrintf', () => {
     )
     expect(decode(out as Uint8Array)).toBe('0')
     expect(io.exitCode).toBe(0)
-    expect(decode(io.stderr as Uint8Array)).toBe('printf: abc: invalid number\n')
+    expect(decode(io.stderr as Uint8Array)).toBe('bash: printf: abc: invalid number\n')
     expect(node.exitCode).toBe(0)
   })
 
@@ -801,7 +804,7 @@ describe('handlePrintf', () => {
     expect(out).toBeNull()
     expect(io.exitCode).toBe(0)
     expect(decode(io.stderr as Uint8Array)).toBe(
-      'printf: abc: invalid number\nprintf: def: invalid number\n',
+      'bash: printf: abc: invalid number\nbash: printf: def: invalid number\n',
     )
     expect(s.env.V).toBe('0x0')
   })
@@ -812,7 +815,7 @@ describe('handlePrintf', () => {
     const [, io] = await handlePrintf(['-v', 'R', '%d%b', 'abc', '\\c'], s)
     expect(io.exitCode).toBe(1)
     expect(decode(io.stderr as Uint8Array)).toBe(
-      'printf: abc: invalid number\nbash: R: readonly variable\n',
+      'bash: printf: abc: invalid number\nbash: R: readonly variable\n',
     )
     expect(s.env.R).toBe('orig')
   })
@@ -1433,7 +1436,9 @@ describe('handleGetopts', () => {
     const s = new SessionState({ sessionId: 't' })
     const [, io] = await handleGetopts(['ab'], s, null, sessionView(s))
     expect(io.exitCode).toBe(2)
-    expect(decode(io.stderr as Uint8Array)).toBe('getopts: usage: getopts optstring name [arg]\n')
+    expect(decode(io.stderr as Uint8Array)).toBe(
+      'getopts: usage: getopts optstring name [arg ...]\n',
+    )
   })
 
   it('OPTIND reset reparses', async () => {
@@ -1590,9 +1595,11 @@ describe('handleTrap / handleReturn / handleLocal', () => {
   })
 
   it('return in a sourced script raises the signal', () => {
-    const s = new SessionState({ sessionId: 'test' })
-    s.sourceDepth = 1
-    expect(() => handleReturn([], s, null)).toThrow(ReturnSignal)
+    const cs = new CallStack()
+    cs.push([], 'source', true)
+    expect(() => handleReturn([], new SessionState({ sessionId: 'test' }), cs)).toThrow(
+      ReturnSignal,
+    )
   })
 
   it('handleLocal outside a function is refused, as GNU refuses it', async () => {
@@ -1713,7 +1720,7 @@ describe('handleSource', () => {
     const [, io] = await handleSource(dispatch, executeFn, '/missing.sh', s)
     expect(io.exitCode).toBe(1)
     expect(decode(io.stderr instanceof Uint8Array ? io.stderr : null)).toBe(
-      'source: /missing.sh: No such file or directory\n',
+      'bash: /missing.sh: No such file or directory\n',
     )
     expect(executeFn).not.toHaveBeenCalled()
   })
@@ -1737,10 +1744,12 @@ describe('handleSource', () => {
       return Promise.resolve([data, new IOResult()] as [Uint8Array, IOResult])
     }) as unknown as DispatchFn
     let seen: string[] = []
-    const executeFn = vi.fn((_script: string, _opts: { sessionId: string }) => {
-      seen = [...s.positionalArgs]
-      return Promise.resolve(new IOResult())
-    })
+    const executeFn = vi.fn(
+      (_script: string, opts: { sessionId: string; callStack?: CallStack }) => {
+        seen = [...(opts.callStack?.getAllPositional() ?? [])]
+        return Promise.resolve(new IOResult())
+      },
+    )
     await handleSource(dispatch, executeFn, '/script.sh', s, ['AA', 'BB'])
     expect(seen).toEqual(['AA', 'BB'])
     expect(s.positionalArgs).toEqual(['P1', 'P2'])
@@ -1963,13 +1972,13 @@ describe('handleShift / handleReturn argument checks', () => {
   it('shift with a non-numeric arg errors like bash', async () => {
     const [, io] = handleShift(['x'], null, new SessionState({ sessionId: 'test' }))
     expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe('shift: x: numeric argument required\n')
+    expect(decode(await materialize(io.stderr))).toBe('bash: shift: x: numeric argument required\n')
   })
 
-  it('shift with two args errors', async () => {
-    const [, io] = handleShift(['1', '2'], null, new SessionState({ sessionId: 'test' }))
-    expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe('shift: too many arguments\n')
+  it('shift with two args abandons the line', () => {
+    expect(() => handleShift(['1', '2'], null, new SessionState({ sessionId: 'test' }))).toThrow(
+      ExitSignal,
+    )
   })
 
   it('return with a non-numeric arg raises 2 with a message', () => {
@@ -1982,7 +1991,7 @@ describe('handleShift / handleReturn argument checks', () => {
     } catch (err) {
       if (!(err instanceof ReturnSignal)) throw err
       expect(err.exitCode).toBe(2)
-      expect(decode(err.stderr)).toBe('return: x: numeric argument required\n')
+      expect(decode(err.stderr)).toBe('bash: return: x: numeric argument required\n')
     }
   })
 })
@@ -2001,7 +2010,9 @@ describe('handleRead options', () => {
     const s = new SessionState({ sessionId: 'test' })
     const [, io] = await handleRead(['-q', 'v'], s, new TextEncoder().encode('x\n'), sessionView(s))
     expect(io.exitCode).toBe(2)
-    expect(decode(await materialize(io.stderr))).toBe('read: -q: invalid option\n')
+    expect(decode(await materialize(io.stderr))).toMatch(
+      /^bash: read: -q: invalid option\nread: usage: read \[-ers\]/,
+    )
   })
 
   it('defaults to REPLY', async () => {

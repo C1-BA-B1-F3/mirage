@@ -12,24 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { concat } from '../../../../io/cachable_iterator.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { CallStack } from '../../../../shell/call_stack.ts'
 import { ExitSignal } from '../../../../shell/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { ReturnSignal } from '../../../../shell/errors.ts'
-import { isCountWord } from '../shared.ts'
+import { builtinError, isCountWord, numericOperands, statusOf } from '../shared.ts'
 import type { BuiltinCall, Result } from '../types.ts'
 import { BreakSignal, ContinueSignal } from '../../control.ts'
-
-// Parse the optional numeric level of `break`/`continue`.
-export function loopLevels(args: readonly string[]): number {
-  const first = args[0]
-  if (first !== undefined && /^\d+$/.test(first) && parseInt(first, 10) > 0) {
-    return parseInt(first, 10)
-  }
-  return 1
-}
 
 /** `true`: succeed and print nothing. */
 export function handleTrue(): Result {
@@ -46,65 +38,97 @@ export function handleFalse(): Result {
   return [null, new IOResult({ exitCode: 1 }), new ExecutionNode({ command: 'false', exitCode: 1 })]
 }
 
-/** Return from a function or sourced script, with bash's checks. */
+/**
+ * Return from a function or sourced script, with bash's checks. bash reads
+ * the status before it looks for a function to leave, so a bad one is
+ * reported even where `return` then refuses; a pushed frame (a function's or
+ * a sourced file's) is what returns.
+ */
 export function handleReturn(
   args: readonly string[],
   session: SessionState,
   callStack: CallStack | null = null,
 ): Result {
-  const inFunction = callStack !== null && callStack.depth > 1
-  if (!inFunction && session.sourceDepth === 0) {
-    // bash prints the diagnostic, sets $? to 2, and carries on with
-    // the rest of the line.
-    const err = new TextEncoder().encode(
-      "return: can only `return' from a function or sourced script\n",
-    )
+  const words = numericOperands(args)
+  const first = words[0]
+  let status = session.lastExitCode
+  let err: Uint8Array = new Uint8Array()
+  if (first !== undefined && !isCountWord(first)) {
+    err = builtinError('return', `${first}: numeric argument required`)
+    status = 2
+  } else if (words.length > 1) {
+    // bash abandons everything still to run, as `exit 1 2` does.
+    throw new ExitSignal(1, builtinError('return', 'too many arguments'))
+  } else if (first !== undefined) {
+    status = statusOf(first)
+  }
+  if (callStack === null || callStack.depth <= 1) {
+    // bash prints the diagnostic, sets $? to 2, and carries on with the
+    // rest of the line.
+    err = concat([
+      err,
+      builtinError('return', "can only `return' from a function or sourced script"),
+    ])
     return [
       null,
       new IOResult({ exitCode: 2, stderr: err }),
       new ExecutionNode({ command: 'return', exitCode: 2, stderr: err }),
     ]
   }
-  const first = args[0]
-  if (first !== undefined && !isCountWord(first)) {
-    // bash prints the error and the function returns 2.
-    throw new ReturnSignal(
-      2,
-      new TextEncoder().encode(`return: ${first}: numeric argument required\n`),
-    )
-  }
-  if (args.length > 1) {
-    const err = new TextEncoder().encode('return: too many arguments\n')
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: 'return', exitCode: 1, stderr: err }),
-    ]
-  }
-  // A bare return propagates the status of the last command executed.
-  throw new ReturnSignal(
-    first !== undefined ? ((Number(first) % 256) + 256) % 256 : session.lastExitCode,
-  )
+  throw new ReturnSignal(status, err)
 }
 
 /** Exit the shell, with bash's argument checks. */
 export function handleExit(args: readonly string[], session: SessionState): Result {
-  const first = args[0]
+  const words = numericOperands(args)
+  const first = words[0]
   if (first !== undefined && !isCountWord(first)) {
     // bash exits with 2 after the diagnostic.
-    throw new ExitSignal(2, new TextEncoder().encode(`exit: ${first}: numeric argument required\n`))
+    throw new ExitSignal(2, builtinError('exit', `${first}: numeric argument required`))
   }
-  if (args.length > 1) {
-    // bash refuses to exit and the command fails with 1.
-    const err = new TextEncoder().encode('exit: too many arguments\n')
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: 'exit', exitCode: 1, stderr: err }),
-    ]
+  if (words.length > 1) {
+    // bash abandons everything still to run, and exits nowhere.
+    throw new ExitSignal(1, builtinError('exit', 'too many arguments'))
   }
-  const code = first !== undefined ? Number(first) : session.lastExitCode
-  throw new ExitSignal(((code % 256) + 256) % 256)
+  throw new ExitSignal(first !== undefined ? statusOf(first) : session.lastExitCode % 256)
+}
+
+/**
+ * `break` or `continue` as bash 5.2 reads its count. The loops are the
+ * current frame's: a function starts outside its caller's, and so does a
+ * `( )` or `&` child. Outside every loop the builtin only complains; a count
+ * past the loops is the loops; a count below 1 ends them all, `continue`
+ * included, and fails. A word that is no number throws to the top level with
+ * 128 over `$?`, and a second word abandons everything still to run.
+ * Mirrors Python's leave_loops.
+ */
+function leaveLoops(
+  name: 'break' | 'continue',
+  args: readonly string[],
+  session: SessionState,
+  callStack: CallStack | null,
+): Result {
+  const loops = callStack?.current.loopLevel ?? 0
+  if (loops === 0) {
+    const err = builtinError(name, "only meaningful in a `for', `while', or `until' loop")
+    return [null, new IOResult({ stderr: err }), new ExecutionNode({ command: name, stderr: err })]
+  }
+  const words = numericOperands(args)
+  const first = words[0]
+  if (first !== undefined && !isCountWord(first)) {
+    throw new ExitSignal(
+      session.lastExitCode | 128,
+      builtinError(name, `${first}: numeric argument required`),
+    )
+  }
+  if (words.length > 1) throw new ExitSignal(1, builtinError(name, 'too many arguments'))
+  const count = first !== undefined ? BigInt(first.trim()) : 1n
+  if (count <= 0n) {
+    const err = builtinError(name, `${first ?? ''}: loop count out of range`)
+    throw new BreakSignal(null, new IOResult({ exitCode: 1, stderr: err }), loops)
+  }
+  const Signal = name === 'break' ? BreakSignal : ContinueSignal
+  throw new Signal(null, new IOResult(), count > BigInt(loops) ? loops : Number(count))
 }
 
 /** The `true` arm. */
@@ -134,10 +158,10 @@ export function exitBuiltin(call: BuiltinCall): Promise<Result> {
 
 /** The `break` arm: unwinds the enclosing loops by throwing. */
 export function breakBuiltin(call: BuiltinCall): Promise<Result> {
-  throw new BreakSignal(null, new IOResult(), loopLevels([...call.argv.args]))
+  return Promise.resolve(leaveLoops('break', [...call.argv.args], call.session, call.callStack))
 }
 
 /** The `continue` arm: unwinds to the next iteration by throwing. */
 export function continueBuiltin(call: BuiltinCall): Promise<Result> {
-  throw new ContinueSignal(null, new IOResult(), loopLevels([...call.argv.args]))
+  return Promise.resolve(leaveLoops('continue', [...call.argv.args], call.session, call.callStack))
 }

@@ -44,7 +44,7 @@ from mirage.workspace.abort import (
     StatusWriter,
     set_line_writer,
 )
-from mirage.workspace.executor.control import UNWINDING
+from mirage.workspace.executor.control import UNWINDING, ended
 from mirage.workspace.executor.statement import (
     StatusSnapshot,
     record_status,
@@ -218,6 +218,12 @@ async def recurse(
                 handed=inner,
                 **opts,
             )
+        except UNWINDING as sig:
+            # A substitution runs on a copy of the caller's frames, and
+            # it is a child shell: whatever unwinds out of it ends it.
+            if saved is None:
+                raise
+            io = ended(sig)
         finally:
             if saved is not None:
                 session.terminal_output = terminal_output

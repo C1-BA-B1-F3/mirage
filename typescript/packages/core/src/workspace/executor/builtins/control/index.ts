@@ -12,11 +12,4 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export {
-  handleColon,
-  handleExit,
-  handleFalse,
-  handleReturn,
-  handleTrue,
-  loopLevels,
-} from './control.ts'
+export { handleColon, handleExit, handleFalse, handleReturn, handleTrue } from './control.ts'

@@ -65,6 +65,12 @@ class ExitSignal(Exception):
             reports instead of ``exit_code``. GNU bash exits 127 on a
             fatal expansion error but a subshell wrapping one returns 1;
             ``exit N`` uses N in both positions (the default).
+
+    ``expanding`` is the id of the command whose own words were being
+    expanded when it was raised. bash expands a simple command's words
+    before it applies the command's redirects, so that diagnostic goes
+    around them; any other goes through the redirects it was written
+    under.
     """
 
     def __init__(
@@ -80,6 +86,24 @@ class ExitSignal(Exception):
         self.contained_code = (
             contained_code if contained_code is not None else exit_code
         )
+        self.expanding: int | None = None
+
+
+class DiscardSignal(ExitSignal):
+    """An error that discards the rest of the line: bash's ``DISCARD``.
+
+    A bad substitution, an arithmetic or assignment error, a write the
+    shell refuses: the command never runs, and neither do the statements
+    after it on its line, but the next line does, with ``$?`` at 1. The
+    line loop of a shell, of ``eval`` and of ``source`` resumes there; a
+    child shell ends on it with status 1, and so does ``set -e``.
+
+    Args:
+        stderr (bytes): the diagnostic, in the shell's voice.
+    """
+
+    def __init__(self, stderr: bytes = b"") -> None:
+        super().__init__(1, stderr=stderr, contained_code=1)
 
 
 class UnboundVariable(ExitSignal):
@@ -102,21 +126,20 @@ class UnboundVariable(ExitSignal):
         )
 
 
-class BadSubstitution(ExitSignal):
+class BadSubstitution(DiscardSignal):
     """A ``${...}`` bash cannot read, found as its word expands.
 
     bash names the text of the expansion it was running: the whole word,
     a double-quoted part's inside, an operator's word, an arithmetic
     expression, a heredoc's body. Each level the error leaves renames it
-    (``within``) until one of those fixes the name. Fatal with status 1,
-    as ``$((1/0))`` is, and contained the same way.
+    (``within``) until one of those fixes the name.
 
     Args:
         text (str): the expansion as written.
     """
 
     def __init__(self, text: str) -> None:
-        super().__init__(1, contained_code=1)
+        super().__init__()
         self.fixed = False
         self.within(text)
 

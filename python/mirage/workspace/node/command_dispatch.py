@@ -164,18 +164,20 @@ async def execute_command(
         head_node = parts[0]
         head = get_text(head_node)
         mark = (session._parse_current, node.start_point[0])
-        source = get_text(node)
+        source = node.text or b""
         base = node.start_byte
-        rest = source[head_node.end_byte - base :]
+        rest = source[head_node.end_byte - base :].decode()
         rewrite = alias_command_text(session, head, rest, mark)
         if rewrite is not None:
-            rewritten, own, names = rewrite
-            start = head_node.start_byte - base
-            line = source[:start] + rewritten
+            rewritten, texts = rewrite
+            at = head_node.start_byte - base
+            line = source[:at].decode() + rewritten
             ast = parse(line)
-            offending = find_syntax_error(
-                ast, expanding_aliases(session), (names, start + own)
-            )
+            own: dict[str, tuple[int, int]] = {}
+            for alias, text in texts:
+                own[alias] = (at, at + len(text.encode()))
+                at = own[alias][1]
+            offending = find_syntax_error(ast, expanding_aliases(session), own)
             if offending is not None:
                 io = syntax_error_result(offending, ast)
                 bad = io.stderr if isinstance(io.stderr, bytes) else b""

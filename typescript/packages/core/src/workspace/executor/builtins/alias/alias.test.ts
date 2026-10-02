@@ -22,19 +22,32 @@ import { getTestParser, stdoutStr } from '../../../fixtures/workspace_fixture.ts
 import { Workspace } from '../../../workspace/workspace.ts'
 
 describe('alias', () => {
-  // bash tries an alias before a reserved word where a command starts, so
-  // with expand_aliases on, an alias named `fi` is a command; in its own
-  // text, which it never expands again, `fi` is the reserved word.
+  // Pinned against bash 5.2.37: an alias is tried before a reserved word where
+  // a command starts, but inside its own text, which it never expands again,
+  // its name is the reserved word.
   it.each([
-    ['echo F', 'F\n', 0],
-    ['echo F; fi', '', 2],
-  ])('runs an alias fi=%j spelled as a reserved word', async (value, out, code) => {
+    ["fi='echo F'", 'fi', 'F\n', 0],
+    ["fi='echo F; fi'", 'fi', '', 2],
+    ["fi='echo ☕; fi'", 'fi', '', 2],
+    ["c='echo C; fi ' fi='echo F'", 'c fi', 'C\nF echo F\n', 0],
+    ["c='echo C; ' fi='echo F; fi'", 'c fi', '', 2],
+  ])('runs alias %s as %j spelled as a reserved word', async (aliases, line, out, code) => {
     const ws = new Workspace(
       { '/data': new RAMVFS() },
       { mode: MountMode.WRITE, shellParser: await getTestParser() },
     )
-    await ws.shell(`shopt -s expand_aliases; alias fi='${value}'`)
-    const io = await ws.shell('fi')
+    await ws.shell(`shopt -s expand_aliases; alias ${aliases}`)
+    const io = await ws.shell(line)
     expect([stdoutStr(io), io.exitCode]).toEqual([out, code])
+  })
+
+  it('keeps the arguments of an alias after a non-ASCII assignment', async () => {
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    await ws.shell("shopt -s expand_aliases; alias e='echo E'")
+    const io = await ws.shell('X=☕ e arg')
+    expect([stdoutStr(io), io.exitCode]).toEqual(['E arg\n', 0])
   })
 })

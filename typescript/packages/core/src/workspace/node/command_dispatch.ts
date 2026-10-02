@@ -175,14 +175,16 @@ export async function executeCommand(
     const rest = source.slice((headNode.endIndex ?? 0) - base)
     const rewrite = aliasCommandText(session, head, rest, mark)
     if (rewrite !== null) {
-      const [rewritten, own, names] = rewrite
-      const start = (headNode.startIndex ?? 0) - base
-      const line = source.slice(0, start) + rewritten
+      const [rewritten, texts] = rewrite
+      let at = (headNode.startIndex ?? 0) - base
+      const line = source.slice(0, at) + rewritten
       const ast = reparse(line)
-      const offending = findSyntaxError(ast, reparse, expandingAliases(session), [
-        names,
-        start + own,
-      ])
+      const own = new Map<string, readonly [number, number]>()
+      for (const [alias, text] of texts) {
+        own.set(alias, [at, at + text.length])
+        at += text.length
+      }
+      const offending = findSyntaxError(ast, reparse, expandingAliases(session), own)
       if (offending !== null) {
         const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))
         return [

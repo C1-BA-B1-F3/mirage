@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from itertools import chain
 
 from mirage.io import IOResult
@@ -187,7 +187,7 @@ _RESERVED_CLOSERS = frozenset(
 def _stray_reserved_words(
     node: TSNodeLike,
     aliases: frozenset[str],
-    own: tuple[frozenset[str], int],
+    own: Mapping[str, tuple[int, int]],
 ) -> Iterator[tuple[int, str]]:
     """Each reserved word a command starts with, where none may stand.
 
@@ -201,15 +201,14 @@ def _stray_reserved_words(
         node (TSNodeLike): root node from parse().
         aliases (frozenset[str]): alias names the shell would expand where
             a command starts, which bash tries before reserved words.
-        own (tuple[frozenset[str], int]): aliases whose own text the line
-            opens with, and the offset where that text ends; inside it a
-            word spelled like one of them is reserved, since an alias
+        own (Mapping[str, tuple[int, int]]): each alias whose own text
+            the line opens with, to the span that text covers; inside it
+            a word spelled like the alias is reserved, since an alias
             never expands within its own text.
 
     Yields:
         tuple[int, str]: the word's start byte and text.
     """
-    held, end = own
     stack = [(node, aliases)]
     while stack:
         current, names = stack.pop()
@@ -223,10 +222,14 @@ def _stray_reserved_words(
             continue
         name = current.children[0]
         text = (name.text or b"").decode(errors="replace")
+        span = own.get(text)
         if (
             name.type == "command_name"
             and text in _RESERVED_CLOSERS
-            and (text not in names or (text in held and name.start_byte < end))
+            and (
+                text not in names
+                or (span is not None and span[0] <= name.start_byte < span[1])
+            )
         ):
             yield name.start_byte, text
 
@@ -278,7 +281,7 @@ def _missing_quote(node: TSNodeLike) -> str | None:
 def find_syntax_error(
     node: TSNodeLike,
     aliases: frozenset[str] = frozenset(),
-    own: tuple[frozenset[str], int] = (frozenset(), 0),
+    own: Mapping[str, tuple[int, int]] | None = None,
 ) -> str | None:
     """Locate structural errors and missing tokens throughout a parsed AST.
 
@@ -289,9 +292,9 @@ def find_syntax_error(
         node (TSNodeLike): root node from parse().
         aliases (frozenset[str]): alias names the shell would expand where
             a command starts; a reserved word among them is a command.
-        own (tuple[frozenset[str], int]): aliases whose own text the line
-            opens with, and the offset where that text ends, inside which
-            those names stay reserved.
+        own (Mapping[str, tuple[int, int]] | None): each alias whose own
+            text the line opens with, to the byte span that text covers,
+            inside which its name stays reserved.
 
     Returns:
         str | None: text of the offending region, or None if the AST is clean.
@@ -321,7 +324,7 @@ def find_syntax_error(
         chain(
             _stray_case_terminators(node),
             _empty_compounds(node),
-            _stray_reserved_words(node, aliases, own),
+            _stray_reserved_words(node, aliases, own or {}),
         ),
         default=None,
     )

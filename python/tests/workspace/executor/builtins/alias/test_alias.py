@@ -120,13 +120,28 @@ async def test_a_value_holding_a_quote_prints_re_readably():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "value, result", [("echo F", ("F\n", 0)), ("echo F; fi", ("", 2))]
+    "aliases, line, result",
+    [
+        ("fi='echo F'", "fi", ("F\n", 0)),
+        ("fi='echo F; fi'", "fi", ("", 2)),
+        ("fi='echo ☕; fi'", "fi", ("", 2)),
+        ("c='echo C; fi ' fi='echo F'", "c fi", ("C\nF echo F\n", 0)),
+        ("c='echo C; ' fi='echo F; fi'", "c fi", ("", 2)),
+    ],
 )
-async def test_an_alias_spelled_as_a_reserved_word_runs(value, result):
-    # bash tries an alias before a reserved word where a command starts,
-    # so with expand_aliases on, an alias named `fi` is a command; in its
-    # own text, which it never expands again, `fi` is the reserved word.
+async def test_an_alias_spelled_as_a_reserved_word_runs(aliases, line, result):
+    # Pinned against bash 5.2.37: an alias is tried before a reserved word
+    # where a command starts, but inside its own text, which it never
+    # expands again, its name is the reserved word.
     ws = _ws()
-    await _run(ws, f"shopt -s expand_aliases; alias fi='{value}'")
-    assert await _run(ws, "fi") == result
+    await _run(ws, f"shopt -s expand_aliases; alias {aliases}")
+    assert await _run(ws, line) == result
+    await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_an_alias_after_a_non_ascii_assignment_keeps_its_arguments():
+    ws = _ws()
+    await _run(ws, "shopt -s expand_aliases; alias e='echo E'")
+    assert await _run(ws, "X=☕ e arg") == ("E arg\n", 0)
     await ws.close()

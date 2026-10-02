@@ -300,10 +300,16 @@ def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command(
     assert find_syntax_error(parse(command), frozenset({alias})) == word
 
 
-@pytest.mark.parametrize("end, word", [(10, "fi"), (7, None)])
-def test_an_alias_name_is_reserved_inside_its_own_text(end, word):
-    # `echo F; fi` is all alias text for `alias fi='echo F; fi'` (end 10);
-    # for `alias fi='echo F;'` used as `fi fi`, the last `fi` is the
-    # command's own word (end 7), which bash 5.2.37 expands again.
-    fi = frozenset({"fi"})
-    assert find_syntax_error(parse("echo F; fi"), fi, (fi, end)) == word
+@pytest.mark.parametrize(
+    "line, own, word",
+    [
+        ("echo F; fi", {"fi": (0, 10)}, "fi"),
+        ("echo F; fi", {"fi": (0, 7)}, None),
+        ("echo C; fi echo F", {"c": (0, 11), "fi": (11, 17)}, None),
+        ("echo C; echo F; fi", {"c": (0, 8), "fi": (8, 18)}, "fi"),
+    ],
+)
+def test_an_alias_name_is_reserved_inside_its_own_text(line, own, word):
+    # Pinned against bash 5.2.37: a name stays reserved only inside the
+    # text its alias put there, a trailing blank's chained one included.
+    assert find_syntax_error(parse(line), frozenset(own), own) == word

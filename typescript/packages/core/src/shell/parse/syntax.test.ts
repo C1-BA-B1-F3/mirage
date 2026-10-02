@@ -135,15 +135,31 @@ describe('a reserved word where a command starts', () => {
     expect(findSyntaxError(parser.parse(cmd), parse, new Set([alias]))).toBe(word)
   })
 
-  // `echo F; fi` is all alias text for `alias fi='echo F; fi'` (end 10); for
-  // `alias fi='echo F;'` used as `fi fi`, the last `fi` is the command's own
-  // word (end 7), which bash 5.2.37 expands again.
-  it.each([
-    [10, 'fi'],
-    [7, null],
-  ])('reads fi in alias text ending at %i as %j', (end, word) => {
-    const fi = new Set(['fi'])
-    expect(findSyntaxError(parser.parse('echo F; fi'), undefined, fi, [fi, end])).toBe(word)
+  // Pinned against bash 5.2.37: a name stays reserved only inside the text its
+  // alias put there, a trailing blank's chained one included.
+  const OWN: [string, [string, number, number][], string | null][] = [
+    ['echo F; fi', [['fi', 0, 10]], 'fi'],
+    ['echo F; fi', [['fi', 0, 7]], null],
+    [
+      'echo C; fi echo F',
+      [
+        ['c', 0, 11],
+        ['fi', 11, 17],
+      ],
+      null,
+    ],
+    [
+      'echo C; echo F; fi',
+      [
+        ['c', 0, 8],
+        ['fi', 8, 18],
+      ],
+      'fi',
+    ],
+  ]
+  it.each(OWN)('reads %j with alias text %j as %j', (line, spans, word) => {
+    const own = new Map(spans.map(([name, start, end]) => [name, [start, end] as const]))
+    expect(findSyntaxError(parser.parse(line), undefined, new Set(own.keys()), own)).toBe(word)
   })
 })
 

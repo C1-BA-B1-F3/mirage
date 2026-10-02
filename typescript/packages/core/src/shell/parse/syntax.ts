@@ -181,17 +181,16 @@ const RESERVED_CLOSERS = new Set([
  * bash 5.2 refuses the line at `fi`, as it does `done`, `then` and the rest
  * when they stand where a command starts. Inside `$(...)` and a process
  * substitution, bash 5.2 takes such a word as reserved even when an alias
- * spells it. `own` names the aliases whose own text the line opens with and
- * the offset where that text ends; inside it a word spelled like one of them
- * is reserved, since an alias never expands within its own text. Mirrors
+ * spells it. `own` maps each alias whose own text the line opens with to
+ * the span that text covers; inside it a word spelled like the alias is
+ * reserved, since an alias never expands within its own text. Mirrors
  * Python's _stray_reserved_words.
  */
 function* strayReservedWords(
   node: TSNodeLike,
   aliases: ReadonlySet<string>,
-  own: readonly [ReadonlySet<string>, number],
+  own: ReadonlyMap<string, readonly [number, number]>,
 ): Generator<[number, string]> {
-  const [held, end] = own
   const stack: [TSNodeLike, ReadonlySet<string>][] = [[node, aliases]]
   for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
     const [current, inherited] = top
@@ -204,11 +203,13 @@ function* strayReservedWords(
     if (current.type !== 'command') continue
     const name = current.children[0]
     if (name?.type !== 'command_name') continue
+    const start = name.startIndex ?? 0
+    const span = own.get(name.text)
     if (
       RESERVED_CLOSERS.has(name.text) &&
-      (!names.has(name.text) || (held.has(name.text) && (name.startIndex ?? 0) < end))
+      (!names.has(name.text) || (span !== undefined && span[0] <= start && start < span[1]))
     ) {
-      yield [name.startIndex ?? 0, name.text]
+      yield [start, name.text]
     }
   }
 }
@@ -267,7 +268,7 @@ export function findSyntaxError(
   node: TSNodeLike,
   parse?: (command: string) => TSNodeLike,
   aliases: ReadonlySet<string> = new Set(),
-  own: readonly [ReadonlySet<string>, number] = [new Set(), 0],
+  own: ReadonlyMap<string, readonly [number, number]> = new Map(),
 ): string | null {
   // Expansion and the `[` builtin own their argument grammar.
   if (node.type === 'expansion') {

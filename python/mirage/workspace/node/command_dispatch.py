@@ -42,7 +42,12 @@ from mirage.shell.helpers import (
     get_text,
     split_env_prefix,
 )
-from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
+from mirage.shell.parse import (
+    find_syntax_error,
+    parse,
+    source_offsets,
+    syntax_error_result,
+)
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import ProcessSubDirection
 from mirage.shell.variable import TempEnv, VarAttr
@@ -69,7 +74,10 @@ from mirage.workspace.executor.builtins import (
     settle_moves,
     strip_link_operands,
 )
-from mirage.workspace.executor.builtins.alias import alias_command_text
+from mirage.workspace.executor.builtins.alias import (
+    alias_command_text,
+    expanding_aliases,
+)
 from mirage.workspace.executor.builtins.table import BUILTINS
 from mirage.workspace.executor.builtins.types import BuiltinCall
 from mirage.workspace.executor.command import handle_command
@@ -161,14 +169,22 @@ async def execute_command(
         head_node = parts[0]
         head = get_text(head_node)
         mark = (session._parse_current, node.start_point[0])
-        source = get_text(node)
+        source = node.text or b""
         base = node.start_byte
-        rest = source[head_node.end_byte - base :]
-        rewritten = alias_command_text(session, head, rest, mark)
-        if rewritten is not None:
-            line = source[: head_node.start_byte - base] + rewritten
+        rest = source[head_node.end_byte - base :].decode()
+        rewrite = alias_command_text(session, head, rest, mark)
+        if rewrite is not None:
+            rewritten, texts = rewrite
+            at = head_node.start_byte - base
+            line = source[:at].decode() + rewritten
             ast = parse(line)
-            offending = find_syntax_error(ast)
+            own: dict[str, tuple[int, int]] = {}
+            for alias, text in texts:
+                own[alias] = (at, at + len(text.encode()))
+                at = own[alias][1]
+            offending = find_syntax_error(
+                ast, expanding_aliases(session), own, source_offsets(line, ast)
+            )
             if offending is not None:
                 io = syntax_error_result(offending, ast)
                 bad = io.stderr if isinstance(io.stderr, bytes) else b""

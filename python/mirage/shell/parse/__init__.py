@@ -26,6 +26,7 @@ from mirage.shell.parse.parse import (
     TS_PARSER,
     join_continuations,
     parse,
+    source_offsets,
 )
 from mirage.shell.parse.syntax import (
     find_syntax_error,
@@ -49,5 +50,6 @@ __all__ = [
     "parse",
     "referenced_names",
     "join_continuations",
+    "source_offsets",
     "syntax_error_result",
 ]

@@ -58,6 +58,7 @@ export async function handleReadlink(
   const last = typed.match(/[efm]/g)?.pop()
   const mode = last === undefined ? null : last === 'f' ? '' : last
   const follow = (v: string): string => namespace.follow(v)
+  const readlink = (v: string): string | null => namespace.readlink(v)
   const lines: string[] = []
   let exitCode = 0
   for (const op of operands) {
@@ -72,7 +73,7 @@ export async function handleReadlink(
       if (mode !== null) {
         if (namespace.isLink(absOp)) await dispatch('readlink', PathSpec.fromStrPath(absOp))
         lines.push(
-          await canonicalize(spec.rawPath, session.cwd, mode, false, follow, doorStat(dispatch)),
+          await canonicalize(spec.rawPath, session.cwd, mode, false, readlink, doorStat(dispatch)),
         )
         continue
       }

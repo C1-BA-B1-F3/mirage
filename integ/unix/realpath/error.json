@@ -911,11 +911,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/review_links/x/y && printf x > /data/review_links/x/y/file && ln -sfn /data/review_links/x/y /data/review_links/far && realpath -s /data/review_links/far",
+      "command": "mkdir -p /data/review_links/x/y && printf x > /data/review_links/x/y/file && ln -sfn /data/review_links/x/y /data/review_links/far && realpath -s /data/review_links/far && ln -sfn /data/review_links/none /data/review_links/gone && realpath -s /data/review_links/gone && realpath -se /data/review_links/gone",
       "expect": {
-        "exit": 0,
-        "stdout": "/data/review_links/far\n",
-        "stderr": ""
+        "exit": 1,
+        "stdout": "/data/review_links/far\n/data/review_links/gone\n",
+        "stderr": "realpath: /data/review_links/gone: No such file or directory\n"
       }
     },
     {

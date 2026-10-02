@@ -27,7 +27,7 @@ import {
   spellMatch,
   unmarkGlobs,
 } from '../../utils/glob_walk.ts'
-import { CycleError, parent, posixNormpath } from '../../utils/path.ts'
+import { CycleError, parent } from '../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { ExitSignal } from '../../shell/errors.ts'
@@ -276,11 +276,11 @@ async function descend(
 // non-final segment (`s*/x.txt`) cannot resolve in one listing, so each
 // segment is matched against its (already expanded) parents with the owning
 // backend's own single-level glob, and an intermediate match that cannot be
-// listed is skipped, as in bash's directories-only descent. A head that
-// walks a dot is walked the way the kernel walks it, a link before its
-// `..`. A `.` or `..` after a glob applies to each match that is a
-// directory, `..` climbing from where a link leads, which is bash's
-// existence test of `match/..`. Under `globstar` a `**` segment matches
+// listed is skipped, as in bash's directories-only descent. The walk starts
+// at the first glob or dot segment: a `.` or `..` applies to each parent
+// that is a directory, `..` climbing from where a link leads, which is the
+// kernel's walk of `name/..` that bash's opendir makes, so a missing or
+// plain-file name in front of one matches nothing. Under `globstar` a `**` segment matches
 // zero or more directory levels: the parent itself (spelled with a
 // trailing slash when the word has a fixed head, `d/**` -> `d/`, and left
 // out for a bare `**`) plus every descendant. The spelling is carried level
@@ -294,20 +294,14 @@ async function walk(
   globstar: boolean,
 ): Promise<PathSpec[]> {
   const typed = stripSlash(item.dotted ?? item.virtual).split('/')
-  const first = typed.findIndex((seg) => hasGlobChars(seg))
+  const first = typed.findIndex((seg) => hasGlobChars(seg) || seg === '.' || seg === '..')
   const raw = rstripSlash(unmarkGlobs(item.rawPath)).split('/')
   let spelledHead = raw.slice(0, raw.length - (typed.length - first)).join('/')
   if (item.rawPath.startsWith('/') && spelledHead === '') spelledHead = '/'
-  // The head above the first glob segment is a real directory, so a glob
-  // character quoted inside it is part of the name to list.
-  let head = unmarkGlobs('/' + typed.slice(0, first).join('/'))
-  try {
-    if (links !== null && item.dotted !== null) head = links.follow(head)
-  } catch (err) {
-    if (err instanceof CycleError) return []
-    throw err
-  }
-  let level: [string, string, boolean][] = [[posixNormpath(head), spelledHead, false]]
+  // The head above the first glob or dot segment is a real directory, so a
+  // glob character quoted inside it is part of the name to list.
+  const head = unmarkGlobs('/' + typed.slice(0, first).join('/'))
+  let level: [string, string, boolean][] = [[head, spelledHead, false]]
   for (const seg of typed.slice(first)) {
     const gathered: [string, string, boolean][] = []
     for (const [dir, spelled] of level) {
@@ -510,12 +504,28 @@ export async function resolveGlobs(
         if (resolved.length === 0) {
           // bash's three answers to a zero-match glob: the literal word
           // (default), nothing at all under nullglob, and a fatal
-          // expansion error under failglob.
+          // expansion error under failglob. The literal is resolved, or the
+          // command's backend would glob it again over the simplified path
+          // (`missing/../*` as `*`); the pattern stays, so a push-down still
+          // reads it as no entity name.
           if (opts.failglob) {
             const word = unmarkGlobs(typed.rawPath)
             throw new ExitSignal(1, new TextEncoder().encode(`bash: no match: ${word}\n`), null, 1)
           }
-          if (!opts.nullglob) result.push(typed)
+          if (!opts.nullglob) {
+            result.push(
+              new PathSpec({
+                virtual: item.virtual,
+                directory: item.directory,
+                vfsPath: item.vfsPath,
+                rawPath: item.rawPath,
+                dotted: item.dotted,
+                walkError: item.walkError,
+                pattern: item.pattern,
+                resolved: true,
+              }),
+            )
+          }
         } else {
           for (const p of resolved) {
             const spelled = matchRaw(withPrefix, p)

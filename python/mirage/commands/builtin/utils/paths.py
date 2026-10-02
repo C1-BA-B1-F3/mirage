@@ -18,7 +18,7 @@ from collections.abc import Callable
 
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
-from mirage.types import FileStat, FileType, PathSpec, StatFn
+from mirage.types import LINK_TARGET_KEY, FileStat, FileType, PathSpec, StatFn
 from mirage.utils.errors import (
     DotWalkError,
     DotWalkLoop,
@@ -238,6 +238,23 @@ def link_follow(links: LinkView | None) -> Callable[[str], str] | None:
         links (LinkView | None): the namespace's symlink facts.
     """
     return links.resolve if links is not None else None
+
+
+def link_target(links: LinkView | None) -> Callable[[str], str | None] | None:
+    """One link's target, the hop a canonicalizing walk reads, None
+    while no link exists.
+
+    Args:
+        links (LinkView | None): the namespace's symlink facts.
+    """
+    if links is None:
+        return None
+
+    def target(path: str) -> str | None:
+        row = links.stat_at(path)
+        return None if row is None else str(row.extra[LINK_TARGET_KEY])
+
+    return target
 
 
 def _spells(

@@ -81,7 +81,7 @@ async def handle_readlink(
                         session.cwd,
                         mode,
                         False,
-                        namespace.follow,
+                        namespace.readlink,
                         door_stat(dispatch),
                     )
                 )

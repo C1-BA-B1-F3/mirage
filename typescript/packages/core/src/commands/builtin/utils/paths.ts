@@ -15,7 +15,7 @@
 import type { LinkView, StatPath } from '../../../ops/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import type { FileStat } from '../../../types.ts'
-import { FileType, PathSpec, type StatFn } from '../../../types.ts'
+import { FileType, LINK_TARGET_KEY, PathSpec, type StatFn } from '../../../types.ts'
 import { dotWalkError, enoent, isMissingPath, type DotWalkError } from '../../../utils/errors.ts'
 import { rekey } from '../../../utils/key_prefix.ts'
 import {
@@ -131,6 +131,18 @@ export async function absentDestStrerror(stat: StatFn, target: PathSpec): Promis
 // Mirrors Python's link_follow.
 export function linkFollow(links: LinkView | null | undefined): ((path: string) => string) | null {
   return links === null || links === undefined ? null : (path: string) => links.resolve(path)
+}
+
+// One link's target, the hop a canonicalizing walk reads, null while no
+// link exists. Mirrors Python's link_target.
+export function linkTarget(
+  links: LinkView | null | undefined,
+): ((path: string) => string | null) | null {
+  if (links === null || links === undefined) return null
+  return (path: string) => {
+    const row = links.statAt(path)
+    return row === null ? null : (row.extra[LINK_TARGET_KEY] as string)
+  }
 }
 
 // Whether `virtual` is the path a dotted spelling names: the textual

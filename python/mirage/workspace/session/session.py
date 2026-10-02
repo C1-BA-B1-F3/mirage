@@ -280,7 +280,9 @@ class SessionState:
     # first, a sourced file as `source` (`CallStack.function_names`).
     # Written where a frame is pushed and popped, and answered by the
     # arrays view before the store, so an assignment to it is ignored.
-    function_names: tuple[str, ...] = ()
+    # None once `unset FUNCNAME` has made it an ordinary name, as bash's
+    # unset does for the rest of the shell.
+    function_names: tuple[str, ...] | None = ()
     # Which line stamped the two fields above, so a cancelled line puts
     # back only what it overwrote. Two `execute()` calls can share one
     # session, and a restore of a snapshot older than a concurrent

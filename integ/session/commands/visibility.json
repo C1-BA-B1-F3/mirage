@@ -49,7 +49,7 @@
       "expect": {
         "exit": 0,
         "stdout": "1\n1\n1\n",
-        "stderr": "type: sort: not found\n"
+        "stderr": "bash: type: sort: not found\n"
       }
     },
     {

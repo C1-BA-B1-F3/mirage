@@ -59,7 +59,7 @@ export async function executeShellFunction(
   const textArgs = restParts.map(wordText)
   cs.push(textArgs, cmdName)
   const outerNames = session.functionNames
-  session.functionNames = cs.functionNames()
+  if (outerNames !== null) session.functionNames = cs.functionNames()
   // One stack: a local shadows the whole record, so the caller's value
   // and attributes are saved and put back together.
   const savedLocals = new Map<string, ShellVar | null>()
@@ -126,7 +126,7 @@ export async function executeShellFunction(
     })
   } finally {
     cs.pop()
-    session.functionNames = outerNames
+    if (session.functionNames !== null) session.functionNames = outerNames
     restoreLocals(session, savedLocals)
     session.localFrames.pop()
     session.localVars = outerLocals

@@ -256,7 +256,7 @@ class _VisibleArrays(Mapping[str, ShellArray]):
             raise KeyError(name)
         if name == PIPESTATUS:
             return [str(code) for code in self._session.pipe_status]
-        if name == FUNCNAME:
+        if name == FUNCNAME and self._session.function_names is not None:
             return list(self._session.function_names)
         var = self._session.vars[name]
         if not isinstance(var.value, list):

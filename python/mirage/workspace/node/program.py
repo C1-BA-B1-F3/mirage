@@ -274,9 +274,10 @@ async def _run_program(
                 # treats as one, keeping what earlier statements wrote.
                 if sig.stdout:
                     all_stdout.append(sig.stdout)
-                looped = isinstance(sig, (BreakSignal, ContinueSignal))
-                code = sig.io.exit_code if looped else sig.exit_code
-                stderr = sig.io.stderr if looped else sig.stderr
+                if isinstance(sig, (BreakSignal, ContinueSignal)):
+                    code, stderr = sig.io.exit_code, sig.io.stderr
+                else:
+                    code, stderr = sig.exit_code, sig.stderr
                 merged_io = await merged_io.merge(
                     IOResult(exit_code=code, stderr=stderr or None)
                 )

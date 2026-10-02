@@ -61,7 +61,7 @@ import type { MountMode } from '../../types.ts'
 export interface ChildShellState {
   cwd: string
   logicalCwd: string | undefined
-  functionNames: readonly string[]
+  functionNames: readonly string[] | null
   vars: Record<string, ShellVar>
   functions: Record<string, unknown>
   readonlyFunctions: Set<string>
@@ -426,8 +426,10 @@ export class SessionState {
   // `${FUNCNAME[@]}`: the function frames on the call stack, innermost
   // first, a sourced file as `source` (`CallStack.functionNames`). Written
   // where a frame is pushed and popped, and answered by the arrays view
-  // before the store, so an assignment to it is ignored.
-  functionNames: readonly string[] = []
+  // before the store, so an assignment to it is ignored. Null once
+  // `unset FUNCNAME` has made it an ordinary name, as bash's unset does for
+  // the rest of the shell.
+  functionNames: readonly string[] | null = []
   // A pipeline's per-segment statuses, parked by `handlePipe` for the
   // statement boundary that closes it to claim. Null between them.
   pipeStatusPending: readonly number[] | null = null

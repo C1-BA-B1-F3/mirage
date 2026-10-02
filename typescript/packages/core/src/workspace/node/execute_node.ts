@@ -729,14 +729,23 @@ function isBareExec(command: TSNodeLike | null): boolean {
  * in the child and an error there fails that command alone: a subshell or a
  * program. A builtin, a function or another compound command is the shell's
  * own, which expands its redirects itself and discards the line on an
- * error. `command X` is X, and a name only an expansion spells is taken for
- * a program. Mirrors Python's _forks.
+ * error. `command -v` is the builtin itself; `command X` is X with functions
+ * masked; a name only an expansion spells is taken for a program. Mirrors
+ * Python's _forks.
  */
 function forks(command: TSNodeLike | null, session: SessionState): boolean {
   if (command?.type !== NT.COMMAND) return command?.type === NT.SUBSHELL
   let words = getParts(command).filter((part) => part.type !== NT.VARIABLE_ASSIGNMENT)
-  while (words.length > 0 && words[0] !== undefined && getText(words[0]) === 'command') {
+  let functions = true
+  while (words[0] !== undefined && getText(words[0]) === 'command') {
     words = words.slice(1)
+    functions = false
+    while (words[0] !== undefined && getText(words[0]).startsWith('-')) {
+      const option = getText(words[0])
+      words = words.slice(1)
+      if (option === '--') break
+      if (option.includes('v') || option.includes('V')) return false
+    }
   }
   let head = words[0]
   if (head === undefined) return false
@@ -744,7 +753,10 @@ function forks(command: TSNodeLike | null, session: SessionState): boolean {
     head = head.namedChildren[0]
   }
   const name = literalText(head)
-  return name === null || (!BASH_BUILTINS.has(name) && session.functions[name] === undefined)
+  return (
+    name === null ||
+    (!BASH_BUILTINS.has(name) && !(functions && session.functions[name] !== undefined))
+  )
 }
 
 export async function executeNode(

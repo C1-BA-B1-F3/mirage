@@ -49,19 +49,23 @@ export async function expandRedirects(
   forked = false,
 ): Promise<[Redirect[], TSNodeLike | null]> {
   const expanded: Redirect[] = []
-  for (const r of redirects) {
+  for (const [index, r] of redirects.entries()) {
     try {
       expanded.push(await expandRedirect(r, session, executeFn, registry, callStack, view))
     } catch (err) {
       if (!(err instanceof ExitSignal) || !forked) throw err
+      // The child performs no redirect after the first that fails; a
+      // pipeline the line attached to one of them still runs.
+      const later = redirects.slice(index).find((each) => each.pipeline != null)
       expanded.push(
         new Redirect({
           fd: r.fd,
           target: err,
           kind: RedirectKind.UNEXPANDED,
-          pipeline: r.pipeline,
+          pipeline: later?.pipeline ?? null,
         }),
       )
+      break
     }
   }
   let pipeNode: TSNodeLike | null = null

@@ -64,7 +64,7 @@ async def expand_redirects(
         pipeline node (or None).
     """
     expanded: list[Redirect] = []
-    for r in redirects:
+    for index, r in enumerate(redirects):
         try:
             expanded.append(
                 await _expand_redirect(
@@ -74,14 +74,24 @@ async def expand_redirects(
         except ExitSignal as exc:
             if not forked:
                 raise
+            # The child performs no redirect after the first that fails;
+            # a pipeline the line attached to one of them still runs.
             expanded.append(
                 Redirect(
                     fd=r.fd,
                     target=exc,
                     kind=RedirectKind.UNEXPANDED,
-                    pipeline=r.pipeline,
+                    pipeline=next(
+                        (
+                            later.pipeline
+                            for later in redirects[index:]
+                            if later.pipeline is not None
+                        ),
+                        None,
+                    ),
                 )
             )
+            break
     pipe_node = None
     for r in expanded:
         if r.pipeline is not None:

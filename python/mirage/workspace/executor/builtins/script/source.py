@@ -101,7 +101,8 @@ async def handle_source(
     cs = call_stack if call_stack is not None else CallStack()
     cs.push(args or list(positional_params(session, cs)), "source", True)
     outer_names = session.function_names
-    session.function_names = cs.function_names()
+    if outer_names is not None:
+        session.function_names = cs.function_names()
     try:
         io = await execute_fn(
             script,
@@ -118,7 +119,8 @@ async def handle_source(
         )
     finally:
         frame = cs.pop()
-        session.function_names = outer_names
+        if session.function_names is not None:
+            session.function_names = outer_names
         if not args:
             set_positional_params(session, cs, frame.positional)
     return (

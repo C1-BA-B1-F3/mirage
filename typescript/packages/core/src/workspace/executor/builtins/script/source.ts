@@ -66,7 +66,7 @@ export async function handleSource(
   const cs = callStack ?? new CallStack()
   cs.push(args.length > 0 ? args : [...positionalParams(session, cs)], 'source', true)
   const outerNames = session.functionNames
-  session.functionNames = cs.functionNames()
+  if (outerNames !== null) session.functionNames = cs.functionNames()
   let io: IOResult
   try {
     io = await executeFn(script, {
@@ -84,7 +84,7 @@ export async function handleSource(
     })
   } finally {
     const frame = cs.pop()
-    session.functionNames = outerNames
+    if (session.functionNames !== null) session.functionNames = outerNames
     if (args.length === 0) setPositionalParams(session, cs, frame.positional)
   }
   return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]

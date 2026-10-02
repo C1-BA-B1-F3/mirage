@@ -801,8 +801,9 @@ def _forks(command: Any, session: SessionState) -> bool:
     expand in the child and an error there fails that command alone: a
     subshell or a program. A builtin, a function or another compound
     command is the shell's own, which expands its redirects itself and
-    discards the line on an error. ``command X`` is X, and a name only
-    an expansion spells is taken for a program.
+    discards the line on an error. ``command -v`` is the builtin itself;
+    ``command X`` is X with functions masked; a name only an expansion
+    spells is taken for a program.
 
     Args:
         command (Any): the command under the redirect, None for none.
@@ -815,8 +816,15 @@ def _forks(command: Any, session: SessionState) -> bool:
         for part in get_parts(command)
         if part.type != NT.VARIABLE_ASSIGNMENT
     ]
+    functions = True
     while words and get_text(words[0]) == "command":
-        words = words[1:]
+        words, functions = words[1:], False
+        while words and get_text(words[0]).startswith("-"):
+            option = get_text(words.pop(0))
+            if option == "--":
+                break
+            if "v" in option or "V" in option:
+                return False
     if not words:
         return False
     head = words[0]
@@ -824,7 +832,8 @@ def _forks(command: Any, session: SessionState) -> bool:
         head = head.named_children[0]
     name = literal_text(head)
     return name is None or (
-        name not in BASH_BUILTINS and name not in session.functions
+        name not in BASH_BUILTINS
+        and not (functions and name in session.functions)
     )
 
 

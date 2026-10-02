@@ -207,7 +207,9 @@ export function visibleArrays(session: SessionState): Record<string, ShellArray>
   if (!varHidden(session.hiddenVars, PIPESTATUS)) {
     out[PIPESTATUS] = session.pipeStatus.map((code) => String(code))
   }
-  if (!varHidden(session.hiddenVars, FUNCNAME)) out[FUNCNAME] = [...session.functionNames]
+  if (session.functionNames !== null && !varHidden(session.hiddenVars, FUNCNAME)) {
+    out[FUNCNAME] = [...session.functionNames]
+  }
   return out
 }
 

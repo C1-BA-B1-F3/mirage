@@ -19,10 +19,9 @@ import os as _real_os
 import posixpath
 import time
 import types
-from collections.abc import Awaitable, Callable, Iterator
-from typing import Any, TypeVar, cast
+from collections.abc import Callable, Iterator
+from typing import Any, cast
 
-from mirage.bridge.sync import run_async_from_sync
 from mirage.errors import FsCondition
 from mirage.ops import Ops
 from mirage.runtime.python.host.constants import (
@@ -31,7 +30,7 @@ from mirage.runtime.python.host.constants import (
     XATTR_CREATE,
     XATTR_REPLACE,
 )
-from mirage.runtime.python.host.errors import numbered, refused
+from mirage.runtime.python.host.errors import refused
 from mirage.runtime.python.host.host_io import in_host_io
 from mirage.runtime.python.host.list import (
     MountDirEntry,
@@ -41,12 +40,11 @@ from mirage.runtime.python.host.list import (
     leaf,
 )
 from mirage.runtime.python.host.stat import stat_result
+from mirage.runtime.python.host.vfs import HostVFS
 from mirage.types import FileStat
 from mirage.utils.dates import iso_timestamp, timestamp_iso
 from mirage.utils.path import owner_prefix
 from mirage.utils.stat_view import LINK_MODE, content_size, is_dir, posix_mode
-
-T = TypeVar("T")
 
 
 def _spelled(path: Any) -> str | None:
@@ -94,7 +92,7 @@ class HostFs:
         self, ops: Ops, loop: asyncio.AbstractEventLoop | None
     ) -> None:
         self._ops = ops
-        self._loop = loop
+        self._door = HostVFS(ops, loop)
         # The host functions as they were when this router was built.
         # `patch_process` installs these wrappers onto the real os
         # module itself, so a wrapper that read `os.listdir` at call
@@ -111,15 +109,6 @@ class HostFs:
         # there; mirrors fuse/core.py.
         self._uid = _real_os.getuid() if hasattr(_real_os, "getuid") else 0
         self._gid = _real_os.getgid() if hasattr(_real_os, "getgid") else 0
-
-    def _run(self, coro: Awaitable[T]) -> T:
-        try:
-            return run_async_from_sync(coro, self._loop)
-        except OSError as exc:
-            renumbered = numbered(exc)
-            if renumbered is exc:
-                raise
-            raise renumbered from exc
 
     def _virtual(self, path: Any) -> str | None:
         """The mounted virtual path this argument names, else None.
@@ -212,7 +201,7 @@ class HostFs:
             virtual (str): the path to probe.
         """
         try:
-            return str(self._run(self._ops.readlink(virtual)))
+            return str(self._door.run(self._ops.readlink(virtual)))
         except OSError as exc:
             # EINVAL is the door's "there, but not a link". A missing
             # path raises ENOENT instead, exactly as readlink(2) does,
@@ -224,14 +213,14 @@ class HostFs:
 
     def _exists(self, virtual: str) -> bool:
         try:
-            self._run(self._ops.stat(virtual))
+            self._door.run(self._ops.stat(virtual))
             return True
         except (OSError, ValueError):
             return False
 
     def _isdir(self, virtual: str) -> bool:
         try:
-            return is_dir(self._run(self._ops.stat(virtual)))
+            return is_dir(self._door.run(self._ops.stat(virtual)))
         except (OSError, ValueError):
             return False
 
@@ -247,7 +236,9 @@ class HostFs:
         virtual = self._virtual(path)
         if virtual is None:
             return cast(list[str] | list[bytes], self._host.listdir(path))
-        return [leaf(entry) for entry in self._run(self._ops.readdir(virtual))]
+        return [
+            leaf(entry) for entry in self._door.run(self._ops.readdir(virtual))
+        ]
 
     def scandir(self, path: Any = None) -> Any:
         """The directory as lazily-stattable entries.
@@ -264,7 +255,7 @@ class HostFs:
             return self._host.scandir(path)
         entries = [
             MountDirEntry(self, entry.rstrip("/"), entry.endswith("/"))
-            for entry in self._run(self._ops.readdir(virtual))
+            for entry in self._door.run(self._ops.readdir(virtual))
         ]
         return MountScandir(entries)
 
@@ -353,7 +344,7 @@ class HostFs:
             )
         if not follow_symlinks:
             return self.lstat(virtual)
-        return self._stat_of(virtual, self._run(self._ops.stat(virtual)))
+        return self._stat_of(virtual, self._door.run(self._ops.stat(virtual)))
 
     def lstat(
         self, path: Any, *, dir_fd: int | None = None
@@ -380,7 +371,9 @@ class HostFs:
             )
         target = self._link_target(virtual)
         if target is None:
-            return self._stat_of(virtual, self._run(self._ops.stat(virtual)))
+            return self._stat_of(
+                virtual, self._door.run(self._ops.stat(virtual))
+            )
         links = self._ops.links
         row = None if links is None else links.link_stat_at(virtual)
         if row is None:
@@ -459,7 +452,7 @@ class HostFs:
                 path, mode, dir_fd=dir_fd, follow_symlinks=follow_symlinks
             )
             return
-        self._run(
+        self._door.run(
             self._ops.setattr(virtual, mode=mode, nofollow=not follow_symlinks)
         )
 
@@ -480,7 +473,7 @@ class HostFs:
             return
         # -1 is POSIX's "leave this one alone", which the door spells
         # None; passing it through would store an id of -1.
-        self._run(
+        self._door.run(
             self._ops.setattr(
                 virtual,
                 uid=None if uid == -1 else uid,
@@ -505,7 +498,7 @@ class HostFs:
                 ),
             )
         return bytes(
-            self._run(
+            self._door.run(
                 self._ops.getxattr(
                     virtual,
                     _real_os.fsdecode(attribute),
@@ -524,7 +517,7 @@ class HostFs:
                 self._host.listxattr(path, follow_symlinks=follow_symlinks),
             )
         return list(
-            self._run(
+            self._door.run(
                 self._ops.listxattr(virtual, nofollow=not follow_symlinks)
             )
         )
@@ -544,7 +537,7 @@ class HostFs:
                 path, attribute, value, flags, follow_symlinks=follow_symlinks
             )
             return
-        self._run(
+        self._door.run(
             self._ops.setxattr(
                 virtual,
                 _real_os.fsdecode(attribute),
@@ -568,7 +561,7 @@ class HostFs:
                 path, attribute, follow_symlinks=follow_symlinks
             )
             return
-        self._run(
+        self._door.run(
             self._ops.removexattr(
                 virtual,
                 _real_os.fsdecode(attribute),
@@ -631,7 +624,7 @@ class HostFs:
             access, stamp = (float(value) for value in times)
         else:
             access = stamp = time.time()
-        self._run(
+        self._door.run(
             self._ops.setattr(
                 virtual,
                 atime=timestamp_iso(access),
@@ -647,7 +640,7 @@ class HostFs:
         if virtual is None:
             self._host.mkdir(path, mode, dir_fd=dir_fd)
             return
-        self._run(self._ops.mkdir(virtual))
+        self._door.run(self._ops.mkdir(virtual))
 
     def makedirs(
         self, name: Any, mode: int = 0o777, exist_ok: bool = False
@@ -693,14 +686,14 @@ class HostFs:
                 errno.EEXIST, _real_os.strerror(errno.EEXIST), virtual
             )
         for path in reversed(missing):
-            self._run(self._ops.mkdir(path))
+            self._door.run(self._ops.mkdir(path))
 
     def rmdir(self, path: Any, *, dir_fd: int | None = None) -> None:
         virtual = self._virtual(path)
         if virtual is None:
             self._host.rmdir(path, dir_fd=dir_fd)
             return
-        self._run(self._ops.rmdir(virtual))
+        self._door.run(self._ops.rmdir(virtual))
 
     def removedirs(self, name: Any) -> None:
         """Remove a directory, then every parent that empties.
@@ -729,7 +722,7 @@ class HostFs:
         if virtual is None:
             self._host.remove(path, dir_fd=dir_fd)
             return
-        self._run(self._ops.unlink(virtual))
+        self._door.run(self._ops.unlink(virtual))
 
     def unlink(self, path: Any, *, dir_fd: int | None = None) -> None:
         self.remove(path, dir_fd=dir_fd)
@@ -792,7 +785,7 @@ class HostFs:
                 None,
                 _spelled(dst),
             )
-        self._run(self._ops.rename(source, dest))
+        self._door.run(self._ops.rename(source, dest))
 
     def renames(self, old: Any, new: Any) -> None:
         """Rename, creating the destination's parents and pruning the
@@ -845,7 +838,7 @@ class HostFs:
         if virtual is None:
             self._host.symlink(src, dst, target_is_directory, dir_fd=dir_fd)
             return
-        self._run(self._ops.symlink(virtual, _real_os.fsdecode(src)))
+        self._door.run(self._ops.symlink(virtual, _real_os.fsdecode(src)))
 
     def readlink(self, path: Any, *, dir_fd: int | None = None) -> str | bytes:
         """The target a link holds, as the caller spelled the path.
@@ -863,14 +856,14 @@ class HostFs:
         virtual = self._virtual(path)
         if virtual is None:
             return cast(str | bytes, self._host.readlink(path, dir_fd=dir_fd))
-        return str(self._run(self._ops.readlink(virtual)))
+        return str(self._door.run(self._ops.readlink(virtual)))
 
     def truncate(self, path: Any, length: int) -> None:
         virtual = self._virtual(path)
         if virtual is None:
             self._host.truncate(path, length)
             return
-        self._run(self._ops.truncate(virtual, length))
+        self._door.run(self._ops.truncate(virtual, length))
 
 
 def _refusal(

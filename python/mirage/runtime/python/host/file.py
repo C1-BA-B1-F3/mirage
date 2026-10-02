@@ -16,19 +16,15 @@ import asyncio
 import codecs
 import io
 import logging
-from collections.abc import Awaitable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from types import TracebackType
-from typing import Self, TypeVar
+from typing import Self
 
-from mirage.bridge.sync import run_async_from_sync
 from mirage.ops import Ops
-from mirage.runtime.constants import ABSENT_PATH
 from mirage.runtime.handles.mode import parse_mode
 from mirage.runtime.open import apply_open
-from mirage.runtime.types import VFSEntry, VFSStat
-from mirage.runtime.vfs import stat_row
+from mirage.runtime.python.host.vfs import HostVFS
 
-T = TypeVar("T")
 logger = logging.getLogger(__name__)
 # `io.open`'s own sentinel for "whatever the platform default is". It is
 # not a codec name, and pathlib passes it for every `read_text()` on an
@@ -37,48 +33,6 @@ logger = logging.getLogger(__name__)
 # the caller's word up as a codec raised LookupError on the ordinary
 # path the moment `io.open` was patched.
 LOCALE_ENCODING = "locale"
-
-
-class _OpsSurface:
-    """The questions an open asks, put to the ``Ops`` facade.
-
-    Args:
-        ops (Ops): the facade the file reads and writes through.
-        loop (asyncio.AbstractEventLoop | None): the loop that drives it.
-    """
-
-    def __init__(
-        self, ops: Ops, loop: asyncio.AbstractEventLoop | None
-    ) -> None:
-        self._ops = ops
-        self._loop = loop
-
-    def stat_or_none(
-        self, path: str, *, nofollow: bool = False
-    ) -> VFSStat | None:
-        try:
-            row = run_async_from_sync(
-                self._ops.stat(path, nofollow=nofollow), self._loop
-            )
-        except ABSENT_PATH:
-            return None
-        return stat_row(row)
-
-    def listing_or_none(self, path: str) -> list[VFSEntry] | None:
-        try:
-            names = run_async_from_sync(self._ops.readdir(path), self._loop)
-        except ABSENT_PATH:
-            return None
-        return [
-            VFSEntry(path=name, size=0, is_dir=name.endswith("/"))
-            for name in names
-        ]
-
-    def create(self, path: str) -> None:
-        run_async_from_sync(self._ops.create(path), self._loop)
-
-    def truncate(self, path: str) -> None:
-        run_async_from_sync(self._ops.truncate(path, 0), self._loop)
 
 
 class MirageFile:
@@ -93,10 +47,9 @@ class MirageFile:
         newline: str | None = None,
     ) -> None:
         self._closed = True
-        self._ops = ops
+        self._door = HostVFS(ops, loop)
         self._path = path
         self._mode = mode
-        self._loop = loop
         self._facts = parse_mode(mode)
         self._binary = self._facts.binary
         self._readable = self._facts.readable
@@ -127,11 +80,8 @@ class MirageFile:
         self._buf: io.BytesIO | io.StringIO | None = None
         # The open's effect lands now, by the rule every door shares; a
         # refusal leaves the file closed, so nothing flushes behind it.
-        apply_open(_OpsSurface(ops, loop), path, self._facts)
+        apply_open(self._door, path, self._facts)
         self._closed = False
-
-    def _run(self, coro: Awaitable[T]) -> T:
-        return run_async_from_sync(coro, self._loop)
 
     def _load(self) -> io.BytesIO | io.StringIO:
         if self._buf is not None:
@@ -143,7 +93,7 @@ class MirageFile:
                 self._buf = io.StringIO(newline=self._newline)
             return self._buf
         if self._facts.append:
-            data = self._run(self._ops.read(self._path))
+            data = self._door.run(self._door.ops.read(self._path))
             if self._binary:
                 self._buf = io.BytesIO(data)
             else:
@@ -153,7 +103,7 @@ class MirageFile:
                 )
             self._buf.seek(0, 2)
             return self._buf
-        data = self._run(self._ops.read(self._path))
+        data = self._door.run(self._door.ops.read(self._path))
         if self._binary:
             self._buf = io.BytesIO(data)
         else:
@@ -239,7 +189,7 @@ class MirageFile:
         val = self._buf.getvalue()
         if isinstance(val, str):
             val = val.encode(self._encoding, self._errors)
-        self._run(self._ops.write(self._path, val))
+        self._door.run(self._door.ops.write(self._path, val))
         self._dirty = False
 
     def close(self) -> None:

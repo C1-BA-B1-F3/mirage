@@ -22,7 +22,7 @@ import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
-import type { SshAttrs } from './entry.ts'
+import type { SshAttrs } from './stat.ts'
 import {
   isDirectoryAttrs,
   isFileAttrs,

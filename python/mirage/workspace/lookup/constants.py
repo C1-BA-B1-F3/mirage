@@ -19,31 +19,207 @@ from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.compile import compile_spec
 from mirage.commands.spec.flag_view import FlagView
 from mirage.shell.constants import BUILTIN_GROUP
-from mirage.shell.types import BuiltinGroup
+from mirage.shell.types import BuiltinGroup, ShellBuiltin
 from mirage.types import LsLinkMode, PathSpec
-from mirage.workspace.names import (
-    BASH_BUILTINS,
-    JOB_BUILTINS,
-    KEYWORDS,
-    NAMESPACE_COMMANDS,
-    NO_FOLLOW_COMMANDS,
-    SHELL_NAMES,
-    SHELL_ONLY_BUILTINS,
-    UNSUPPORTED_BUILTINS,
+
+# Bash builtins the parser accepts but the executor cannot honor; they
+# still route to the shell layer so the error names a capability gap.
+UNSUPPORTED_BUILTINS = frozenset(
+    {
+        "bg",
+        "complete",
+        "compgen",
+        "ulimit",
+    }
 )
 
-# The pools live in workspace/names.py (a leaf shared with the CLI
-# registry's collision rule); this module keeps lookup's public surface.
-__all__ = [
-    "BASH_BUILTINS",
-    "JOB_BUILTINS",
-    "KEYWORDS",
-    "NAMESPACE_COMMANDS",
-    "NO_FOLLOW_COMMANDS",
-    "SHELL_NAMES",
-    "SHELL_ONLY_BUILTINS",
-    "UNSUPPORTED_BUILTINS",
-]
+NAMESPACE_COMMANDS = frozenset({"getfattr", "ln", "readlink", "setfattr"})
+
+# bash reserved words that mirage's grammar implements. The parser, not
+# the executor, consumes them, so they never reach route; `type` reports
+# them and the CLI registry refuses them as head words. `coproc` is omitted
+# because its construct is not implemented.
+KEYWORDS = frozenset(
+    {
+        "time",
+        "if",
+        "then",
+        "else",
+        "elif",
+        "fi",
+        "case",
+        "esac",
+        "for",
+        "select",
+        "while",
+        "until",
+        "do",
+        "done",
+        "in",
+        "function",
+        "{",
+        "}",
+        "!",
+        "[[",
+        "]]",
+    }
+)
+
+# ShellBuiltin subset handled through the job table in the executor.
+JOB_BUILTINS = frozenset({"wait", "fg", "kill", "jobs", "disown", "ps"})
+
+# Commands with lstat semantics: they act on the symlink entry itself,
+# so dispatch must not rewrite their operands through the link table.
+# `stat` is here because GNU stat lstats, but it takes -L to dereference
+# after all, which route's `dereferences` reads back out of the command
+# line; `file`, `du` and `find` are the same shape.
+#
+# `tar` and `zip` are here for a different reason and deliberately carry
+# no DEREFERENCE_FLAGS entry: they dereference too, but their planner
+# has to be the one doing it. Rewriting the operand up here would hand
+# the planner a target it can no longer tell was reached through a link,
+# so `tar` could not store a symlink member at all and neither archiver
+# could apply its own cross-mount refusal or ELOOP wording. tar's -h and
+# zip's -y are read by the planner instead.
+NO_FOLLOW_COMMANDS = frozenset(
+    {
+        "rm",
+        "mv",
+        "ln",
+        "readlink",
+        "rmdir",
+        "unlink",
+        "stat",
+        "file",
+        "du",
+        "find",
+        "tar",
+        "zip",
+    }
+)
+
+SHELL_NAMES = frozenset(str(b) for b in ShellBuiltin) | UNSUPPORTED_BUILTINS
+
+# bash 5.2's own builtins (`compgen -b` on debian:stable-slim). `type`
+# calls one of these a shell builtin and `command -v` prints it bare,
+# even where a program of the same name is on PATH too (echo, test,
+# pwd); any other word mirage runs is a program, reported by its path.
+BASH_BUILTINS = frozenset(
+    {
+        ".",
+        ":",
+        "[",
+        "alias",
+        "bg",
+        "bind",
+        "break",
+        "builtin",
+        "caller",
+        "cd",
+        "command",
+        "compgen",
+        "complete",
+        "compopt",
+        "continue",
+        "declare",
+        "dirs",
+        "disown",
+        "echo",
+        "enable",
+        "eval",
+        "exec",
+        "exit",
+        "export",
+        "false",
+        "fc",
+        "fg",
+        "getopts",
+        "hash",
+        "help",
+        "history",
+        "jobs",
+        "kill",
+        "let",
+        "local",
+        "logout",
+        "mapfile",
+        "popd",
+        "printf",
+        "pushd",
+        "pwd",
+        "read",
+        "readarray",
+        "readonly",
+        "return",
+        "set",
+        "shift",
+        "shopt",
+        "source",
+        "suspend",
+        "test",
+        "times",
+        "trap",
+        "true",
+        "type",
+        "typeset",
+        "ulimit",
+        "umask",
+        "unalias",
+        "unset",
+        "wait",
+    }
+)
+
+# The builtins that are the shell's own, which no program loader can
+# find: `find -exec` execs through execvp and sees nothing the shell
+# defined, so these heads are `find: 'cd': No such file or directory`
+# (findutils 4.10 on debian:stable-slim, where `kill` is bash's alone
+# since procps is absent), while `echo`, `sh`, `xargs` or `python3` are
+# programs there as well as builtins here.
+SHELL_ONLY_BUILTINS = frozenset(
+    {
+        ".",
+        ":",
+        "alias",
+        "bg",
+        "break",
+        "cd",
+        "command",
+        "compgen",
+        "complete",
+        "continue",
+        "declare",
+        "disown",
+        "eval",
+        "exec",
+        "exit",
+        "export",
+        "fg",
+        "getopts",
+        "history",
+        "jobs",
+        "kill",
+        "let",
+        "local",
+        "mapfile",
+        "read",
+        "readarray",
+        "readonly",
+        "return",
+        "set",
+        "shift",
+        "shopt",
+        "source",
+        "trap",
+        "type",
+        "typeset",
+        "ulimit",
+        "umask",
+        "unalias",
+        "unset",
+        "wait",
+    }
+)
 
 # Interpreter names select runtime adapters; session builtins stay in Mirage.
 INTERPRETER_NAMES = frozenset(

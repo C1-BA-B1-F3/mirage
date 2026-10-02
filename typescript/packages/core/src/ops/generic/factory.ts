@@ -16,7 +16,6 @@ import { enotsup } from '../../utils/errors.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import type { OpKwargs, RegisteredOp } from '../registry.ts'
 import type { MakeGenericOpsOptions, OpsTable } from './types.ts'
-import { extractWriteData } from '../write_args.ts'
 import { isUnsatisfiableRange, sliceWindow } from '../../utils/ranges.ts'
 import { DEFAULT_MAX_GLOB_MATCHES, resolveGlobWith } from '../../utils/glob_walk.ts'
 import { eisdir, isMissingPath } from '../../utils/errors.ts'
@@ -27,6 +26,12 @@ const expectPathSpec = (value: unknown, op: string): PathSpec => {
     throw new TypeError(`${op} op requires a dst PathSpec as the first arg`)
   }
   return value as PathSpec
+}
+
+const extractWriteData = (args: readonly unknown[]): Uint8Array => {
+  const first = args[0]
+  if (first instanceof Uint8Array) return first
+  throw new TypeError('write op requires a Uint8Array as the first arg')
 }
 
 const expectLength = (value: unknown): number => {

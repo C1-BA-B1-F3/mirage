@@ -13,6 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
+import type {
+  OAuthClientInformationMixed,
+  OAuthClientMetadata,
+  OAuthTokens,
+} from '@modelcontextprotocol/sdk/shared/auth.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { API_VERSION, DEFAULT_API_BASE_URL } from './constants.ts'
@@ -128,6 +133,71 @@ export class MCPNotionTransport implements NotionTransport {
       throw new NotionMCPError('failed to parse tool result', { raw: text })
     }
     return obj
+  }
+}
+
+export interface MemoryOAuthClientProviderOptions {
+  clientMetadata: OAuthClientMetadata
+  redirect: (url: URL) => void | Promise<void>
+  redirectUrl?: string | URL
+}
+
+/**
+ * An `OAuthClientProvider` that holds the client registration, tokens and
+ * PKCE verifier in memory, for an `MCPNotionTransport` whose session ends
+ * with the page.
+ */
+export class MemoryOAuthClientProvider implements OAuthClientProvider {
+  private readonly opts: MemoryOAuthClientProviderOptions
+  private _clientInformation: OAuthClientInformationMixed | undefined
+  private _tokens: OAuthTokens | undefined
+  private _codeVerifier: string | undefined
+
+  constructor(opts: MemoryOAuthClientProviderOptions) {
+    this.opts = opts
+  }
+
+  get redirectUrl(): string | URL | undefined {
+    return this.opts.redirectUrl
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this.opts.clientMetadata
+  }
+
+  clientInformation(): OAuthClientInformationMixed | undefined {
+    return this._clientInformation
+  }
+
+  saveClientInformation(info: OAuthClientInformationMixed): void {
+    this._clientInformation = info
+  }
+
+  tokens(): OAuthTokens | undefined {
+    return this._tokens
+  }
+
+  saveTokens(tokens: OAuthTokens): void {
+    this._tokens = tokens
+  }
+
+  redirectToAuthorization(authorizationUrl: URL): void | Promise<void> {
+    return this.opts.redirect(authorizationUrl)
+  }
+
+  saveCodeVerifier(codeVerifier: string): void {
+    this._codeVerifier = codeVerifier
+  }
+
+  codeVerifier(): string {
+    if (this._codeVerifier === undefined) {
+      throw new Error('no code verifier saved')
+    }
+    return this._codeVerifier
+  }
+
+  clearTokens(): void {
+    this._tokens = undefined
   }
 }
 

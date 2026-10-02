@@ -16,7 +16,7 @@ import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -35,7 +35,7 @@ async def read_bytes(
     sftp = await accessor.sftp()
     timer = start_op()
     try:
-        remote_path = _abs(config, path)
+        remote_path = join_root(config.root, path)
         async with sftp.open(remote_path, "rb") as f:
             if offset:
                 await f.seek(offset)

@@ -96,9 +96,11 @@ from. With `embed` set, a `(text: string) => Promise<number[]>` the caller
 brings, the query is vectorized in-process, so a self-hosted Qdrant works and
 mirage depends on no model runtime; `examples/typescript/qdrant/qdrant_vfs.ts`
 feeds it a dependency-free hashed bag of words, and any model that returns a
-vector plugs in the same way. Without it the query text goes to the server, so
-the cluster must have inference enabled (Qdrant Cloud) and store vectors from
-the same `embeddingModel` (default `sentence-transformers/all-MiniLM-L6-v2`).
+vector plugs in the same way. Without it, `cloudInference: true` sends the query
+text to the server, so the cluster must have inference enabled (Qdrant Cloud)
+and store vectors from the same `embeddingModel` (default
+`sentence-transformers/all-MiniLM-L6-v2`). With neither, `search` refuses the
+query: Python embeds it in process by default, which no JS client can.
 The hook never lands in a snapshot: a restored mount asks for a fresh
 VFS. Browsing (`ls`/`cat`/`find`/`grep`) needs no embedding.
 

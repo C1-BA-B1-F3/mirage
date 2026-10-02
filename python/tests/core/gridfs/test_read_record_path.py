@@ -15,11 +15,11 @@
 import pytest
 from bson import ObjectId
 
-from mirage.accessor.gridfs import GridFSConfig
 from mirage.core.gridfs.read import read_bytes
 from mirage.core.gridfs.stream import read_stream
 from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
+from mirage.vfs.gridfs.config import GridFSConfig
 
 FILE_ID = ObjectId("0123456789ab0123456789ab")
 DOC = {"_id": FILE_ID, "length": 5, "uploadDate": None, "filename": "m/k.txt"}

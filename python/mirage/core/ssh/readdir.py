@@ -19,8 +19,8 @@ import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.ssh.client import _abs
 from mirage.core.ssh.constants import SCOPE_ERROR
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 from mirage.utils.dates import epoch_to_iso
 from mirage.utils.errors import eacces, listing_error
@@ -43,7 +43,7 @@ async def _attrs_or_none(
 ) -> asyncssh.SFTPAttrs | None:
     sftp = await accessor.sftp()
     try:
-        return await sftp.stat(_abs(accessor.config, key))
+        return await sftp.stat(join_root(accessor.config.root, key))
     except UNRESOLVED:
         return None
 
@@ -80,7 +80,7 @@ async def readdir(
         return listing.entries
     sftp = await accessor.sftp()
     try:
-        remote_path = _abs(config, path)
+        remote_path = join_root(config.root, path)
         entries = await sftp.readdir(remote_path)
         base = "/" + path.strip("/")
         found: list[tuple[str, asyncssh.SFTPAttrs]] = []

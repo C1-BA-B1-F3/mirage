@@ -242,7 +242,7 @@ e2b = [
 ]
 
 [tool.uv]
-constraint-dependencies = ["pypdf>=6.16.1"]
+constraint-dependencies = ["pypdf>=6.19.0"]
 conflicts = [
     [
         { extra = "camel" },
@@ -444,7 +444,7 @@ module = [
     "mirage.vfs.box.box",
     "mirage.vfs.chroma.chroma",
     "mirage.vfs.databricks_volume.databricks_volume",
-    "mirage.vfs.dev.dev",
+    "mirage.vfs.dev.store",
     "mirage.vfs.dify.dify",
     "mirage.vfs.discord.discord",
     "mirage.vfs.disk.disk",

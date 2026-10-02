@@ -14,28 +14,9 @@
 
 from typing import Any
 
-from pydantic import ConfigDict, SecretStr, field_validator
-
 from mirage.accessor.base import Accessor
 from mirage.accessor.pool import ClientFactory, LoopClientCache
-from mirage.secrets.config import AWSAuth
-from mirage.utils import key_prefix as kp
-
-
-class S3Config(AWSAuth):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    bucket: str
-    endpoint_url: str | None = None
-    path_style: bool = False
-    timeout: int = 30
-    proxy: SecretStr | None = None
-    key_prefix: str | None = None
-
-    @field_validator("key_prefix")
-    @classmethod
-    def _normalize_key_prefix(cls, v: str | None) -> str | None:
-        return kp.normalize(v) or None
+from mirage.vfs.s3.config import S3Config
 
 
 class S3Accessor(Accessor):
@@ -48,8 +29,8 @@ class S3Accessor(Accessor):
         #
         # The cache owns the lifetime and the driver owns the construction:
         # building a client needs the kwargs helpers in mirage.core.s3.client,
-        # and that module imports S3Config from here, so constructing one here
-        # would be a cycle.
+        # a layer above the accessor, so constructing one here would import
+        # against the dependency direction.
         self._clients = LoopClientCache("s3")
 
     async def cached_client(self, factory: ClientFactory) -> Any:

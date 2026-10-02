@@ -850,6 +850,7 @@
       "max_glob_matches": 10000,
       "slots": [
         "exists",
+        "find",
         "is_mounted",
         "read_bytes",
         "read_stream",
@@ -1833,6 +1834,9 @@
           "required": false
         },
         "blobField": {
+          "required": false
+        },
+        "cloudInference": {
           "required": false
         },
         "collection": {

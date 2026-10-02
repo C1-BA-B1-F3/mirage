@@ -2505,6 +2505,9 @@
         "bucket": {
           "required": true
         },
+        "default_content_type": {
+          "required": false
+        },
         "endpoint_url": {
           "required": false
         },

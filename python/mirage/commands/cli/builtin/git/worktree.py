@@ -20,7 +20,11 @@ from mirage.commands.cli.builtin.git.ignore import (
     IgnoreStack,
     load_ignores,
 )
-from mirage.commands.cli.builtin.git.io import read_names, read_optional
+from mirage.commands.cli.builtin.git.io import (
+    basename,
+    read_names,
+    read_optional,
+)
 from mirage.commands.cli.builtin.git.types import RepoLocation, WorkTree
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
@@ -34,16 +38,6 @@ from mirage.types import FileStat, FileType
 UNTRACKED_NO = "no"
 UNTRACKED_NORMAL = "normal"
 UNTRACKED_ALL = "all"
-
-
-def _name_of(entry: str) -> str:
-    """The final segment of a readdir entry.
-
-    Args:
-        entry (str): one entry as the backend reported it, which may be a
-            bare name or a path and may carry a trailing slash.
-    """
-    return entry.rstrip("/").rsplit("/", 1)[-1]
 
 
 def tracked_directories(tracked: set[str]) -> set[str]:
@@ -151,7 +145,7 @@ class Scanner:
         for entry in await read_names(
             self._dispatch, self._absolute(relative)
         ):
-            name = _name_of(entry)
+            name = basename(entry)
             if not name:
                 continue
             child = f"{relative}/{name}" if relative else name
@@ -243,7 +237,7 @@ class Scanner:
         for entry in sorted(
             await read_names(self._dispatch, self._absolute(relative))
         ):
-            name = _name_of(entry)
+            name = basename(entry)
             if not name or (not relative and name == GIT_DIR):
                 continue
             child = f"{relative}/{name}" if relative else name

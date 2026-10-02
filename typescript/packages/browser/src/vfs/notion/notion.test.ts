@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { NOTION_COMMANDS } from '@struktoai/mirage-core/commands/builtin/notion/index'
-import { MemoryOAuthClientProvider } from '@struktoai/mirage-core/core/notion/_oauth'
+import { MemoryOAuthClientProvider } from '@struktoai/mirage-core/core/notion/client'
 import { NOTION_OPS } from '@struktoai/mirage-core/ops/notion/index'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js'

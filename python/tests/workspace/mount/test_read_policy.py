@@ -48,7 +48,8 @@ from mirage.vfs.registry import REGISTRY, build_vfs, known_vfs_names
 from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.vfs.scaleway.scaleway import ScalewayVFS
 from mirage.vfs.seaweedfs.seaweedfs import SeaweedFSVFS
-from mirage.vfs.ssh.ssh import SSHVFS, SSHConfig
+from mirage.vfs.ssh.config import SSHConfig
+from mirage.vfs.ssh.ssh import SSHVFS
 from mirage.vfs.supabase.supabase import SupabaseVFS
 from mirage.vfs.tencent.tencent import TencentVFS
 from mirage.vfs.wasabi.wasabi import WasabiVFS

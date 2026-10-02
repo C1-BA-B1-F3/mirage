@@ -12,6 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.s3.s3 import S3VFS, S3Config
+from typing import TYPE_CHECKING
 
-__all__ = ["S3VFS", "S3Config"]
+from mirage.vfs.s3.config import S3Config
+
+if TYPE_CHECKING:
+    from mirage.vfs.s3.s3 import S3VFS
+
+__all__ = ["S3Config", "S3VFS"]
+
+
+def __getattr__(name: str) -> "type[S3VFS]":
+    if name == "S3VFS":
+        from mirage.vfs.s3.s3 import S3VFS
+
+        return S3VFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

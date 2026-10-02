@@ -12,8 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor.s3 import S3Config
 from mirage.observe.store import ObserverStore
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.mount.namespace import NamespaceStore
 from mirage.workspace.record.s3 import S3RecordClient
 from mirage.workspace.session.s3 import S3SessionStore

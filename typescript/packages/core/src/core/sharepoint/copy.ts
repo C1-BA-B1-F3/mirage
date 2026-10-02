@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { SharePointAccessor } from '../../accessor/sharepoint.ts'
-import { invalidateSubtreeAfter } from '../../cache/context.ts'
+import { evictAfter, invalidateSubtree } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import { copyTree } from '../msgraph/drive.ts'
 import { driveLoc, resolveItem } from './resolve.ts'
@@ -40,11 +40,13 @@ export async function copy(
   const config = accessor.config
   const srcResolved = await resolveItem(accessor, src)
   const dstResolved = await resolveItem(accessor, dst)
-  await invalidateSubtreeAfter(dst, () =>
-    copyTree(
-      config,
-      driveLoc(config, srcResolved, src.vfsPath),
-      driveLoc(config, dstResolved, dst.vfsPath),
-    ),
+  await evictAfter(
+    () =>
+      copyTree(
+        config,
+        driveLoc(config, srcResolved, src.vfsPath),
+        driveLoc(config, dstResolved, dst.vfsPath),
+      ),
+    () => invalidateSubtree(dst),
   )
 }

@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { FsCondition } from '../errors/index.ts'
+
 /** Capture unresolved program names without taking over the workspace shell. */
 export const EXTERNAL_COMMANDS = '@external'
 
@@ -24,3 +26,12 @@ export const EXTERNAL_COMMANDS = '@external'
  * request a door sends shares the one cap, a preload walk's included.
  */
 export const LISTING_ENTRY_CONCURRENCY = 16
+
+/**
+ * What a stat or a listing may answer "not there" with. A directory is
+ * an answer to both rather than an absence, and a backend that refused
+ * the op has not said the path is gone: folding a permission or a
+ * transport failure into "no" reports it as an absence the guest cannot
+ * tell from a real one, so nothing else belongs here.
+ */
+export const ABSENT_PATH: ReadonlySet<FsCondition> = new Set<FsCondition>(['ENOENT', 'ENOTDIR'])

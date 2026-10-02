@@ -26,7 +26,7 @@ import {
 import { runAsProgram } from '../../../../context/session_context.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
-import { yieldBytes } from '../../../../io/stream.ts'
+import { ensureStream, yieldBytes } from '../../../../io/stream.ts'
 import { shellJoin } from '../../../../shell/join.ts'
 import { abortable } from '../../../abort.ts'
 import { execs } from '../../../lookup/lookup.ts'
@@ -194,11 +194,8 @@ async function executeDrained(
 ): Promise<IOResult> {
   const io = await executeFn(inner, { sessionId, signal, ...(stdin !== null ? { stdin } : {}) })
   held.push(io)
-  const source = io.stdout
-  if (source instanceof Uint8Array) {
-    drained.push(source)
-  } else if (source !== null) {
-    for await (const chunk of source) drained.push(chunk)
+  if (io.stdout !== null) {
+    for await (const chunk of ensureStream(io.stdout)) drained.push(chunk)
   }
   return io
 }

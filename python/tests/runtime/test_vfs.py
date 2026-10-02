@@ -13,12 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import errno
 import logging
 
 import pytest
 
 from mirage.runtime.constants import LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
+from mirage.runtime.handles import parse_mode
 from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
@@ -86,6 +88,49 @@ class RecordingVFS(RuntimeVFS):
         return None
 
 
+class WorldVFS(RuntimeVFS):
+    """Core over a small world: files, directories, implied directories.
+
+    An implied directory lists but has no row, the root above a nested
+    mount; a dangling link has a row only for a no-follow stat; a
+    refusal answers every op.
+    """
+
+    def __init__(self, files=(), dirs=(), implied=(), links=(), refuse=None):
+        super().__init__(
+            dispatch=None,
+            loop=None,
+            resolver=PrefixResolver(lambda: ["/data/"]),
+        )
+        self.files = set(files)
+        self.dirs = set(dirs)
+        self.implied = set(implied)
+        self.links = set(links)
+        self.refuse = refuse
+        self.mutations = []
+
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
+        if self.refuse is not None:
+            raise self.refuse
+        if op == "stat":
+            if path in self.files:
+                return FileStat(name=path, size=1, type=FileType.FILE)
+            if path in self.dirs:
+                return FileStat(name=path, type=FileType.DIRECTORY)
+            if path in self.links and kwargs.get("nofollow"):
+                return FileStat(name=path, size=8, type=FileType.SYMLINK)
+            raise FileNotFoundError(path)
+        if op == "readdir":
+            if path in self.dirs or path in self.implied:
+                return []
+            raise FileNotFoundError(path)
+        self.mutations.append((op, path))
+        return None
+
+
 class RecordingDispatch:
     """Workspace dispatch double, recording what reached the loop."""
 
@@ -141,6 +186,77 @@ def test_rename_within_one_mount_dispatches():
     op, path, kwargs = vfs.calls[0]
     assert (op, path) == ("rename", "/data/a.txt")
     assert kwargs["dst"].virtual == "/data/b.txt"
+
+
+def test_serves_scopes_to_the_mounts_and_an_unscoped_door_serves_all():
+    scoped = RecordingVFS(prefixes=["/data/"])
+    assert scoped.serves("/data/a.txt") is True
+    assert scoped.serves("/tmp/a.txt") is False
+    assert RecordingVFS().serves("/tmp/a.txt") is True
+
+
+def test_serves_a_path_reached_through_a_link_outside_every_mount():
+    # The dispatcher follows a link outside every mount, so what is
+    # reached through one is the workspace's too.
+    door = RuntimeVFS(
+        dispatch=None,
+        loop=None,
+        resolver=PrefixResolver(
+            lambda: ["/data/"],
+            lambda directory: {"alias"} if directory == "/" else set(),
+        ),
+    )
+    assert door.serves("/alias") is True
+    assert door.serves("/alias/inner.txt") is True
+    assert door.serves("/tmp/a.txt") is False
+
+
+F = "/data/f"
+
+
+@pytest.mark.parametrize(
+    "mode, world, effect, kept, refusal",
+    [
+        ("r", {"files": [F]}, [], True, None),
+        ("r", {}, [], False, FileNotFoundError),
+        ("r", {"dirs": [F]}, [], False, IsADirectoryError),
+        ("r", {"implied": [F]}, [], False, IsADirectoryError),
+        ("w", {"files": [F]}, [("truncate", F)], False, None),
+        ("w", {}, [("create", F)], False, None),
+        ("w", {"implied": [F]}, [], False, IsADirectoryError),
+        ("a", {"files": [F]}, [], True, None),
+        ("a", {}, [("create", F)], False, None),
+        ("a", {"implied": [F]}, [], False, IsADirectoryError),
+        ("wx", {"files": [F]}, [], False, FileExistsError),
+        ("wx", {"links": [F]}, [], False, FileExistsError),
+        ("wx", {"implied": [F]}, [], False, FileExistsError),
+        ("wx", {}, [("create", F)], False, None),
+        ("r", {"links": [F]}, [], False, FileNotFoundError),
+    ],
+)
+def test_open_lands_its_modes_effect_before_any_byte_moves(
+    mode, world, effect, kept, refusal
+):
+    vfs = WorldVFS(**world)
+    if refusal is None:
+        assert (vfs.open(F, parse_mode(mode)) is not None) == kept
+    else:
+        with pytest.raises(refusal):
+            vfs.open(F, parse_mode(mode))
+    assert vfs.mutations == effect
+
+
+def test_a_refusal_is_not_read_as_an_absence():
+    # A backend that will not answer has said nothing about whether the
+    # path is there, and "not there" is the one answer a guest cannot
+    # tell from the truth.
+    vfs = WorldVFS(refuse=PermissionError(errno.EACCES, "denied", F))
+    with pytest.raises(PermissionError):
+        vfs.stat_or_none(F)
+    with pytest.raises(PermissionError):
+        vfs.listing_or_none(F)
+    assert WorldVFS().stat_or_none(F) is None
+    assert WorldVFS().listing_or_none(F) is None
 
 
 def test_readdir_lifts_names_into_entries():
@@ -393,6 +509,49 @@ def test_readdir_marks_nothing_without_a_link_source():
     assert vfs.readdir("/data/") == [
         VFSEntry(path="/data/lnk", size=0, is_dir=False),
     ]
+
+
+class NoAppendVFS(RuntimeVFS):
+    """Core over a mount that registers write but not append (S3)."""
+
+    def __init__(self, files):
+        super().__init__(
+            dispatch=None, loop=None, resolver=PrefixResolver(lambda: ["/s3/"])
+        )
+        self.files = dict(files)
+        self.writes = []
+
+    def _raw(self, op, path, **kwargs):
+        if op == "append":
+            raise OperationNotSupportedError("append")
+        if op == "read":
+            if path not in self.files:
+                raise FileNotFoundError(path)
+            return self.files[path]
+        self.files[path] = kwargs["data"]
+        self.writes.append((path, kwargs["data"]))
+        return None
+
+
+@pytest.mark.parametrize(
+    "files, written",
+    [({"/s3/a": b"base-"}, b"base-tail"), ({}, b"tail")],
+)
+def test_append_without_a_whole_file_reads_its_own_base(files, written):
+    vfs = NoAppendVFS(files)
+    vfs.append("/s3/a", b"tail")
+    assert vfs.writes == [("/s3/a", written)]
+
+
+def test_an_append_keeps_a_write_made_since_the_last_one():
+    # The fallback reads the base fresh each time: an append lands
+    # after whatever the file holds now, as O_APPEND does, so a copy
+    # kept from the last append would overwrite another action's write.
+    vfs = NoAppendVFS({"/s3/a": b"head"})
+    vfs.append("/s3/a", b"-1")
+    vfs.files["/s3/a"] = b"other"
+    vfs.append("/s3/a", b"-2")
+    assert vfs.writes == [("/s3/a", b"head-1"), ("/s3/a", b"other-2")]
 
 
 def test_flush_ships_only_the_delta():

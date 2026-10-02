@@ -59,6 +59,8 @@ async def test_readdir_root(accessor, index):
     assert "/b.txt" in entries
     assert "/sub" in entries
     assert len(entries) == 3
+    kinds = [(await index.get(p)).entry.resource_type for p in entries]
+    assert kinds == ["file", "file", "folder"]
 
 
 @pytest.mark.asyncio

@@ -14,8 +14,8 @@
 
 from mirage.accessor.gslides import GSlidesAccessor
 from mirage.cache.index import IndexCacheStore
+from mirage.core.google.client import TokenManager, google_get, slides_base
 from mirage.core.google.entry import resolve_app_entry
-from mirage.core.gslides.client import TokenManager, google_get, slides_base
 from mirage.core.gslides.constants import MIME
 from mirage.core.gslides.scope import detect_scope
 from mirage.core.hierarchy.read import make_read

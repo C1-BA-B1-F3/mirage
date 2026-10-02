@@ -16,7 +16,7 @@ import { expect, test } from 'vitest'
 
 import { DISK_OPS } from './disk/index.ts'
 import { EMAIL_OPS } from './email/index.ts'
-import { HF_OPS } from './hf/index.ts'
+import { HF_BUCKETS_OPS } from './hf_buckets/index.ts'
 import { SSH_OPS } from './ssh/index.ts'
 
 // Golden snapshot of every backend's registered op surface, taken before
@@ -29,7 +29,7 @@ type Row = [string, string, string, boolean]
 const TABLES = {
   disk: DISK_OPS,
   email: EMAIL_OPS,
-  hf: HF_OPS,
+  hf_buckets: HF_BUCKETS_OPS,
   ssh: SSH_OPS,
 }
 
@@ -55,7 +55,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['readdir', 'email', '', false],
     ['stat', 'email', '', false],
   ],
-  hf: [
+  hf_buckets: [
     ['append', 'hf_buckets', '', true],
     ['create', 'hf_buckets', '', true],
     ['glob', 'hf_buckets', '', false],

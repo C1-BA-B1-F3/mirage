@@ -15,7 +15,7 @@
 import pytest
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.commands.builtin.github.du import _du_size
+from mirage.commands.builtin.github.du import _subtree
 from mirage.commands.builtin.github.grep import grep
 from mirage.commands.builtin.github.pushdown import narrow_scope
 from mirage.commands.builtin.github.rg import rg
@@ -56,8 +56,7 @@ def _subdir() -> PathSpec:
     )
 
 
-@pytest.mark.asyncio
-async def test_du_sizes_from_the_git_tree():
+def test_du_sizes_from_the_git_tree():
     # du reads the tree, not the index: the tree is keyed repo-relative,
     # which is the space this comparison is in, and it stays right
     # however the mount keys its index.
@@ -73,7 +72,7 @@ async def test_du_sizes_from_the_git_tree():
             )
         },
     )
-    assert await _du_size(accessor, _subdir()) == 7
+    assert _subtree(accessor, _subdir()) == ([("/src/main.py", 7)], [])
 
 
 @pytest.mark.asyncio

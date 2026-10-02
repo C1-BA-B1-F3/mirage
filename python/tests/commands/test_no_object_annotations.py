@@ -30,8 +30,8 @@ ALLOWED = {
     ("agents/openai_agents/sandbox.py", "deserialize_session_state"),
     ("io/types.py", "__setattr__"),
     ("commands/cli/builtin/git/objects.py", "__contains__"),
-    ("vfs/dev/dev.py", "__contains__"),
-    ("vfs/dev/dev.py", "pop"),
+    ("vfs/dev/store.py", "__contains__"),
+    ("vfs/dev/store.py", "pop"),
     ("workspace/workspace/guard.py", "reject_config_script"),
     # Override asyncssh.SFTPServer, which types the file handle it hands
     # back as `object`; `opened` is the one place it is narrowed.

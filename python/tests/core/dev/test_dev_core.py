@@ -6,7 +6,7 @@ from mirage.core.dev.read import read
 from mirage.core.dev.stat import stat
 from mirage.core.dev.stream import read_stream
 from mirage.types import DEVICE_NUMBERS_KEY, ContentType, FileType, PathSpec
-from mirage.vfs.dev.dev import DevStore
+from mirage.vfs.dev.store import DevStore
 
 
 def _accessor():

@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from mirage.accessor.s3 import S3Accessor, S3Config
+from mirage.accessor.s3 import S3Accessor
 from mirage.core.object_store.driver import (
     ChildEntry,
     ObjectMeta,
@@ -32,6 +32,7 @@ from mirage.core.s3.client import (
 )
 from mirage.core.s3.constants import SCOPE_ERROR
 from mirage.utils.dates import to_iso_z
+from mirage.vfs.s3.config import S3Config
 
 DELETE_BATCH = 1000
 
@@ -187,8 +188,14 @@ async def _get(conn: S3Conn, key: str) -> bytes | None:
 async def _put(conn: S3Conn, key: str, data: bytes) -> ObjectMeta | None:
     # The ETag is read through the same helper _head uses, so the token a
     # write stamps and the token a later stat reports are one spelling.
+    # A write carries no type of its own, so the mount's default is the
+    # one the store keeps and serves back.
+    content_type = conn.config.default_content_type
     resp = await conn.client.put_object(
-        Bucket=conn.config.bucket, Key=key, Body=data
+        Bucket=conn.config.bucket,
+        Key=key,
+        Body=data,
+        **({"ContentType": content_type} if content_type else {}),
     )
     return ObjectMeta(
         size=len(data),

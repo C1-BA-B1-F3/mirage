@@ -151,7 +151,7 @@ under `rm`/`mv`/`mkdir`/... and refuses it as a source of `tar -c`, `zip`,
 runs; `workspace/expand/` expands and classifies words; `workspace/lookup/`
 holds the one precedence list (builtin, namespace command, function, CLI,
 mount); `workspace/executor/` runs pipes, redirects, jobs and control flow.
-Follow tables live in `workspace/names.py`. Every session write goes through
+Follow tables live in `workspace/lookup/constants.py`. Every session write goes through
 `SessionView.set`, so a `pre_session` rule is enforced; only shell
 bookkeeping and `seed_var` are exempt.
 

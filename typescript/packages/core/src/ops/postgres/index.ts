@@ -16,11 +16,5 @@ import { POSTGRES_IO } from '../../commands/builtin/postgres/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
-import { readOp } from './read.ts'
 
-export const POSTGRES_OPS: readonly RegisteredOp[] = [
-  ...makeGenericOps(VFSName.POSTGRES, POSTGRES_IO, {
-    overrides: new Set(['read']),
-  }),
-  readOp,
-]
+export const POSTGRES_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.POSTGRES, POSTGRES_IO)

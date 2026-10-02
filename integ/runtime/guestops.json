@@ -3,7 +3,6 @@
   "cases": [
     {
       "id": "monty_w_creates_an_empty_file",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": {
@@ -30,7 +29,6 @@
     },
     {
       "id": "monty_w_truncates_at_open",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": {
@@ -57,7 +55,6 @@
     },
     {
       "id": "monty_w_write_flushes_after_the_create",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }
@@ -78,7 +75,6 @@
     },
     {
       "id": "monty_a_creates_then_appends",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }
@@ -107,7 +103,6 @@
     },
     {
       "id": "monty_cannot_spell_exclusive",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }
@@ -124,7 +119,6 @@
     },
     {
       "id": "monty_cannot_spell_update",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }
@@ -141,7 +135,6 @@
     },
     {
       "id": "monty_refuses_a_bad_mode_word",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }
@@ -158,7 +151,6 @@
     },
     {
       "id": "monty_iterdir_classifies_through_stat",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": {
@@ -183,7 +175,6 @@
     },
     {
       "id": "monty_guest_reads_share_the_shell_ledger",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }
@@ -562,7 +553,6 @@
     {
       "note": "A guest calling os.rmdir reaches the same op through the runtime VFS, so the refusal has to survive that path too -- and the errno the guest sees is the one the backend stamped.",
       "id": "monty_rmdir_refuses_a_nonempty_directory",
-      "hosts": ["python"],
       "world": {
         "runtimes": ["monty", "workspace"],
         "mounts": { "/data": { "vfs": "ram", "files": { "seed.txt": "seed\n" } } }

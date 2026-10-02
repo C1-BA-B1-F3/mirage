@@ -16,7 +16,7 @@ import aiohttp
 import pytest
 
 import mirage.core.hf_buckets.hub as hub_mod
-from mirage.accessor.hf_buckets import HfBucketsAccessor, HfBucketsConfig
+from mirage.accessor.hf_buckets import HfBucketsAccessor
 from mirage.core.hf_buckets.hub import (
     fetch_row,
     paths_info_url,
@@ -26,6 +26,7 @@ from mirage.core.hf_buckets.hub import (
 from mirage.core.hf_buckets.read import read_bytes
 from mirage.core.hf_hub.client import HfHubError
 from mirage.types import PathSpec
+from mirage.vfs.hf_buckets.config import HfBucketsConfig
 from tests.fixtures.hf_buckets_opendal import make_accessor
 from tests.fixtures.hf_hub_api import (
     INVALID_PATHS,

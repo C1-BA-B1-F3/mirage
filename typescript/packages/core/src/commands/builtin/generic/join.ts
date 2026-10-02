@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { specOf } from '../../spec/builtins.ts'
-import { FlagView } from '../../spec/flag_view.ts'
+import { OPERAND, SPELLED } from '../../spec/constants.ts'
+import { FlagView, spreadOperands } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
@@ -58,7 +59,9 @@ export enum CheckOrder {
 /**
  * join's options once GNU's option loop has run, in join.c's terms. Every
  * byte-valued field is a byte view: one character per byte, so a string
- * comparison is join.c's memcmp. Mirrors JoinFlags in join.py.
+ * comparison is join.c's memcmp. `files` says which operands are FILE1 and
+ * FILE2, since the obsolete `-j1 FIELD`, `-j2 FIELD` and `-o LIST...` forms
+ * take operands as option values. Mirrors JoinFlags in join.py.
  */
 export interface JoinFlags {
   readonly field1: number
@@ -75,6 +78,21 @@ export interface JoinFlags {
   readonly eol: string
   readonly checkOrder: CheckOrder
   readonly header: boolean
+  readonly files: readonly [number, number]
+}
+
+/** join.c's operand_status: what a filed operand may turn out to be. */
+enum Status {
+  MUST_BE_OPERAND = 'operand',
+  MIGHT_BE_J1_ARG = 'j1',
+  MIGHT_BE_J2_ARG = 'j2',
+  MIGHT_BE_O_ARG = 'o',
+}
+
+interface Filed {
+  readonly index: number
+  readonly word: string
+  readonly status: Status
 }
 
 function toView(bytes: Uint8Array): string {
@@ -173,6 +191,8 @@ class Options {
   zero = false
   checkOrder = CheckOrder.DEFAULT
   header = false
+  files: Filed[] = []
+  joptionCount: [number, number] = [0, 0]
 
   setTab(text: string): void {
     const raw = rawView(text)
@@ -188,8 +208,19 @@ class Options {
     this.literalTab ||= raw !== ''
   }
 
-  apply(name: string, value: ParsedFlagValue): void {
+  // Take one option, and say what the next operand may be. `spelled` is
+  // whether it was typed as a lone `-j1` or `-j2` (SPELLED_WORDS).
+  apply(name: string, value: ParsedFlagValue, spelled: boolean): Status {
     const text = typeof value === 'string' ? value : ''
+    if (name === 'j' && spelled) {
+      const isJ2 = text === '2'
+      this.joptionCount[isJ2 ? 1 : 0] += 1
+      return isJ2 ? Status.MIGHT_BE_J2_ARG : Status.MIGHT_BE_J1_ARG
+    }
+    if (name === 'o' && text !== 'auto') {
+      this.outlist.push(...fieldList(text))
+      return Status.MIGHT_BE_O_ARG
+    }
     if (name === 'a' || name === 'v') {
       if (name === 'v') this.pairables = false
       this.unpairables[fileNumber(text) - 1] = true
@@ -208,8 +239,7 @@ class Options {
       this.field1 = field
       this.field2 = setJoinField(this.field2, field)
     } else if (name === 'o') {
-      if (text === 'auto') this.autoformat = true
-      else this.outlist.push(...fieldList(text))
+      this.autoformat = true
     } else if (name === 't') {
       this.setTab(text)
     } else if (name === 'ignore_case') {
@@ -222,6 +252,42 @@ class Options {
       this.checkOrder = CheckOrder.DISABLED
     } else if (name === 'header') {
       this.header = true
+    }
+    return Status.MUST_BE_OPERAND
+  }
+
+  // join.c's add_file_name: file an operand, taking an earlier one as an
+  // option's value when a third arrives, and say what the next operand may be.
+  addFile(index: number, word: string, status: Status): Status {
+    const [first, second] = this.files
+    if (first !== undefined && second !== undefined) {
+      const op0 = first.status === Status.MUST_BE_OPERAND
+      const taken = op0 ? second : first
+      if (taken.status === Status.MUST_BE_OPERAND) {
+        throw extraOperandError(CommandName.JOIN, word)
+      }
+      if (taken.status === Status.MIGHT_BE_J1_ARG) {
+        this.joptionCount[0] -= 1
+        this.field1 = setJoinField(this.field1, joinField(taken.word))
+      } else if (taken.status === Status.MIGHT_BE_J2_ARG) {
+        this.joptionCount[1] -= 1
+        this.field2 = setJoinField(this.field2, joinField(taken.word))
+      } else {
+        this.outlist.push(...fieldList(taken.word))
+      }
+      this.files.splice(op0 ? 1 : 0, 1)
+    }
+    this.files.push({ index, word, status })
+    return status === Status.MIGHT_BE_O_ARG ? Status.MIGHT_BE_O_ARG : Status.MUST_BE_OPERAND
+  }
+
+  // A `-j1` or `-j2` no operand was taken for is `-j 1` or `-j 2`.
+  settleJ(): void {
+    for (const which of [0, 1] as const) {
+      if (this.joptionCount[which] !== 0) {
+        this.field1 = setJoinField(this.field1, BigInt(which))
+        this.field2 = setJoinField(this.field2, BigInt(which))
+      }
     }
   }
 
@@ -243,6 +309,10 @@ class Options {
       eol: this.zero ? '\0' : '\n',
       checkOrder: this.checkOrder,
       header: this.header,
+      files:
+        this.files[0] !== undefined && this.files[1] !== undefined
+          ? [this.files[0].index, this.files[1].index]
+          : [0, 1],
     }
   }
 }
@@ -253,13 +323,51 @@ class Options {
  * Each option takes effect where it was typed, so `-a1 -a2` asks for both
  * files, the later of `--check-order` and `--nocheck-order` wins, and a
  * second `-1`, `-t` or `-e` that disagrees with the first is GNU's
- * refusal. Mirrors parse_flags in join.py.
+ * refusal. The operands are read there too, as join's RETURN_IN_ORDER getopt
+ * hands them over: a third one is refused where it stands, or turns an
+ * earlier one into the value of an obsolete `-j1 FIELD`, `-j2 FIELD` or
+ * `-o LIST...`. A glob's matches stand where it was typed once
+ * `spreadOperands` has put them on the tape. Operands the tape does not
+ * place, from a call that never went through the shell, follow the options,
+ * as after `--`. `operands` null reads the options alone.
+ * Mirrors parse_flags in join.py.
  */
-export function parseJoinFlags(flags: CommandOpts['flags']): JoinFlags {
+export function parseJoinFlags(
+  flags: CommandOpts['flags'],
+  operands: readonly string[] | null = null,
+  argv: readonly string[] = [],
+): JoinFlags {
   const options = new Options()
-  for (const [name, value] of new FlagView(flags, specOf('join')).occurrences(...OPTIONS)) {
-    options.apply(name, value)
+  const words = operands ?? []
+  let tape = new FlagView(flags, specOf('join')).occurrences(...OPTIONS, OPERAND, SPELLED)
+  if (tape.filter(([name]) => name === OPERAND).length !== words.length) {
+    tape = tape.filter(([name]) => name !== OPERAND)
   }
+  let status = Status.MUST_BE_OPERAND
+  let spelled = false
+  let afterDashes = false
+  let index = 0
+  for (const [name, value] of tape) {
+    if (name === SPELLED) {
+      afterDashes ||= value === '--'
+      spelled = value !== '--'
+    } else if (name === OPERAND) {
+      const word = words[index] ?? ''
+      if (afterDashes) options.addFile(index, word, Status.MUST_BE_OPERAND)
+      else status = options.addFile(index, word, status)
+      index += 1
+    } else {
+      status = options.apply(name, value, spelled)
+      spelled = false
+    }
+  }
+  for (let rest = index; rest < words.length; rest += 1) {
+    options.addFile(rest, words[rest] ?? '', Status.MUST_BE_OPERAND)
+  }
+  if (operands !== null && options.files.length < 2) {
+    throw missingOperandError(CommandName.JOIN, options.files.at(-1)?.word ?? null, argv)
+  }
+  options.settleJ()
   return options.freeze()
 }
 
@@ -474,15 +582,18 @@ export interface JoinIO {
   read: (p: PathSpec) => AsyncIterable<Uint8Array>
   stdin: ByteSource | null
   flags: JoinFlags
-  argv?: readonly string[]
 }
 
-/** GNU `join` of two files over already-parsed options. Mirrors join in join.py. */
+/**
+ * GNU `join` of two files over already-parsed options: `paths` are the
+ * operands, of which `flags.files` names the two files. Mirrors join in
+ * join.py.
+ */
 export async function join(paths: PathSpec[], io: JoinIO): Promise<[ByteSource | null, IOResult]> {
-  const [p1, p2, extra] = paths
-  if (extra !== undefined) throw extraOperandError(CommandName.JOIN, extra.rawPath)
+  const p1 = paths[io.flags.files[0]]
+  const p2 = paths[io.flags.files[1]]
   if (p1 === undefined || p2 === undefined) {
-    throw missingOperandError(CommandName.JOIN, paths[0]?.rawPath ?? null, io.argv ?? [])
+    throw missingOperandError(CommandName.JOIN, paths.at(-1)?.rawPath ?? null, [])
   }
   if (p1.rawPath === '-' && p2.rawPath === '-') {
     return [
@@ -505,16 +616,31 @@ export async function join(paths: PathSpec[], io: JoinIO): Promise<[ByteSource |
   return merge.result()
 }
 
-/** The builder's door: parse the line's flags, then `join`. Mirrors join_generic in join.py. */
+/**
+ * The builder's door: parse the line's flags, then `join`. Each operand's
+ * glob expands on its own, so the option loop sees its matches where the
+ * word was typed (`join -j1 2 *.txt`). Mirrors join_generic in join.py.
+ */
 export async function joinGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
+  resolveGlob: (targets: PathSpec[]) => Promise<PathSpec[]>,
   read: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
-  return join(paths, {
+  const groups: PathSpec[][] = []
+  for (const path of paths) groups.push(await resolveGlob([path]))
+  const resolved = groups.flat()
+  const flags = spreadOperands(
+    opts.flags,
+    groups.map((group) => group.map((path) => path.rawPath)),
+  )
+  return join(resolved, {
     read,
     stdin: opts.stdin,
-    flags: parseJoinFlags(opts.flags),
-    argv: opts.argv ?? [],
+    flags: parseJoinFlags(
+      flags,
+      resolved.map((path) => path.rawPath),
+      opts.argv ?? [],
+    ),
   })
 }

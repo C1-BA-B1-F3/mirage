@@ -17,11 +17,11 @@ from collections.abc import AsyncIterator
 import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
-from mirage.core.ssh.client import _abs
-from mirage.core.ssh.config import SSHConfig
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec, WalkEntry
 from mirage.utils.dates import epoch_to_iso
 from mirage.utils.key_prefix import mount_prefix_of
+from mirage.vfs.ssh.config import SSHConfig
 from mirage.watch.base import DeltaHook
 from mirage.watch.delta import ListingDeltaHook
 from mirage.watch.fingerprint import stat_fingerprint
@@ -42,7 +42,7 @@ async def _descend(
         path (str): Mount-relative directory to descend into.
     """
     try:
-        listing = await sftp.readdir(_abs(config, path))
+        listing = await sftp.readdir(join_root(config.root, path))
     except asyncssh.SFTPNoSuchFile:
         return
     for entry in listing:

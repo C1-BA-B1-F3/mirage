@@ -111,6 +111,8 @@ function makeBridge(
     // The door builds each row from a name plus one stat, so the double
     // answers both.
     if (op === 'stat') {
+      if (dirs.has(path))
+        return Promise.resolve(new FileStat({ name: path, type: FileType.DIRECTORY }))
       const found = files.get(path)
       if (found === undefined) {
         return Promise.reject(Object.assign(new Error(path), { code: 'ENOENT' }))
@@ -134,7 +136,7 @@ function makeBridge(
     for (const d of dirs) {
       if (d.startsWith(prefix) && !d.slice(prefix.length).includes('/')) entries.push(d + '/')
     }
-    if (entries.length === 0) {
+    if (entries.length === 0 && !dirs.has(prefix.replace(/\/$/, ''))) {
       return Promise.reject(Object.assign(new Error(`no such dir: ${prefix}`), { code: 'ENOENT' }))
     }
     return Promise.resolve(entries)
@@ -940,7 +942,7 @@ describe('Workspace with the monty runtime', () => {
 
 describe('monty unavailable', () => {
   it('handlePython maps MontyUnavailableError to exit 127', async () => {
-    const { handlePython } = await import('../../../workspace/executor/python/handle.ts')
+    const { handlePython } = await import('../../../commands/builtin/general/python.ts')
     const { MontyUnavailableError } = await import('./index.ts')
     class UnavailableMonty extends MontyRuntime {
       override run(): Promise<never> {

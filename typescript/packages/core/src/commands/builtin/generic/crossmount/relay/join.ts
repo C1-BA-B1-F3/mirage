@@ -28,9 +28,13 @@ export async function runJoin(
   dispatch: DispatchFn,
   stdin: ByteSource | null = null,
 ): Promise<CrossResult> {
-  return join(flatten(scopes), {
+  const paths = flatten(scopes)
+  return join(paths, {
     read: streamOp(dispatch),
     stdin,
-    flags: parseJoinFlags(flagKwargs),
+    flags: parseJoinFlags(
+      flagKwargs,
+      paths.map((path) => path.rawPath),
+    ),
   })
 }

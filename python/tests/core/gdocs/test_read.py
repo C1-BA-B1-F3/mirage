@@ -20,9 +20,9 @@ import pytest
 from mirage.accessor.gdocs import GDocsAccessor
 from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.core.gdocs.client import TokenManager
 from mirage.core.gdocs.read import read, read_doc
 from mirage.core.gdocs.stat import stat
+from mirage.core.google.client import TokenManager
 from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key

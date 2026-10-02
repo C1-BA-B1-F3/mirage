@@ -2,7 +2,6 @@ from typing import Protocol
 
 import pytest
 
-from mirage.accessor.s3 import S3Config
 from mirage.vfs.aliyun import AliyunConfig
 from mirage.vfs.backblaze import BackblazeConfig
 from mirage.vfs.ceph import CephConfig
@@ -12,6 +11,7 @@ from mirage.vfs.minio import MinIOConfig
 from mirage.vfs.oci import OCIConfig
 from mirage.vfs.qingstor import QingStorConfig
 from mirage.vfs.r2 import R2Config
+from mirage.vfs.s3.config import S3Config
 from mirage.vfs.scaleway import ScalewayConfig
 from mirage.vfs.seaweedfs import SeaweedFSConfig
 from mirage.vfs.supabase import SupabaseConfig

@@ -17,9 +17,8 @@ from mirage.shell.printer import function_text
 from mirage.workspace.executor.builtins.lookup.constants import DESCRIPTIONS
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.lookup import Consumer, lookup, lookup_all, program
-from mirage.workspace.lookup.constants import BASH_BUILTINS
+from mirage.workspace.lookup.constants import BASH_BUILTINS, KEYWORDS
 from mirage.workspace.mount import MountRegistry
-from mirage.workspace.names import KEYWORDS
 from mirage.workspace.session import SessionState
 
 

@@ -136,28 +136,33 @@ export async function invalidateSubtree(path: string | PathSpec): Promise<void> 
 }
 
 /**
- * Run `op`, then evict the subtree at `path`, also when `op` fails: an op
- * that fails partway (a folder copy that merged some children) has already
- * changed what lies below `path`. After a failed op an eviction error is
- * reported, not thrown, so the caller still learns why the op failed.
+ * Run `op`, then `evict`, also when `op` fails.
+ *
+ * An op that fails partway (a paginated delete, a folder copy that merged
+ * some children) has already changed the backend, so what it touched is
+ * stale either way. `evict` gets the op's result, or undefined when the op
+ * failed. After a failed op an eviction error is reported, not thrown, so
+ * the caller still learns why the op failed.
  *
  * Args:
- *   path: root of the subtree the op changes.
  *   op: the backend change.
+ *   evict: records and evicts what the op changed, given its result.
  */
-export async function invalidateSubtreeAfter(
-  path: PathSpec,
-  op: () => Promise<void>,
-): Promise<void> {
+export async function evictAfter<T>(
+  op: () => Promise<T>,
+  evict: (result: T | undefined) => Promise<void>,
+): Promise<T> {
+  let result: T
   try {
-    await op()
+    result = await op()
   } catch (error) {
-    await invalidateSubtree(path).catch((evictError: unknown) => {
-      console.warn(`evicting ${path.virtual} after a failed op: ${String(evictError)}`)
+    await evict(undefined).catch((evictError: unknown) => {
+      console.warn(`evicting after a failed op: ${String(evictError)}`)
     })
     throw error
   }
-  await invalidateSubtree(path)
+  await evict(result)
+  return result
 }
 
 /**

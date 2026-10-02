@@ -26,7 +26,7 @@ import {
 import { DEFAULT_PROG, EVAL_INTERRUPT_SECONDS, INCOMPLETE_MARKERS } from './constants.ts'
 import { displayError } from './errors.ts'
 import { MirageOSAccess } from './osaccess.ts'
-import type { MontyVFS } from './vfs.ts'
+import type { RuntimeVFS } from '../../vfs.ts'
 
 const INTERRUPTED = Symbol('interrupted')
 
@@ -81,7 +81,7 @@ export class MontyExecution {
   private poolPromise: Promise<MontyPoolLike> | null = null
   private readonly evalSessions = new Map<string, MontySessionLike>()
 
-  async run(args: RunArgs, vfs: MontyVFS | null): Promise<RunResult> {
+  async run(args: RunArgs, vfs: RuntimeVFS | null): Promise<RunResult> {
     const pool = await this.ensurePool()
     // A script is Monty's own scriptName, which it keeps the last part of
     // for `__file__`, under the directory a feed starts in.
@@ -160,7 +160,7 @@ export class MontyExecution {
    */
   async eval(
     code: string,
-    vfs: MontyVFS | null,
+    vfs: RuntimeVFS | null,
     opts: { inputs?: Record<string, EvalValue>; session?: string; cwd?: PathSpec } = {},
   ): Promise<EvalResult> {
     const pool = await this.ensurePool()
@@ -294,7 +294,7 @@ export class MontyExecution {
     session: MontySessionLike,
     code: string,
     args: RunArgs,
-    vfs: MontyVFS | null,
+    vfs: RuntimeVFS | null,
   ): Promise<RunResult> {
     const module = await this.loadModule()
     const out: string[] = []

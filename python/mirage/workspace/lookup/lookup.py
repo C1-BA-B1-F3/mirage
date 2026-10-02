@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Iterator, Sequence
+from typing import TYPE_CHECKING
 
 from mirage.policy.match import head_visible, node_visible
 from mirage.runtime.constants import EXTERNAL_COMMANDS
@@ -29,8 +30,10 @@ from mirage.workspace.lookup.constants import (
     SHELL_ONLY_BUILTINS,
 )
 from mirage.workspace.lookup.types import Consumer
-from mirage.workspace.mount import MountRegistry
 from mirage.workspace.session import SessionState
+
+if TYPE_CHECKING:
+    from mirage.workspace.mount import MountRegistry
 
 
 def listed(name: str, session: SessionState) -> bool:
@@ -110,7 +113,7 @@ def verb_visible(
 def runtime_refused(
     name: str,
     session: SessionState,
-    registry: MountRegistry,
+    registry: "MountRegistry",
     routing: RouteDecision | None = None,
 ) -> bool:
     """Whether routing explicitly refused the external runtime for ``name``."""
@@ -128,7 +131,7 @@ def runtime_refused(
 def _layers(
     name: str,
     session: SessionState,
-    registry: MountRegistry,
+    registry: "MountRegistry",
     routing: RouteDecision | None = None,
 ) -> Iterator[Consumer]:
     """Yield every layer holding the name, most-preferred first.
@@ -203,7 +206,7 @@ def _layers(
 def lookup(
     name: str,
     session: SessionState,
-    registry: MountRegistry,
+    registry: "MountRegistry",
     routing: RouteDecision | None = None,
 ) -> Consumer:
     """Route a command name to the layer that consumes it.
@@ -246,7 +249,7 @@ def lookup(
 
 
 def lookup_all(
-    name: str, session: SessionState, registry: MountRegistry
+    name: str, session: SessionState, registry: "MountRegistry"
 ) -> list[Consumer]:
     """Every layer holding the name, most-preferred first.
 
@@ -263,7 +266,7 @@ def lookup_all(
 
 
 def program(
-    name: str, session: SessionState, registry: MountRegistry
+    name: str, session: SessionState, registry: "MountRegistry"
 ) -> Consumer | None:
     """The layer a name runs from as a program, None when it is none.
 
@@ -312,7 +315,7 @@ def program(
     return None
 
 
-def execs(name: str, session: SessionState, registry: MountRegistry) -> bool:
+def execs(name: str, session: SessionState, registry: "MountRegistry") -> bool:
     """Whether a builtin that execs its operand (xargs, timeout) finds it.
 
     GNU execs the name, so a shell word with no file on PATH (cd,
@@ -334,7 +337,7 @@ def execs(name: str, session: SessionState, registry: MountRegistry) -> bool:
 
 
 def program_note(
-    name: str, session: SessionState, registry: MountRegistry
+    name: str, session: SessionState, registry: "MountRegistry"
 ) -> str | None:
     """What a program's ``/usr/bin`` file says about it, None when the
     name is no program.
@@ -373,7 +376,7 @@ def program_note(
     return f"{name} is built into mirage."
 
 
-def programs(session: SessionState, registry: MountRegistry) -> list[str]:
+def programs(session: SessionState, registry: "MountRegistry") -> list[str]:
     """Every program name the session can run, sorted: the ``/usr/bin``
     listing.
 

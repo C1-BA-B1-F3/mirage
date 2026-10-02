@@ -12,6 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.ssh.ssh import SSHVFS, SSHConfig
+from typing import TYPE_CHECKING
 
-__all__ = ["SSHVFS", "SSHConfig"]
+from mirage.vfs.ssh.config import SSHConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.ssh.ssh import SSHVFS
+
+__all__ = ["SSHConfig", "SSHVFS"]
+
+
+def __getattr__(name: str) -> "type[SSHVFS]":
+    if name == "SSHVFS":
+        from mirage.vfs.ssh.ssh import SSHVFS
+
+        return SSHVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

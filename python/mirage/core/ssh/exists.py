@@ -15,7 +15,7 @@
 import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 
 
@@ -23,7 +23,7 @@ async def exists(accessor: SSHAccessor, path: PathSpec) -> bool:
     config = accessor.config
     sftp = await accessor.sftp()
     try:
-        await sftp.stat(_abs(config, path.mount_path))
+        await sftp.stat(join_root(config.root, path.mount_path))
         return True
     except asyncssh.SFTPNoSuchFile:
         return False

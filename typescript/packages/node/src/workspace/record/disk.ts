@@ -39,15 +39,6 @@ function isMissing(e: unknown): boolean {
   return (e as NodeJS.ErrnoException).code === 'ENOENT'
 }
 
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err: unknown) {
-    return (err as NodeJS.ErrnoException).code !== 'ESRCH'
-  }
-}
-
 /**
  * One JSON-record-per-file client with lockfile CAS.
  *
@@ -208,23 +199,17 @@ export class DiskRecordClient {
   }
 
   // True when the lock is gone or was stale and removed; false when a
-  // live writer still holds it. A lock naming a pid that no longer runs
-  // on this host is stale at once, so a crashed writer does not hold up
-  // the next start; any other lock goes stale after LOCK_STALE_SECONDS.
+  // live writer still holds it.
   private async reclaimStaleLock(lockPath: string): Promise<boolean> {
     let mtimeMs: number
-    let holder: string
     try {
       mtimeMs = (await stat(lockPath)).mtimeMs
-      holder = await readFile(lockPath, 'utf-8')
     } catch (e) {
       if (isMissing(e)) return true
       throw e
     }
     const age = (Date.now() - mtimeMs) / 1000
-    if (age <= LOCK_STALE_SECONDS && (!/^\d+$/.test(holder) || processAlive(Number(holder)))) {
-      return false
-    }
+    if (age <= LOCK_STALE_SECONDS) return false
     console.warn(`mirage: reclaiming stale lock ${lockPath} (age ${age.toFixed(1)}s)`)
     try {
       await unlink(lockPath)

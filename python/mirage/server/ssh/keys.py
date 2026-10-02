@@ -51,7 +51,8 @@ async def load_host_key(path: Path) -> asyncssh.SSHKey:
     daemons starting at once agree on one key; the key is written whole
     and renamed into place, so a reader never sees a partial file. Only
     exclusive create and rename are needed, which every local
-    filesystem has.
+    filesystem has. A start killed while minting leaves its lock, which
+    the next start takes over once the record client counts it stale.
 
     Args:
         path (Path): where the private key lives.

@@ -64,9 +64,11 @@ async function writeHostKey(path: string, key: string): Promise<void> {
  * lockfile beside the key and looks again under it, so two daemons
  * starting at once agree on one key; the key is written whole and renamed
  * into place, so a reader never sees a partial file. Only exclusive create
- * and rename are needed, which every local filesystem has. The format is
- * OpenSSH's own, the same file the Python daemon writes, so either daemon
- * can serve the other's key.
+ * and rename are needed, which every local filesystem has. A start killed
+ * while minting leaves its lock, which the next start takes over once the
+ * record client counts it stale. The format is OpenSSH's own, the same
+ * file the Python daemon writes, so either daemon can serve the other's
+ * key.
  */
 export async function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): Promise<string> {
   const existing = await readHostKey(path)

@@ -12,7 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -74,18 +73,6 @@ describe('loadHostKey', () => {
     writeFileSync(path, winner)
     await records.unlock('host_key', lock)
     expect(await loading).toBe(winner)
-  })
-
-  it('a lock left by a killed start does not hold up the next', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
-    const path = join(dir, 'host_key')
-    const dead = spawnSync(process.execPath, ['-e', '']).pid
-    writeFileSync(`${new DiskRecordClient(dir, '').recordPath('host_key')}.lock`, String(dead))
-    const started = Date.now()
-    const key = await loadHostKey(path, ssh2.utils)
-    expect(Date.now() - started).toBeLessThan(2000)
-    expect(readFileSync(path, 'utf-8')).toBe(key)
-    expect(readdirSync(dir)).toEqual(['host_key'])
   })
 
   it('leaves no key file behind when writing it fails', async () => {

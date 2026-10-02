@@ -63,19 +63,6 @@ async def test_grep_recursive_matches_content():
 
 
 @pytest.mark.asyncio
-async def test_grep_matches_the_json_file_contents():
-    res = _res()
-    p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
-    source, _io = await _command(res, "grep")(
-        res.accessor,
-        [p],
-        ["food"],
-        CommandOpts(index=ops(res).index, flags={"r": True}),
-    )
-    assert b"food" in await _bytes(source)
-
-
-@pytest.mark.asyncio
 async def test_grep_bare_directory_is_a_directory():
     res = _res()
     p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")

@@ -60,7 +60,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -size -5c",
       "expect": {

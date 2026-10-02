@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qcat && printf 'a\\001b\\n' > /data/qcat/v.txt && cat -v /data/qcat/v.txt",
       "expect": {

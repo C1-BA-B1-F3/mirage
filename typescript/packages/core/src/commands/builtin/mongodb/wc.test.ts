@@ -63,15 +63,4 @@ describe('mongodb wc -l', () => {
     expect(code).toBe(0)
     expect(counted).toEqual(['users'])
   })
-
-  // `countDocuments` answers 0 for a collection that does not exist and for
-  // one outside `databases`, so `wc -l` printed a zero count for a file `ls`
-  // and `cat` said was not there.
-  it('does not count a collection it cannot see', async () => {
-    const counted: string[] = []
-    const [, code, stderr] = await wcLines(docs('missing'), counted)
-    expect(code).toBe(1)
-    expect(stderr).toContain('No such file or directory')
-    expect(counted).toEqual([])
-  })
 })

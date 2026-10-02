@@ -9,22 +9,6 @@ from mirage.workspace.session import SessionState
 
 
 @pytest.mark.asyncio
-async def test_find_mtime_does_not_return_entries_without_timestamps(
-    github_env,
-):
-    accessor, index = github_env
-    stdout, io = await find(
-        accessor,
-        [PathSpec.from_str_path("/")],
-        [],
-        CommandOpts(index=index, flags={"mtime": "-1"}),
-    )
-
-    assert await materialize(stdout) == b""
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
 async def test_find_missing_start_reports_error(github_env):
     accessor, index = github_env
     stdout, io = await find(

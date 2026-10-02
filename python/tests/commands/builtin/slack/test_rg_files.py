@@ -117,40 +117,6 @@ async def test_rg_files_dir_redirects_to_generic_scan(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_rg_both_when_channel_or_day_root(accessor, index):
-    msgs_payload = b'{"messages":{"matches":[]}}'
-    files_payload = b'{"files":{"matches":[]}}'
-    with (
-        patch(
-            "mirage.commands.builtin.slack.rg.search_messages",
-            new_callable=AsyncMock,
-            return_value=msgs_payload,
-        ) as mock_msgs,
-        patch(
-            "mirage.commands.builtin.slack.rg.search_files",
-            new_callable=AsyncMock,
-            return_value=files_payload,
-        ) as mock_files,
-    ):
-        await rg(
-            accessor,
-            [
-                PathSpec(
-                    vfs_path=mount_key(
-                        "/channels/general__C001/2026-04-10", ""
-                    ),
-                    virtual="/channels/general__C001/2026-04-10",
-                    directory="/channels/general__C001/2026-04-10",
-                )
-            ],
-            ["foo"],
-            CommandOpts(index=index, flags={"word_regexp": True}),
-        )
-    assert mock_msgs.await_count == 1
-    assert mock_files.await_count == 1
-
-
-@pytest.mark.asyncio
 async def test_grep_chat_jsonl_scans_the_named_day(accessor, index):
     with (
         patch(

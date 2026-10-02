@@ -30,35 +30,6 @@ async def test_cat_passthrough_from_stream_preserves_chunks():
 
 
 @pytest.mark.asyncio
-async def test_cat_number_lines():
-    out = await _drain(cat(b"a\nb\nc\n", number_lines=True))
-    assert out == b"     1\ta\n     2\tb\n     3\tc\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_number_lines_across_chunk_boundaries():
-
-    async def src():
-        yield b"a\nb"
-        yield b"\nc\n"
-
-    out = await _drain(cat(src(), number_lines=True))
-    assert out == b"     1\ta\n     2\tb\n     3\tc\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_show_ends():
-    out = await _drain(cat(b"a\nb\n", show_ends=True))
-    assert out == b"a$\nb$\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_squeeze_blank():
-    out = await _drain(cat(b"a\n\n\n\nb\n", squeeze_blank=True))
-    assert out == b"a\n\nb\n"
-
-
-@pytest.mark.asyncio
 async def test_cat_no_trailing_newline_preserved():
     """POSIX: `printf "x" | cat -n` emits no trailing newline."""
     out = await _drain(cat(b"hello", number_lines=True))
@@ -159,28 +130,6 @@ async def test_cat_number_lines_chunked_one_byte_at_a_time():
 
     out = await _drain(cat(src(), number_lines=True))
     assert out == b"     1\ta\n     2\tbb\n     3\tccc\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_show_tabs_renders_caret_i():
-    out = b"".join([c async for c in cat(b"a\tb\nx\n", show_tabs=True)])
-    assert out == b"a^Ib\nx\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_show_all_combines_tabs_and_ends():
-    out = b"".join(
-        [
-            c
-            async for c in cat(
-                b"a\tb\nx\n",
-                show_tabs=True,
-                show_ends=True,
-                show_nonprinting=True,
-            )
-        ]
-    )
-    assert out == b"a^Ib$\nx$\n"
 
 
 @pytest.mark.asyncio

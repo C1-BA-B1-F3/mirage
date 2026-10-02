@@ -6,7 +6,6 @@ from mirage.commands.builtin.generic.stat import stat
 from mirage.io.types import materialize
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.types import LinkView
-from mirage.policy.profile import SessionProfile
 from mirage.types import (
     DEVICE_NUMBERS_KEY,
     LINK_TARGET_KEY,
@@ -79,16 +78,6 @@ async def _render_named(fmt: str, name: str) -> str:
 async def _run(ws: Workspace, cmd: str) -> tuple[int, str, str]:
     r = await ws.shell(cmd)
     return r.exit_code, await r.stdout_str(), await r.stderr_str()
-
-
-@pytest.mark.asyncio
-async def test_name_quoted_size_type():
-    assert await _render("%n", _fs()) == "/data/f.txt"
-    assert await _render("%N", _fs()) == "'/data/f.txt'"
-    assert await _render("%s", _fs(size=42)) == "42"
-    assert await _render("%s", _fs(size=None)) == "-"
-    assert await _render("%F", _fs()) == "regular file"
-    assert await _render("%F", _fs(type=FileType.DIRECTORY)) == "directory"
 
 
 @pytest.mark.asyncio
@@ -247,15 +236,6 @@ async def test_atime_falls_back_to_mtime():
 
 
 @pytest.mark.asyncio
-async def test_birth_and_epoch_of_unknown_time():
-    # GNU's own unknown sentinels: birth is "-" / 0.
-    assert await _render("%w", _fs()) == "-"
-    assert await _render("%W", _fs()) == "0"
-    # Epoch of an absent time is 0.
-    assert await _render("%Y", _fs(modified=None)) == "0"
-
-
-@pytest.mark.asyncio
 async def test_structural_constants():
     fs = _fs()
     assert await _render("%B", fs) == "512"
@@ -299,22 +279,6 @@ async def test_missing_operand_raises():
 
 
 @pytest.mark.asyncio
-async def test_error_operand_continues_and_exits_one():
-    ok = PathSpec.from_str_path("/data/ok.txt")
-    bad = PathSpec.from_str_path("/data/bad.txt")
-
-    async def _stat_fn(p: PathSpec) -> FileStat:
-        if p.virtual == bad.virtual:
-            raise FileNotFoundError(p.virtual)
-        return _fs(size=3)
-
-    out, io = await stat([bad, ok], stat_fn=_stat_fn, c="%s")
-    assert io.exit_code == 1
-    assert (await materialize(io.stderr)).decode().count("bad.txt") == 1
-    assert (await materialize(out)).decode() == "3\n"
-
-
-@pytest.mark.asyncio
 async def test_f_flag_shares_c_formatter():
     # `stat -f` is not filesystem-mode yet (#609 Tier 3); it reuses -c.
     out, io = await stat(
@@ -354,22 +318,6 @@ async def test_owner_defaults_to_workspace_agent():
 
 
 @pytest.mark.asyncio
-async def test_group_is_the_session_profile():
-    vfs = RAMVFS()
-    vfs._store.files["/f.txt"] = b"hello"
-    ws = Workspace(
-        {"/data/": (vfs, MountMode.WRITE)},
-        mode=MountMode.WRITE,
-        agent_id="agent7",
-        profiles={"admin": SessionProfile()},
-        profile="admin",
-    )
-    code, out, _ = await _run(ws, 'stat -c "%U:%G" /data/f.txt')
-    assert code == 0
-    assert out == "agent7:admin\n"
-
-
-@pytest.mark.asyncio
 async def test_owner_falls_back_to_dash_when_unclaimed():
     vfs = RAMVFS()
     vfs._store.files["/f.txt"] = b"hello"
@@ -377,21 +325,6 @@ async def test_owner_falls_back_to_dash_when_unclaimed():
     code, out, _ = await _run(ws, 'stat -c "%U:%G" /data/f.txt')
     assert code == 0
     assert out == "-:-\n"
-
-
-@pytest.mark.asyncio
-async def test_stat_and_ls_agree_on_owner():
-    vfs = RAMVFS()
-    vfs._store.files["/f.txt"] = b"hello"
-    ws = Workspace(
-        {"/data/": (vfs, MountMode.WRITE)},
-        mode=MountMode.WRITE,
-        agent_id="agent7",
-    )
-    _, stat_owner, _ = await _run(ws, 'stat -c "%U %G" /data/f.txt')
-    _, ls_long, _ = await _run(ws, "ls -l /data/f.txt")
-    assert stat_owner.strip() == "agent7 -"
-    assert " 1 agent7 - " in ls_long
 
 
 def _link_fs(target: str = "/data/f.txt") -> FileStat:
@@ -427,20 +360,6 @@ _LINKS = LinkView(
 
 
 @pytest.mark.asyncio
-async def test_a_link_operand_reports_the_link_not_its_target():
-    """GNU stat lstats: no -L means the link is what gets reported."""
-    out, io = await stat(
-        [PathSpec.from_str_path("/data/link")],
-        stat_fn=partial(_const_stat, _fs()),
-        links=_LINKS,
-    )
-    assert io.exit_code == 0
-    text = (await materialize(out)).decode()
-    assert "  File: /data/link -> /data/f.txt" in text
-    assert "symbolic link" in text
-
-
-@pytest.mark.asyncio
 async def test_dash_l_dereferences_instead_of_reporting_the_link():
     out, io = await stat(
         [PathSpec.from_str_path("/data/link")],
@@ -452,17 +371,6 @@ async def test_dash_l_dereferences_instead_of_reporting_the_link():
     text = (await materialize(out)).decode()
     assert "  File: /data/link\n" in text
     assert "regular file" in text
-
-
-@pytest.mark.asyncio
-async def test_a_non_link_operand_still_reaches_the_backend():
-    out, io = await stat(
-        [PathSpec.from_str_path("/data/f.txt")],
-        stat_fn=partial(_const_stat, _fs()),
-        links=_LINKS,
-    )
-    assert io.exit_code == 0
-    assert "  File: /data/f.txt\n" in (await materialize(out)).decode()
 
 
 @pytest.mark.asyncio

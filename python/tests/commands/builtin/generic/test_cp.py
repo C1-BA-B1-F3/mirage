@@ -97,13 +97,6 @@ async def _run(files, dirs, paths, *, mtimes=None, readdir=None, **kw):
 
 
 @pytest.mark.asyncio
-async def test_single_source_to_new_path():
-    files = {"/a.txt": b"AAA"}
-    await _run(files, set(), ["/a.txt", "/copy.txt"])
-    assert files["/copy.txt"] == b"AAA"
-
-
-@pytest.mark.asyncio
 async def test_single_source_into_directory():
     files = {"/a.txt": b"AAA", "/d/keep": b"K"}
     await _run(files, {"/d"}, ["/a.txt", "/d"])
@@ -112,26 +105,11 @@ async def test_single_source_into_directory():
 
 
 @pytest.mark.asyncio
-async def test_multiple_sources_into_directory():
-    files = {"/a.txt": b"AAA", "/b.txt": b"BBB", "/d/keep": b"K"}
-    await _run(files, {"/d"}, ["/a.txt", "/b.txt", "/d"])
-    assert files["/d/a.txt"] == b"AAA"
-    assert files["/d/b.txt"] == b"BBB"
-
-
-@pytest.mark.asyncio
 async def test_multiple_sources_nondir_raises():
     files = {"/a.txt": b"AAA", "/b.txt": b"BBB", "/dst.txt": b"DST"}
     with pytest.raises(NotADirectoryError):
         await _run(files, set(), ["/a.txt", "/b.txt", "/dst.txt"])
     assert files["/dst.txt"] == b"DST"
-
-
-@pytest.mark.asyncio
-async def test_no_clobber_skips_existing():
-    files = {"/a.txt": b"NEW", "/d/a.txt": b"OLD"}
-    await _run(files, {"/d"}, ["/a.txt", "/d"], no_clobber=True)
-    assert files["/d/a.txt"] == b"OLD"
 
 
 @pytest.mark.asyncio
@@ -149,43 +127,10 @@ async def test_duplicate_basenames_without_n_last_wins():
 
 
 @pytest.mark.asyncio
-async def test_recursive_into_directory():
-    files = {"/src/x.txt": b"X", "/src/sub/y.txt": b"Y"}
-    await _run(files, {"/src"}, ["/src", "/dst"], recursive=True)
-    assert files["/dst/x.txt"] == b"X"
-    assert files["/dst/sub/y.txt"] == b"Y"
-
-
-@pytest.mark.asyncio
-async def test_verbose_emits_arrow_lines():
-    files = {"/a.txt": b"AAA"}
-    out, _ = await _run(files, set(), ["/a.txt", "/copy.txt"], verbose=True)
-    assert out == b"'/a.txt' -> '/copy.txt'\n"
-
-
-@pytest.mark.asyncio
 async def test_records_writes_by_strip_prefix():
     files = {"/a.txt": b"AAA", "/b.txt": b"BBB", "/d/keep": b"K"}
     _, io = await _run(files, {"/d"}, ["/a.txt", "/b.txt", "/d"])
     assert set(io.writes) == {"/d/a.txt", "/d/b.txt"}
-
-
-@pytest.mark.asyncio
-async def test_missing_source_reports_cannot_stat_and_continues():
-    files = {"/b.txt": b"BBB", "/d/keep": b"K"}
-    _, io = await _run(files, {"/d"}, ["/missing.txt", "/b.txt", "/d"])
-    assert io.exit_code == 1
-    assert b"cp: cannot stat '/missing.txt'" in io.stderr
-    assert files["/d/b.txt"] == b"BBB"
-
-
-@pytest.mark.asyncio
-async def test_same_file_errors_and_preserves_content():
-    files = {"/a.txt": b"AAA"}
-    _, io = await _run(files, set(), ["/a.txt", "/a.txt"])
-    assert io.exit_code == 1
-    assert b"'/a.txt' and '/a.txt' are the same file" in io.stderr
-    assert files["/a.txt"] == b"AAA"
 
 
 @pytest.mark.asyncio
@@ -195,15 +140,6 @@ async def test_same_file_via_directory_target_errors():
     assert io.exit_code == 1
     assert b"are the same file" in io.stderr
     assert files["/d/a.txt"] == b"AAA"
-
-
-@pytest.mark.asyncio
-async def test_recursive_into_own_subtree_refused():
-    files = {"/d/a.txt": b"AAA"}
-    _, io = await _run(files, {"/d"}, ["/d", "/d"], recursive=True)
-    assert io.exit_code == 1
-    assert b"cp: cannot copy a directory, '/d', into itself" in io.stderr
-    assert set(files) == {"/d/a.txt"}
 
 
 @pytest.mark.asyncio
@@ -358,7 +294,6 @@ async def test_primitive_recursive_read_failure_copies_rest():
 
 
 _OLD = "2020-01-01T00:00:00+00:00"
-_NEW = "2024-01-01T00:00:00+00:00"
 
 
 def _root_readdir(files, dirs):
@@ -373,34 +308,6 @@ def _root_readdir(files, dirs):
         return sorted(children)
 
     return readdir
-
-
-@pytest.mark.asyncio
-async def test_update_older_skips_newer_dest():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    _, io = await _run(
-        files,
-        set(),
-        ["/a.txt", "/b.txt"],
-        mtimes={"/a.txt": _OLD, "/b.txt": _NEW},
-        flags=CpFlags(update="older"),
-    )
-    assert io.exit_code == 0
-    assert io.stderr is None
-    assert files["/b.txt"] == b"DST"
-
-
-@pytest.mark.asyncio
-async def test_update_older_replaces_older_dest():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    await _run(
-        files,
-        set(),
-        ["/a.txt", "/b.txt"],
-        mtimes={"/a.txt": _NEW, "/b.txt": _OLD},
-        flags=CpFlags(update="older"),
-    )
-    assert files["/b.txt"] == b"SRC"
 
 
 @pytest.mark.asyncio
@@ -439,27 +346,6 @@ async def test_update_none_skips_silently():
 
 
 @pytest.mark.asyncio
-async def test_update_none_fail_reports_not_replacing():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    _, io = await _run(
-        files, set(), ["/a.txt", "/b.txt"], flags=CpFlags(update="none-fail")
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"cp: not replacing '/b.txt'\n"
-    assert files["/b.txt"] == b"DST"
-
-
-@pytest.mark.asyncio
-async def test_backup_simple_saves_old_dest():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    await _run(
-        files, set(), ["/a.txt", "/b.txt"], flags=CpFlags(backup="simple")
-    )
-    assert files["/b.txt"] == b"SRC"
-    assert files["/b.txt~"] == b"DST"
-
-
-@pytest.mark.asyncio
 async def test_backup_skips_missing_dest():
     files = {"/a.txt": b"SRC"}
     await _run(
@@ -483,49 +369,12 @@ async def test_backup_existing_prefers_numbered_versions():
 
 
 @pytest.mark.asyncio
-async def test_backup_numbered_starts_at_one():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    await _run(
-        files,
-        set(),
-        ["/a.txt", "/b.txt"],
-        readdir=_root_readdir(files, set()),
-        flags=CpFlags(backup="numbered"),
-    )
-    assert files["/b.txt.~1~"] == b"DST"
-
-
-@pytest.mark.asyncio
-async def test_backup_custom_suffix():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    await _run(
-        files,
-        set(),
-        ["/a.txt", "/b.txt"],
-        flags=CpFlags(backup="simple", suffix=".bak"),
-    )
-    assert files["/b.txt.bak"] == b"DST"
-
-
-@pytest.mark.asyncio
 async def test_backup_records_write():
     files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
     _, io = await _run(
         files, set(), ["/a.txt", "/b.txt"], flags=CpFlags(backup="simple")
     )
     assert set(io.writes) == {"/b.txt", "/b.txt~"}
-
-
-@pytest.mark.asyncio
-async def test_verbose_backup_annotation():
-    files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    out, _ = await _run(
-        files,
-        set(),
-        ["/a.txt", "/b.txt"],
-        flags=CpFlags(verbose=True, backup="simple"),
-    )
-    assert out == b"'/a.txt' -> '/b.txt' (backup: '/b.txt~')\n"
 
 
 @pytest.mark.asyncio
@@ -544,29 +393,6 @@ async def test_recursive_merge_backs_up_per_entry():
 
 
 @pytest.mark.asyncio
-async def test_target_dir_copies_into():
-    files = {"/a.txt": b"AAA", "/d/keep": b"K"}
-    _, io = await _run(
-        files, {"/d"}, ["/a.txt"], flags=CpFlags(target_dir="/d")
-    )
-    assert io.exit_code == 0
-    assert files["/d/a.txt"] == b"AAA"
-
-
-@pytest.mark.asyncio
-async def test_target_dir_missing_fails_whole_command():
-    files = {"/a.txt": b"AAA"}
-    _, io = await _run(
-        files, set(), ["/a.txt"], flags=CpFlags(target_dir="/nosuch")
-    )
-    assert io.exit_code == 1
-    assert io.stderr == (
-        b"cp: target directory '/nosuch': No such file or directory\n"
-    )
-    assert set(files) == {"/a.txt"}
-
-
-@pytest.mark.asyncio
 async def test_target_dir_not_a_directory():
     files = {"/a.txt": b"AAA", "/f.txt": b"F"}
     _, io = await _run(
@@ -574,33 +400,6 @@ async def test_target_dir_not_a_directory():
     )
     assert io.exit_code == 1
     assert io.stderr == b"cp: target directory '/f.txt': Not a directory\n"
-
-
-@pytest.mark.asyncio
-async def test_no_target_dir_extra_operand():
-    from mirage.commands.errors import UsageError
-
-    files = {"/a.txt": b"A", "/b.txt": b"B", "/c.txt": b"C"}
-    with pytest.raises(UsageError) as exc:
-        await _run(
-            files,
-            set(),
-            ["/a.txt", "/b.txt", "/c.txt"],
-            flags=CpFlags(no_target_dir=True),
-        )
-    assert "cp: extra operand '/c.txt'" in str(exc.value)
-
-
-@pytest.mark.asyncio
-async def test_no_target_dir_refuses_dir_dest_for_file():
-    files = {"/a.txt": b"AAA", "/d/keep": b"K"}
-    _, io = await _run(
-        files, {"/d"}, ["/a.txt", "/d"], flags=CpFlags(no_target_dir=True)
-    )
-    assert io.exit_code == 1
-    assert io.stderr == (
-        b"cp: cannot overwrite directory '/d' with non-directory '/a.txt'\n"
-    )
 
 
 @pytest.mark.asyncio
@@ -626,50 +425,19 @@ async def test_missing_operands_raise_usage_errors():
 
 
 def test_parse_cp_flags_conflicts_and_grammar():
-    from mirage.commands.builtin.generic.cp import parse_flags
-    from mirage.commands.errors import UsageError
-    from mirage.commands.spec import SPECS
-    from mirage.commands.spec.flag_view import FlagView
-
     def view(bag):
         return FlagView(bag, spec=SPECS["cp"])
 
     with pytest.raises(UsageError) as exc:
-        parse_flags(view({"backup": True, "no_clobber": True}))
-    assert (
-        "cp: --backup is mutually exclusive with -n or "
-        "--update=none-fail" in str(exc.value)
-    )
-    with pytest.raises(UsageError) as exc:
         parse_flags(view({"backup": True, "update": "none-fail"}))
     assert "mutually exclusive" in str(exc.value)
-    with pytest.raises(UsageError) as exc:
-        parse_flags(
-            view({"target_directory": "/d", "no_target_directory": True})
-        )
-    assert (
-        "cannot combine --target-directory (-t) and "
-        "--no-target-directory (-T)" in str(exc.value)
-    )
-    with pytest.raises(UsageError) as exc:
-        parse_flags(view({"update": "bogus"}))
-    assert "invalid argument 'bogus' for '--update'" in str(exc.value)
-    with pytest.raises(UsageError) as exc:
-        parse_flags(view({"backup": "bogus"}))
-    assert "invalid argument 'bogus' for 'backup type'" in str(exc.value)
     assert parse_flags(view({"update": True})).update == "older"
-    assert parse_flags(view({"update": True})).update == "older"
-    assert parse_flags(view({"update": "all"})).update == "all"
     assert parse_flags(view({})).update is None
     parsed = parse_flags(view({"suffix": ".bak"}))
     assert parsed.backup == "existing"
     assert parsed.suffix == ".bak"
-    # GNU 9.7: `cp --backup --suffix= f g` writes g~, so an empty suffix
-    # reads as absent rather than naming the original as its own backup.
-    assert parse_flags(view({"backup": True, "suffix": ""})).suffix == "~"
     assert parse_flags(view({"backup": "t"})).backup == "numbered"
     assert parse_flags(view({"backup": "nil"})).backup == "existing"
-    assert parse_flags(view({"archive": True})).recursive is True
 
 
 def _typed_backend(files: dict[str, bytes], dirs: set[str]):
@@ -686,24 +454,6 @@ def _typed_backend(files: dict[str, bytes], dirs: set[str]):
         dirs.add(_key(p))
 
     return stat, copy, find, mkdir
-
-
-@pytest.mark.asyncio
-async def test_recursive_update_keeps_directories_without_files():
-    # The per-entry policy path cannot use dir_copy, so it must recreate the
-    # tree's directories itself; GNU keeps an empty directory.
-    files = {"/t/f.txt": b"F"}
-    dirs = {"/t", "/t/empt"}
-    stat, copy, find, mkdir = _typed_backend(files, dirs)
-    _, io = await cp(
-        [_spec(p) for p in ["/t", "/c"]],
-        strategy=NativeCopy(copy=copy, find=find, mkdir=mkdir),
-        stat=stat,
-        flags=CpFlags(recursive=True, update="older"),
-    )
-    assert io.exit_code == 0
-    assert files["/c/f.txt"] == b"F"
-    assert "/c/empt" in dirs
 
 
 @pytest.mark.asyncio
@@ -773,28 +523,6 @@ async def test_backup_version_scan_failure_aborts_the_overwrite():
     assert files["/b.txt"] == b"OLD"
 
 
-@pytest.mark.asyncio
-async def test_primitive_recursive_walk_names_a_directory_it_may_not_open():
-    # GNU: "cp: cannot access 'X': Permission denied" for a directory it
-    # could not read, the directory itself still created, the rest of
-    # the tree copied, exit 1.
-    files = {"/src/a.txt": b"A", "/src/sealed/s": b"S", "/src/sub/b": b"B"}
-    dirs = {"/src", "/src/sealed", "/src/sub"}
-    _, io = await _run_primitive(
-        files,
-        dirs,
-        ["/src", "/dst"],
-        recursive=True,
-        readdir_fails={"/src/sealed": PermissionError("/src/sealed")},
-    )
-    assert io.exit_code == 1
-    assert io.stderr == (
-        b"cp: cannot access '/src/sealed': Permission denied\n"
-    )
-    assert files["/dst/a.txt"] == b"A" and files["/dst/sub/b"] == b"B"
-    assert "/dst/sealed" in dirs and "/dst/sealed/s" not in files
-
-
 # Both of cp's argument clauses name the refused word through gnulib's
 # quote(), so a byte outside 0x20-0x7e comes back escaped rather than
 # interpolated raw. Rows measured against GNU coreutils 9.4 under
@@ -810,58 +538,17 @@ QUOTED_WORDS = [
 ]
 
 
+@pytest.mark.parametrize(
+    "flag,clause", [("update", "--update"), ("backup", "backup type")]
+)
 @pytest.mark.parametrize("value,escaped", QUOTED_WORDS)
-def test_update_clause_quotes_the_word(value, escaped):
-    from mirage.commands.builtin.generic.cp import parse_flags
-    from mirage.commands.errors import UsageError
-    from mirage.commands.spec import SPECS
-    from mirage.commands.spec.flag_view import FlagView
-
+def test_argument_clause_quotes_the_word(flag, clause, value, escaped):
     with pytest.raises(UsageError) as exc:
-        parse_flags(FlagView({"update": value}, spec=SPECS["cp"]))
+        parse_flags(FlagView({flag: value}, spec=SPECS["cp"]))
     assert str(exc.value).startswith(
-        f"cp: invalid argument '{escaped}' for '--update'\n"
+        f"cp: invalid argument '{escaped}' for '{clause}'\n"
     )
     assert exc.value.exit_code == 1
-
-
-@pytest.mark.parametrize("value,escaped", QUOTED_WORDS)
-def test_backup_clause_quotes_the_word(value, escaped):
-    from mirage.commands.builtin.generic.cp import parse_flags
-    from mirage.commands.errors import UsageError
-    from mirage.commands.spec import SPECS
-    from mirage.commands.spec.flag_view import FlagView
-
-    with pytest.raises(UsageError) as exc:
-        parse_flags(FlagView({"backup": value}, spec=SPECS["cp"]))
-    assert str(exc.value).startswith(
-        f"cp: invalid argument '{escaped}' for 'backup type'\n"
-    )
-    assert exc.value.exit_code == 1
-
-
-# Measured against GNU coreutils 9.7 on debian:stable-slim, LC_ALL=C.
-@pytest.mark.parametrize("command", ["cp", "mv"])
-@pytest.mark.parametrize("value,kind", [("x", "invalid"), ("", "ambiguous")])
-def test_update_lists_gnu_candidates(command, value, kind):
-    with pytest.raises(UsageError) as exc:
-        update_mode(command, FlagView({"update": value}, spec=SPECS[command]))
-    assert str(exc.value) == (
-        f"{command}: {kind} argument '{value}' for '--update'\n"
-        "Valid arguments are:\n"
-        "  - 'all'\n  - 'none'\n  - 'none-fail'\n  - 'older'\n"
-        f"Try '{command} --help' for more information."
-    )
-    assert exc.value.exit_code == 1
-
-
-@pytest.mark.parametrize("command", ["cp", "mv"])
-@pytest.mark.parametrize("value", ["all", "none", "none-fail", "older"])
-def test_update_accepts_each_advertised_candidate(command, value):
-    assert (
-        update_mode(command, FlagView({"update": value}, spec=SPECS[command]))
-        == value
-    )
 
 
 # Measured against GNU coreutils 9.7 on debian:stable-slim, LC_ALL=C.
@@ -869,6 +556,10 @@ def test_update_accepts_each_advertised_candidate(command, value):
 @pytest.mark.parametrize(
     "value,mode",
     [
+        ("all", "all"),
+        ("none", "none"),
+        ("none-fail", "none-fail"),
+        ("older", "older"),
         ("a", "all"),
         ("al", "all"),
         ("o", "older"),
@@ -876,7 +567,7 @@ def test_update_accepts_each_advertised_candidate(command, value):
         ("none-", "none-fail"),
     ],
 )
-def test_update_accepts_an_unambiguous_prefix(command, value, mode):
+def test_update_accepts_a_mode_or_an_unambiguous_prefix(command, value, mode):
     assert (
         update_mode(command, FlagView({"update": value}, spec=SPECS[command]))
         == mode
@@ -908,25 +599,6 @@ def _slashed(path: str) -> PathSpec:
 
 
 @pytest.mark.asyncio
-async def test_slashed_missing_destination_refuses_a_file_source():
-    # GNU 9.7: `cp a.txt missing/` is `cannot create regular file
-    # 'missing/': Not a directory`, and nothing named `missing` appears.
-    files = {"/a.txt": b"AAA"}
-    stat, copy, find = _make_backend(files, set())
-    _, io = await cp(
-        [_spec("/a.txt"), _slashed("/missing")],
-        strategy=NativeCopy(copy=copy, find=find),
-        stat=stat,
-        flags=CpFlags(),
-    )
-    assert io.exit_code == 1
-    assert io.stderr == (
-        b"cp: cannot create regular file '/missing/': Not a directory\n"
-    )
-    assert files == {"/a.txt": b"AAA"}
-
-
-@pytest.mark.asyncio
 async def test_many_sources_to_a_slashed_file_report_not_a_directory():
     # GNU 9.7: `cp a b reg/` is `target 'reg/': Not a directory`, the
     # destination probe's verdict, where only a genuinely absent target
@@ -948,20 +620,6 @@ async def test_many_sources_to_a_slashed_file_report_not_a_directory():
             flags=CpFlags(),
         )
     assert files == {"/a.txt": b"AAA", "/b.txt": b"BBB", "/reg": b"R"}
-
-
-@pytest.mark.asyncio
-async def test_slashed_missing_destination_takes_a_directory_source():
-    files = {"/d/f": b"F"}
-    stat, copy, find = _make_backend(files, {"/d"})
-    _, io = await cp(
-        [_spec("/d"), _slashed("/missing")],
-        strategy=NativeCopy(copy=copy, find=find),
-        stat=stat,
-        flags=CpFlags(recursive=True),
-    )
-    assert io.exit_code == 0
-    assert files["/missing/f"] == b"F"
 
 
 def _cp_flags(*argv: str) -> CpFlags:

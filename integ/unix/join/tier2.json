@@ -3,7 +3,7 @@
     {
       "id": "join_tier2_ignore_case_header_order",
       "seq": 910024,
-      "targets": ["ram", "opfs", "disk"],
+      "targets": ["ram", "opfs", "disk", "redis", "s3", "gridfs", "s3-prefix", "gridfs-prefix", "hf", "hf-prefix", "dropbox", "dropbox-root", "onedrive", "sharepoint", "ssh", "nextcloud", "gdrive", "gdrive-folder", "box"],
       "command": "mkdir -p /data/t2join && printf 'KEY left\na one\nB two\n' > /data/t2join/a && printf 'KEY right\nA x\nb y\n' > /data/t2join/b && join --ignore-case -j 1 --header --check-order /data/t2join/a /data/t2join/b && join -j 1 --header --check-order /data/t2join/a /data/t2join/b",
       "expect": { "exit": 1, "stdout": "KEY left right\na one x\nB two y\nKEY left right\n", "stderr": "join: /data/t2join/a:3: is not sorted: B two\n" },
       "flags": ["ignore-case", "j", "header", "check-order"]
@@ -11,7 +11,7 @@
     {
       "id": "join_tier2_nocheck_order",
       "seq": 910025,
-      "targets": ["ram", "opfs", "disk"],
+      "targets": ["ram", "opfs", "disk", "redis", "s3", "gridfs", "s3-prefix", "gridfs-prefix", "hf", "hf-prefix", "dropbox", "dropbox-root", "onedrive", "sharepoint", "ssh", "nextcloud", "gdrive", "gdrive-folder", "box"],
       "command": "mkdir -p /data/t2join2 && printf 'b one\na two\n' > /data/t2join2/a && printf 'a x\nb y\n' > /data/t2join2/b && join --nocheck-order /data/t2join2/a /data/t2join2/b && join /data/t2join2/a /data/t2join2/b; join --check-order /data/t2join2/a /data/t2join2/b",
       "expect": { "exit": 1, "stdout": "b one y\nb one y\n", "stderr": "join: /data/t2join2/a:2: is not sorted: a two\njoin: input is not in sorted order\njoin: /data/t2join2/a:2: is not sorted: a two\n" },
       "flags": ["nocheck-order", "check-order"]
@@ -19,7 +19,7 @@
     {
       "id": "join_tier2_zero",
       "seq": 910026,
-      "targets": ["ram", "opfs", "disk"],
+      "targets": ["ram", "opfs", "disk", "redis", "s3", "gridfs", "s3-prefix", "gridfs-prefix", "hf", "hf-prefix", "dropbox", "dropbox-root", "onedrive", "sharepoint", "ssh", "nextcloud", "gdrive", "gdrive-folder", "box"],
       "command": "mkdir -p /data/t2join3 && printf '1 a\\02 b\\0' > /data/t2join3/a && printf '1 x\\02 y\\0' > /data/t2join3/b && join --zero-terminated /data/t2join3/a /data/t2join3/b",
       "expect": { "exit": 0, "stdout": "1 a\u0002 b x\u0002 y\u0000", "stderr": "" },
       "flags": ["zero-terminated"]

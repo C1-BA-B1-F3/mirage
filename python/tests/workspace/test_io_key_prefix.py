@@ -90,36 +90,46 @@ def _assert_single_prefix(captured: list) -> None:
 
 
 @pytest.mark.parametrize(
-    "cmd,stdin",
+    "cmd,stdin,recorded",
     [
-        ("tee /data/t.txt > /dev/null", b"x\ny\n"),
-        ("csplit -f /data/cs_ /data/seed.txt 2", None),
-        ("csplit /data/seed.txt 2", None),
-        ("split -l 1 /data/seed.txt", None),
-        ("cd /data && split -l 1", b"x\ny\n"),
-        ("cd /data && csplit - 2", b"x\ny\n"),
-        ("unzip /data/a.zip -d /data/exout", None),
-        ("cp /data/seed.txt /data/copy.txt", None),
-        ("grep x /data/seed.txt > /data/red.txt", None),
-        ("cat /data/seed.txt >> /data/app.txt", None),
-        ("cat /data/seed.txt | tee /data/piped.txt > /dev/null", None),
+        ("tee /data/t.txt > /dev/null", b"x\ny\n", ()),
+        ("csplit -f /data/cs_ /data/seed.txt 2", None, ()),
+        ("csplit /data/seed.txt 2", None, ()),
+        ("split -l 1 /data/seed.txt", None, ()),
+        ("cd /data && split -l 1", b"x\ny\n", ()),
+        ("cd /data && csplit - 2", b"x\ny\n", ()),
+        ("unzip /data/a.zip -d /data/exout", None, ()),
+        ("cp /data/seed.txt /data/copy.txt", None, ()),
+        ("mkdir /data/newdir", None, ()),
+        (
+            "mv /data/seed.txt /data/moved.txt",
+            None,
+            ("/data/seed.txt", "/data/moved.txt"),
+        ),
+        ("rm -r /data/d", None, ("/data/d",)),
+        ("grep x /data/seed.txt > /data/red.txt", None, ()),
+        ("cat /data/seed.txt >> /data/app.txt", None, ()),
+        ("cat /data/seed.txt | tee /data/piped.txt > /dev/null", None, ()),
         (
             "sed s/x/z/ /data/seed.txt > /data/s1.txt && cat /data/s1.txt"
             " > /data/s2.txt",
             None,
+            (),
         ),
     ],
 )
-def test_ram_io_keys_single_prefixed(cmd, stdin):
+def test_ram_io_keys_single_prefixed(cmd, stdin, recorded):
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
 
     async def run():
         await ws.shell("tee /data/seed.txt > /dev/null", stdin=b"x\ny\n")
         await ws.shell("tee /data/a.zip > /dev/null", stdin=_zip_bytes())
+        await ws.shell("mkdir -p /data/d/sub && cp /data/seed.txt /data/d/sub")
         captured = _capture_io(ws)
         result = await ws.shell(cmd, stdin=stdin)
         assert result.exit_code == 0, await result.stderr_str()
         _assert_single_prefix(captured)
+        assert set(recorded) <= set(result.writes)
         await ws.close()
 
     asyncio.run(run())

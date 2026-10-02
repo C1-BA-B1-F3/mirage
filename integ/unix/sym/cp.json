@@ -23,7 +23,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "cp /data/symd/m.txt /data/symd/copy.txt && cat /data/symd/copy.txt",
       "expect": {

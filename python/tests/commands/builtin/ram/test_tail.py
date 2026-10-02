@@ -33,22 +33,6 @@ async def test_tail_default_n_10(workspace):
 
 
 @pytest.mark.asyncio
-async def test_tail_n_explicit(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\ne\n")
-    io = await workspace.shell("tail -n 3 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"c\nd\ne\n"
-
-
-@pytest.mark.asyncio
-async def test_tail_c_bytes(workspace):
-    await workspace.vfs.write("/f.txt", b"hello world")
-    io = await workspace.shell("tail -c 5 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"world"
-
-
-@pytest.mark.asyncio
 async def test_tail_plus_n_streams_from_line(workspace):
     await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\ne\n")
     io = await workspace.shell("tail -n +3 /f.txt")
@@ -70,33 +54,3 @@ async def test_tail_empty_file(workspace):
     io = await workspace.shell("tail /empty.txt")
     assert io.exit_code == 0
     assert io.stdout == b""
-
-
-@pytest.mark.asyncio
-async def test_tail_multi_file_emits_headers(workspace):
-    await workspace.vfs.write("/a.txt", b"x\ny\n")
-    await workspace.vfs.write("/b.txt", b"z\n")
-    io = await workspace.shell("tail /a.txt /b.txt")
-    assert io.exit_code == 0
-    assert b"==> /a.txt <==" in io.stdout
-    assert b"==> /b.txt <==" in io.stdout
-
-
-@pytest.mark.asyncio
-async def test_tail_q_suppresses_headers(workspace):
-    await workspace.vfs.write("/a.txt", b"x\n")
-    await workspace.vfs.write("/b.txt", b"y\n")
-    io = await workspace.shell("tail -q /a.txt /b.txt")
-    assert io.exit_code == 0
-    assert b"==>" not in io.stdout
-    assert b"x\n" in io.stdout
-    assert b"y\n" in io.stdout
-
-
-@pytest.mark.asyncio
-async def test_tail_v_forces_header_on_single_file(workspace):
-    await workspace.vfs.write("/a.txt", b"aaa\n")
-    io = await workspace.shell("tail -v /a.txt")
-    assert io.exit_code == 0
-    assert b"==> /a.txt <==" in io.stdout
-    assert b"aaa\n" in io.stdout

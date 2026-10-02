@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qtail && printf 'l1\\nl2\\nl3\\n' > /data/qtail/tv.txt && tail -v -n 2 /data/qtail/tv.txt",
       "expect": {

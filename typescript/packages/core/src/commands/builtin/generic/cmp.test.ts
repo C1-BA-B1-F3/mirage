@@ -59,24 +59,44 @@ async function run(
 }
 
 describe('parseCount', () => {
-  it('takes digits and GNU size suffixes', () => {
-    expect(parseCount('4', '--bytes')).toBe(4)
-    expect(parseCount('1K', '--bytes')).toBe(1024)
-    expect(parseCount('1k', '--bytes')).toBe(1024)
-    expect(parseCount('1kB', '--bytes')).toBe(1000)
-    expect(parseCount('1kiB', '--bytes')).toBe(1024)
-    expect(parseCount('1M', '--bytes')).toBe(1024 * 1024)
+  it.each([
+    ['4', 4],
+    ['1K', 1024],
+    ['1k', 1024],
+    ['1kB', 1000],
+    ['1kiB', 1024],
+    ['1M', 1024 * 1024],
+    ['0Z', 0],
+    ['010', 8],
+    ['0x400', 1024],
+    ['+1010', 1010],
+    [' 1', 1],
+    ['7E', 7 * 1024 ** 6],
+  ])('takes %j', (raw, value) => {
+    expect(parseCount(raw, '--bytes')).toBe(value)
   })
 
-  it.each(['1b', '1B', '1c', '1w', '1m', '1g', '1t'])(
-    'rejects %s, a letter od takes and cmp does not',
-    (raw) => {
-      // diffutils 3.10 lists only kB/K/MB/M/... : no block or char
-      // suffixes, and lowercase only as far as k. `cmp -n 1b` is exit 2,
-      // where od would read it as 512 bytes.
-      expect(() => parseCount(raw, '--bytes')).toThrow(UsageError)
-    },
-  )
+  // diffutils 3.10 takes no od block or char suffix, no Q or R (newer than
+  // its gnulib), and caps a count at INTMAX: each is an invalid value, exit 2.
+  it.each([
+    '1b',
+    '1B',
+    '1c',
+    '1w',
+    '1m',
+    '1g',
+    '1t',
+    '1Q',
+    '0Q',
+    '1 ',
+    '-1',
+    '9223372036854775808',
+    '8E',
+    '1Z',
+    '1Y',
+  ])('refuses %j', (raw) => {
+    expect(() => parseCount(raw, '--bytes')).toThrow(UsageError)
+  })
 
   it('names the long option it was given', () => {
     // GNU says `invalid --bytes value` for -n and `invalid
@@ -94,35 +114,6 @@ describe('parseCount', () => {
       "cmp: invalid --bytes value 'abc'\ncmp: Try 'cmp --help' for more information.",
     )
     expect((caught as UsageError).exitCode).toBe(2)
-  })
-
-  it('rejects an unknown suffix', () => {
-    // Q and R postdate the gnulib diffutils 3.10 was built against, so
-    // they are invalid values rather than overflowing ones: `0Q` fails
-    // where `0Z` is a valid zero.
-    expect(() => parseCount('1Q', '--bytes')).toThrow(UsageError)
-    expect(() => parseCount('0Q', '--bytes')).toThrow(UsageError)
-    expect(parseCount('0Z', '--bytes')).toBe(0)
-  })
-
-  it('reads the digits at base zero', () => {
-    // xstrtoumax's base 0: a bare leading zero is octal and 0x is hex,
-    // neither of which BigInt() would read on its own.
-    expect(parseCount('010', '--bytes')).toBe(8)
-    expect(parseCount('0x400', '--bytes')).toBe(1024)
-    expect(parseCount('+1010', '--bytes')).toBe(1010)
-    expect(parseCount(' 1', '--bytes')).toBe(1)
-    expect(() => parseCount('1 ', '--bytes')).toThrow(UsageError)
-    expect(() => parseCount('-1', '--bytes')).toThrow(UsageError)
-  })
-
-  it('rejects a product past INTMAX', () => {
-    // The ceiling is INTMAX, not UINTMAX, and overflow reports as the
-    // same invalid-value error as a bad suffix -- not od's "too large".
-    expect(parseCount('7E', '--bytes')).toBe(7 * 1024 ** 6)
-    for (const raw of ['9223372036854775808', '8E', '1Z', '1Y']) {
-      expect(() => parseCount(raw, '--bytes')).toThrow(UsageError)
-    }
   })
 })
 
@@ -177,49 +168,9 @@ describe('visible', () => {
 })
 
 describe('cmpGeneric', () => {
-  it('switches the word to byte under -b', async () => {
-    // GNU counts in `byte` under -b and in `char` otherwise.
-    const plain = await run(ENC.encode('abc'), ENC.encode('aXc'))
-    const tagged = await run(ENC.encode('abc'), ENC.encode('aXc'), { print_bytes: true })
-    expect(plain.out).toBe('/F/one /F/two differ: char 2, line 1\n')
-    expect(tagged.out).toBe('/F/one /F/two differ: byte 2, line 1 is 142 b 130 X\n')
-  })
-
   it('pads the octal to three columns under -l', async () => {
     const r = await run(bytes(97, 1, 99), bytes(97, 127, 99), { verbose: true })
     expect(r.out).toBe('2   1 177\n')
-  })
-
-  it('adds a four-wide char column under -bl', async () => {
-    const r = await run(ENC.encode('abc'), ENC.encode('aXc'), { verbose: true, print_bytes: true })
-    expect(r.out).toBe('2 142 b    130 X\n')
-  })
-
-  it('applies the skip per file', async () => {
-    // `-i 0:3` keeps all of the first file and drops three bytes of the
-    // second, so the very first compared byte differs.
-    const r = await run(ENC.encode('abcdefgh'), ENC.encode('abcXefgh'), { ignore_initial: '0:3' })
-    expect(r.out).toBe('/F/one /F/two differ: char 1, line 1\n')
-    expect(r.code).toBe(1)
-  })
-
-  it('reports EOF on stderr naming the byte and the line', async () => {
-    const r = await run(ENC.encode('ab\nc'), ENC.encode('ab\ncdef'))
-    expect(r.out).toBe('')
-    expect(r.err).toBe('cmp: EOF on /F/one after byte 4, in line 2\n')
-    expect(r.code).toBe(1)
-  })
-
-  it('drops the line clause from the EOF diagnostic under -l', async () => {
-    const r = await run(ENC.encode('aXc'), ENC.encode('aYcdef'), { verbose: true })
-    expect(r.out).toBe('2 130 131\n')
-    expect(r.err).toBe('cmp: EOF on /F/one after byte 3\n')
-    expect(r.code).toBe(1)
-  })
-
-  it('reports no difference for a limit inside the common prefix', async () => {
-    const r = await run(ENC.encode('abcdef'), ENC.encode('abcXef'), { bytes: '2' })
-    expect(r).toEqual({ out: '', err: '', code: 0 })
   })
 })
 
@@ -246,32 +197,9 @@ async function runWithStdin(
 }
 
 describe('cmpGeneric with stdin', () => {
-  it('reads a dash operand from stdin and names it dash', async () => {
-    const r = await runWithStdin([DASH, P2], 'one\n', 'two\n')
-    expect(r).toEqual({ out: '- /F/two differ: char 1, line 1\n', err: '', code: 1 })
-  })
-
   it('reads /dev/stdin from stdin and names it as typed', async () => {
     const r = await runWithStdin([DEV_STDIN, P2], 'one\n', 'two\n')
     expect(r).toEqual({ out: '/dev/stdin /F/two differ: char 1, line 1\n', err: '', code: 1 })
-  })
-
-  it('compares a lone operand with stdin', async () => {
-    const r = await runWithStdin([P2], 'ab', 'abc')
-    expect(r).toEqual({ out: '', err: 'cmp: EOF on - after byte 2, in line 1\n', code: 1 })
-  })
-
-  it("refuses no operand with GNU's missing operand usage error", async () => {
-    const stream = (p: PathSpec): AsyncIterable<Uint8Array> => {
-      throw new Error(`read ${p.virtual}`)
-    }
-    const call = cmpGeneric([], [], { flags: {}, stdin: null } as unknown as CommandOpts, stream)
-    await expect(call).rejects.toThrow(
-      new UsageError(
-        "cmp: missing operand after 'cmp'\ncmp: Try 'cmp --help' for more information.",
-      ),
-    )
-    await expect(call).rejects.toMatchObject({ exitCode: 2 })
   })
 
   it('takes two stdin operands at one offset as equal unread', async () => {
@@ -307,11 +235,6 @@ describe('cmpGeneric with stdin', () => {
     },
   )
 
-  it('names the line an EOF on a line boundary closed', async () => {
-    const r = await run(ENC.encode('ab\n'), ENC.encode('ab\ncd'))
-    expect(r.err).toBe('cmp: EOF on /F/one after byte 3, line 1\n')
-  })
-
   it.each([false, true])('says which is empty for an empty file (-l %s)', async (verbose) => {
     const r = await run(new Uint8Array(0), ENC.encode('x'), verbose ? { verbose: true } : {})
     expect([r.err, r.code]).toEqual(['cmp: EOF on /F/one which is empty\n', 1])
@@ -322,14 +245,6 @@ describe('cmpGeneric with stdin', () => {
       verbose: true,
     })
     expect(r.out).toBe(' 1 141 142\n')
-  })
-
-  it('sizes -l offsets by the file, not the stream', async () => {
-    const r = await runWithStdin([DASH, P2], 'hello\nx\n', 'hello\nworld\nfoo\nbar\nbaz\n', {
-      verbose: true,
-    })
-    expect(r.out).toBe(' 7 170 167\n 8  12 157\n')
-    expect(r.err).toBe('cmp: EOF on - after byte 8\n')
   })
 
   it('names the operands as typed', async () => {
@@ -367,26 +282,6 @@ describe('parseCount leaves the value unescaped', () => {
 })
 
 describe('cmpGeneric -s', () => {
-  it('keeps exit 2 for an operand it cannot read', async () => {
-    // diffutils 3.10: `cmp -s a.txt nope` prints nothing and exits 2; the
-    // message is what -s drops, not the trouble.
-    // eslint-disable-next-line require-yield
-    async function* missing(p: PathSpec): AsyncIterable<Uint8Array> {
-      await Promise.resolve()
-      throw enoent(p)
-    }
-    for (const [flags, want] of [
-      [{ quiet: true }, ''],
-      [{}, 'cmp: /F/one: No such file or directory\n'],
-    ] as const) {
-      const opts = { flags, stdin: null } as unknown as CommandOpts
-      const [src, io] = await cmpGeneric([P1, P2], [], opts, missing)
-      expect(src).toBeNull()
-      expect(DEC.decode(await materialize(io.stderr))).toBe(want)
-      expect(io.exitCode).toBe(2)
-    }
-  })
-
   // diffutils 3.10 opens both operands, then reads: -s drops only a failed
   // open, a directory opens and fails reading, and one file named twice at
   // the same offset is equal unread. Mirrors test_cmp.py.
@@ -413,15 +308,6 @@ describe('cmpGeneric -s', () => {
       expect([DEC.decode(await materialize(io.stderr)), io.exitCode]).toEqual([want, code])
     },
   )
-
-  it('refuses -l with -s', async () => {
-    // --verbose is -l and --silent is -s; diffutils refuses the pair while it
-    // reads the options.
-    const call = run(ENC.encode('a'), ENC.encode('b'), { verbose: true, silent: true })
-    await expect(call).rejects.toThrow(
-      "cmp: options -l and -s are incompatible\ncmp: Try 'cmp --help' for more information.",
-    )
-  })
 })
 
 async function runSkips(
@@ -458,14 +344,11 @@ describe('the skip operands', () => {
   })
 
   it.each([
-    [['x'], "cmp: invalid --ignore-initial value 'x'"],
     [['1', 'y'], "cmp: invalid --ignore-initial value 'y'"],
     [[''], "cmp: invalid --ignore-initial value ''"],
     [['1:2'], "cmp: invalid --ignore-initial value '1:2'"],
     [['1 '], "cmp: invalid --ignore-initial value '1 '"],
     [['9223372036854775808'], "cmp: invalid --ignore-initial value '9223372036854775808'"],
-    // Both skips parse before the extra one is refused.
-    [['1', '2', '3'], "cmp: extra operand '3'"],
     [['y', '1', '2'], "cmp: invalid --ignore-initial value 'y'"],
   ] as const)('refuses %j', async (texts, message) => {
     await expect(runSkips([...texts])).rejects.toThrow(

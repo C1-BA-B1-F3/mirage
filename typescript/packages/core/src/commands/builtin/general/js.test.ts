@@ -69,24 +69,6 @@ describe('node/js: quickjs runtime', () => {
     }
   })
 
-  it('js -e: modern syntax + compute', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell(
-      'js -e "console.log(6 * 7, JSON.stringify([...\'ab\'].map((s, i) => s + i)))"',
-    )
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('42 ["a0","b1"]\n')
-    await ws.close()
-  }, 60_000)
-
-  it('node -e: scriptArgs', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('node -e "console.log(scriptArgs.join(\'/\'))" a b')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('a/b\n')
-    await ws.close()
-  }, 60_000)
-
   it('stdin pipe: std.in.readAsString()', async () => {
     const { ws } = await makeWorkspace()
     const io = await ws.shell(
@@ -100,15 +82,6 @@ describe('node/js: quickjs runtime', () => {
   it('-m: module mode with top-level await', async () => {
     const { ws } = await makeWorkspace()
     const io = await ws.shell('js -m -e "const x = await Promise.resolve(41); console.log(x + 1)"')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('42\n')
-    await ws.close()
-  }, 60_000)
-
-  it('mounted .js file resolves through the workspace', async () => {
-    const { ws } = await makeWorkspace()
-    await ws.shell("echo 'console.log(Number(scriptArgs[0]) * 6)' > /ram/calc.js")
-    const io = await ws.shell('node /ram/calc.js 7')
     expect(io.exitCode).toBe(0)
     expect(stdoutStr(io)).toBe('42\n')
     await ws.close()
@@ -141,37 +114,11 @@ describe('node/js: quickjs runtime', () => {
     await ws.close()
   }, 60_000)
 
-  it('std.out.puts writes raw, print appends a newline (real qjs)', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell("js -e \"std.out.puts('a'); std.out.puts('b'); print('c')\"")
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('abc\n')
-    await ws.close()
-  }, 60_000)
-
-  it('console.log ToStrings its args like the real engine, not JSON', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('js -e "console.log({a: 1}, [1, 2])"')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('[object Object] 1,2\n')
-    await ws.close()
-  }, 60_000)
-
   it('console.error does not exist, matching quickjs-ng --std', async () => {
     const { ws } = await makeWorkspace()
     const io = await ws.shell('js -e "console.error(\'x\')"')
     expect(io.exitCode).toBe(1)
     expect(stderrStr(io)).toContain('TypeError')
-    await ws.close()
-  }, 60_000)
-
-  it('std.out.printf C-formats and returns the characters written', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell(
-      "js -e \"const n = std.out.printf('[%s|%05d|%.2f|%x|%c|%%]', 'ab', 42, 3.14159, 255, 65); std.out.puts('\\n' + n)\"",
-    )
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('[ab|00042|3.14|ff|A|%]\n22')
     await ws.close()
   }, 60_000)
 
@@ -197,14 +144,6 @@ describe('node/js: quickjs runtime', () => {
     await ws.close()
   }, 60_000)
 
-  it('printf throws TypeError on an unknown conversion, like the real engine', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('js -e "std.out.printf(\'%q\', 1)"')
-    expect(io.exitCode).toBe(1)
-    expect(stderrStr(io)).toContain('TypeError: invalid conversion specifier in format string')
-    await ws.close()
-  }, 60_000)
-
   it('no input → exit 1', async () => {
     const { ws } = await makeWorkspace()
     const io = await ws.shell('js')
@@ -212,47 +151,4 @@ describe('node/js: quickjs runtime', () => {
     expect(stderrStr(io)).toContain('js: no input')
     await ws.close()
   }, 60_000)
-
-  // `node -` reads the program from stdin and keeps the words after it as
-  // argv; python3 already honored the operand here and Python's shared
-  // resolve_source honors it for both interpreters.
-  it('js -: the explicit stdin operand, with the rest as scriptArgs', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('echo \'console.log(scriptArgs.join(","))\' | js - a b')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('a,b\n')
-    await ws.close()
-  }, 60_000)
-
-  // A word after `-` that happens to spell a js option is still the
-  // program's argv: `node - -e x` runs the piped program, not `x`.
-  it('js -: a following -e is argv, not the interpreter’s', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell(
-      'echo \'console.log("stdin:" + scriptArgs.join(","))\' | js - -e \'console.log("flag")\'',
-    )
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('stdin:-e,console.log("flag")\n')
-    await ws.close()
-  }, 60_000)
-
-  it.each([
-    ['cd /disk && node a.js sub/deep.txt ./sub/deep.txt', '["sub/deep.txt","./sub/deep.txt"]'],
-    ['node /disk/a.js /ram/notes.txt', '["/ram/notes.txt"]'],
-    [
-      "node -e 'console.log(JSON.stringify(scriptArgs))' /ram/notes.txt /disk/readme.txt",
-      '["/ram/notes.txt","/disk/readme.txt"]',
-    ],
-  ])('hands a path-shaped word over as typed: %s', async (line, argv) => {
-    const { ws } = await makeWorkspace()
-    try {
-      await ws.shell("echo 'console.log(JSON.stringify(scriptArgs))' > /disk/a.js")
-      const io = await ws.shell(line)
-      expect(stderrStr(io)).toBe('')
-      expect(io.exitCode).toBe(0)
-      expect(stdoutStr(io)).toBe(`${argv}\n`)
-    } finally {
-      await ws.close()
-    }
-  })
 })

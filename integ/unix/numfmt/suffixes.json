@@ -86,6 +86,62 @@
         "stderr": "numfmt: rejecting suffix in input: '1K\\303\\251' (consider using --from)\n"
       },
       "flags": []
+    },
+    {
+      "id": "numfmt_iec_i_missing_i_names_a_bare_number",
+      "seq": 14102201,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "numfmt --from=iec-i 1",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "numfmt: missing 'i' suffix in input: '1' (e.g Ki/Mi/Gi)\n"
+      },
+      "flags": [
+        "from"
+      ]
+    },
+    {
+      "id": "numfmt_iec_i_names_the_leftover_past_its_i",
+      "seq": 14102202,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "numfmt --from=iec-i 1Kii",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "numfmt: invalid suffix in input '1Kii': 'i'\n"
+      },
+      "flags": [
+        "from"
+      ]
+    },
+    {
+      "id": "numfmt_iec_i_lone_i_is_not_a_unit",
+      "seq": 14102203,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "numfmt --from=iec-i 1i",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "numfmt: invalid suffix in input: '1i'\n"
+      },
+      "flags": [
+        "from"
+      ]
+    },
+    {
+      "id": "numfmt_iec_takes_no_trailing_i",
+      "seq": 14102204,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "numfmt --from=iec 1Ki",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "numfmt: invalid suffix in input '1Ki': 'i'\n"
+      },
+      "flags": [
+        "from"
+      ]
     }
   ]
 }

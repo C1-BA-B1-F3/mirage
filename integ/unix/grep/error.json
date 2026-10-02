@@ -759,6 +759,43 @@
         "stdout": "",
         "stderr": "gzip: option '--s' is ambiguous; possibilities: '--stdout' '--silent' '--synchronous' '--suffix'\nTry 'gzip --help' for more information.\n"
       }
+    },
+    {
+      "id": "grep_binary_files_rejects_an_unknown_type",
+      "seq": 14100901,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'needle\\000tail\\n' > /data/cfgbe.txt; grep --binary-files=bad needle /data/cfgbe.txt 2>&1; echo code=$?; rm -f /data/cfgbe.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "grep: unknown binary-files type\ncode=2\n",
+        "stderr": ""
+      },
+      "flags": [
+        "binary-files"
+      ]
     }
   ]
 }

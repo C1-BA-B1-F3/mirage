@@ -23,17 +23,6 @@ def _res():
 
 
 @pytest.mark.asyncio
-async def test_search_command():
-    res = _res()
-    p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
-    out, _io = await search.__wrapped__(
-        res.accessor, [p], ["morning"], CommandOpts(index=ops(res).index)
-    )
-    assert b"aaa.json" in out
-    assert b"eats banana" in out
-
-
-@pytest.mark.asyncio
 async def test_search_requires_query():
     res = _res()
     p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")

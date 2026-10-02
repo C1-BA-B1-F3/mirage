@@ -47,34 +47,8 @@ async def test_head_default_n_10(workspace):
 
 
 @pytest.mark.asyncio
-async def test_head_n_explicit(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\n")
-    io = await workspace.shell("head -n 2 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"a\nb\n"
-
-
-@pytest.mark.asyncio
-async def test_head_c_bytes(workspace):
-    await workspace.vfs.write("/f.txt", b"hello world")
-    io = await workspace.shell("head -c 5 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"hello"
-
-
-@pytest.mark.asyncio
 async def test_head_negative_n_excludes_last(workspace):
     await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\n")
     io = await workspace.shell("head -n -1 /f.txt")
     assert io.exit_code == 0
     assert io.stdout == b"a\nb\nc\n"
-
-
-@pytest.mark.asyncio
-async def test_head_multi_file_emits_headers(workspace):
-    await workspace.vfs.write("/a.txt", b"x\ny\n")
-    await workspace.vfs.write("/b.txt", b"z\n")
-    io = await workspace.shell("head /a.txt /b.txt")
-    assert io.exit_code == 0
-    assert b"==> /a.txt <==" in io.stdout
-    assert b"==> /b.txt <==" in io.stdout

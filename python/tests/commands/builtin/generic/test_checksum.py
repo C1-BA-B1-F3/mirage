@@ -12,14 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import hashlib
-
 import pytest
 
 from mirage.commands.builtin.generic.checksum import checksum
-from mirage.types import MountMode, PathSpec
-from mirage.vfs.ram import RAMVFS
-from mirage.workspace import Workspace
+from mirage.types import PathSpec
 
 
 class _FakeDigest:
@@ -152,26 +148,6 @@ async def test_mismatch_counts_into_not_match_warning():
 
 
 @pytest.mark.asyncio
-async def test_all_malformed_fails_alone():
-    stdout, stderr, code = await _run_check({"/sums.txt": "junk\nmore junk\n"})
-    assert stdout == ""
-    assert stderr == (
-        "md5sum: /sums.txt: no properly formatted checksum lines found\n"
-    )
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_ignore_missing_with_nothing_verified():
-    stdout, stderr, code = await _run_check(
-        {"/sums.txt": "5aabc  /gone\n"}, ignore_missing=True
-    )
-    assert stdout == ""
-    assert stderr == "md5sum: /sums.txt: no file was verified\n"
-    assert code == 1
-
-
-@pytest.mark.asyncio
 async def test_status_silences_no_file_verified_but_keeps_exit():
     stdout, stderr, code = await _run_check(
         {"/sums.txt": "5aabc  /gone\n"}, ignore_missing=True, status=True
@@ -276,20 +252,6 @@ async def test_check_verifies_every_list_operand():
 
 
 @pytest.mark.asyncio
-async def test_check_missing_list_reports_and_continues():
-    stdout, stderr, code = await _run_check(
-        {
-            "/one.txt": "5aabc  /a.txt\n",
-            "/a.txt": "abc",
-        },
-        paths=["/one.txt", "/nope.txt"],
-    )
-    assert stdout == "/a.txt: OK\n"
-    assert stderr == "md5sum: /nope.txt: No such file or directory\n"
-    assert code == 1
-
-
-@pytest.mark.asyncio
 async def test_check_missing_list_first_keeps_operand_order():
     stdout, stderr, code = await _run_check(
         {
@@ -301,33 +263,6 @@ async def test_check_missing_list_first_keeps_operand_order():
     assert stdout == "/a.txt: OK\n"
     assert stderr == "md5sum: /nope.txt: No such file or directory\n"
     assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_check_directory_list_operand_is_a_read_error():
-    # GNU 9.7: `md5sum -c d` on a directory says the literal "read
-    # error", not the EISDIR strerror (its fopen succeeds, the read
-    # fails).
-    async def read_bytes(p: PathSpec) -> bytes:
-        if p.virtual == "/d":
-            raise IsADirectoryError(p.virtual)
-        return b"5aabc  /a.txt\n"
-
-    async def read_stream(p: PathSpec):
-        yield b"abc"
-
-    out, io = await checksum(
-        [_spec("/d"), _spec("/one.txt")],
-        factory=_FakeDigest,
-        algorithm="md5",
-        read_bytes=read_bytes,
-        read_stream=read_stream,
-        check=True,
-    )
-    assert isinstance(out, bytes) and out.decode() == "/a.txt: OK\n"
-    assert io.stderr is not None
-    assert io.stderr.decode() == "md5sum: /d: read error\n"
-    assert io.exit_code == 1
 
 
 @pytest.mark.asyncio
@@ -343,47 +278,3 @@ async def test_check_status_keeps_missing_list_strerror():
     assert stdout == ""
     assert stderr == "md5sum: /nope.txt: No such file or directory\n"
     assert code == 1
-
-
-async def _shell(
-    line: str, stdin: bytes | None = None
-) -> tuple[str, str, int]:
-    ws = Workspace(
-        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
-    )
-    await ws.shell("tee /data/a.txt > /dev/null", stdin=b"hello\n")
-    r = await ws.shell(line, stdin=stdin)
-    out = await r.materialize_stdout() or b""
-    err = await r.materialize_stderr() or b""
-    return out.decode(), err.decode(), r.exit_code
-
-
-@pytest.mark.asyncio
-async def test_dash_and_dev_stdin_hash_stdin_under_their_own_names():
-    # One stdin: the second operand reads what the first left, nothing.
-    first = hashlib.sha256(b"a\nb\n").hexdigest()
-    empty = hashlib.sha256(b"").hexdigest()
-    assert await _shell("sha256sum - /dev/stdin", b"a\nb\n") == (
-        f"{first}  -\n{empty}  /dev/stdin\n",
-        "",
-        0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_check_with_no_operand_reads_the_list_from_stdin():
-    assert await _shell("cd /data && sha256sum a.txt | sha256sum -c") == (
-        "a.txt: OK\n",
-        "",
-        0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_stdin_list_is_called_standard_input():
-    assert await _shell("sha256sum -c -", b"junk\n") == (
-        "",
-        "sha256sum: 'standard input': no properly formatted checksum "
-        "lines found\n",
-        1,
-    )

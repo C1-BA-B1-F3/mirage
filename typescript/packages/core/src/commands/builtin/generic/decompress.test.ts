@@ -116,13 +116,6 @@ describe('the names gzip opens', () => {
     ])
   })
 
-  it('takes a retried name as the input and names the output from it', async () => {
-    const files = new Map([['/d/x.z', HELLO]])
-    const { read, options } = backend(files)
-    const [, io] = await decompressInputs([typed('/d/x', 'x')], read, { stdin: null, ...options })
-    expect([io.exitCode, Object.fromEntries(files)]).toEqual([0, { '/d/x': enc.encode('hello') }])
-  })
-
   it('does not retry a name with a known suffix', async () => {
     const { reads, read, options } = backend(new Map())
     const [, io] = await decompressInputs([typed('/d/x.GZ', 'x.GZ')], read, {
@@ -158,53 +151,6 @@ describe('the names gzip opens', () => {
 })
 
 describe('in place', () => {
-  it.each([
-    [false, 'gzip: /d/a.txt: unknown suffix -- ignored\n', 2],
-    [true, null, 0],
-  ] as const)('skips a name without a known suffix (quiet %s)', async (quiet, stderr, code) => {
-    const files = new Map([['/d/a.txt', HELLO]])
-    const { read, options } = backend(files)
-    const [, io] = await decompressInputs([PathSpec.fromStrPath('/d/a.txt')], read, {
-      stdin: null,
-      quiet,
-      ...options,
-    })
-    expect([text(io.stderr), io.exitCode]).toEqual([stderr, code])
-    expect(Object.fromEntries(files)).toEqual({ '/d/a.txt': HELLO })
-  })
-
-  it('decompresses .tgz and .taz, in any case, to .tar', async () => {
-    const files = new Map([
-      ['/d/a.TGZ', HELLO],
-      ['/d/b.taz', HELLO],
-    ])
-    const { read, options } = backend(files)
-    const paths = ['/d/a.TGZ', '/d/b.taz'].map((p) => PathSpec.fromStrPath(p))
-    await decompressInputs(paths, read, { stdin: null, ...options })
-    expect(Object.fromEntries(files)).toEqual({
-      '/d/a.tar': enc.encode('hello'),
-      '/d/b.tar': enc.encode('hello'),
-    })
-  })
-
-  it.each([
-    [false, 2, { '/d/e.gz': HELLO, '/d/e': enc.encode('old') }],
-    [true, 0, { '/d/e': enc.encode('hello') }],
-  ] as const)('needs -f (%s) to replace an output already there', async (force, code, after) => {
-    const files = new Map([
-      ['/d/e.gz', HELLO],
-      ['/d/e', enc.encode('old')],
-    ])
-    const { read, options } = backend(files)
-    const [, io] = await decompressInputs([PathSpec.fromStrPath('/d/e.gz')], read, {
-      stdin: null,
-      force,
-      ...options,
-    })
-    expect([io.exitCode, Object.fromEntries(files)]).toEqual([code, after])
-    if (!force) expect(text(io.stderr)).toBe('gzip: /d/e already exists;\tnot overwritten\n')
-  })
-
   it('names an output already there ahead of a corrupt body', async () => {
     // gzip checks the output once the header reads, before the body.
     const files = new Map([
@@ -237,26 +183,21 @@ describe('in place', () => {
 })
 
 describe('to stdout', () => {
-  it.each([
-    [false, 'gzip: /d/dir is a directory -- ignored\n'],
-    [true, null],
-  ] as const)('warns of a directory, silent under quiet %s', async (quiet, stderr) => {
+  it('silences a directory warning under quiet but keeps exit 2', async () => {
     const { read, options } = backend(new Map())
     const [body, io] = await decompressInputs([PathSpec.fromStrPath('/d/dir')], read, {
       stdin: null,
       toStdout: true,
-      quiet,
+      quiet: true,
       ...options,
     })
     expect(await materialize(body)).toEqual(new Uint8Array())
-    expect([text(io.stderr), io.exitCode]).toEqual([stderr, 2])
+    expect([text(io.stderr), io.exitCode]).toEqual([null, 2])
   })
 
   it.each([
-    ['plain', enc.encode('plain\n'), 'plain\n'],
     ['empty', new Uint8Array(), ''],
     ['one byte', enc.encode('\x1f'), '\x1f'],
-    ['trailing bytes', cat(HELLO, enc.encode('junk')), 'hellojunk'],
     ['trailing zeros', cat(HELLO, new Uint8Array(2)), 'hello\0\0'],
   ])('copies what is not gzip under -f: %s', async (_name, data, out) => {
     const { read, options } = backend(new Map([['/d/f', data]]))

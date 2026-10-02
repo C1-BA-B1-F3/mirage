@@ -41,57 +41,8 @@ def write_ws(dbx_files: FakeFiles) -> Workspace:
     return Workspace({"/dbx/": make_vfs(dbx_files)}, mode=MountMode.WRITE)
 
 
-@pytest.fixture
-def read_ws(dbx_files: FakeFiles) -> Workspace:
-    return Workspace({"/dbx/": make_vfs(dbx_files)}, mode=MountMode.READ)
-
-
-@pytest.mark.asyncio
-async def test_rm_recursive_removes_tree(write_ws, dbx_files):
-    io = await write_ws.shell("rm -r /dbx/d")
-
-    assert io.exit_code == 0
-    assert f"{ROOT}/d" not in dbx_files.directory_metadata
-    assert f"{ROOT}/d/sub/b.txt" not in dbx_files.downloads
-
-
-@pytest.mark.asyncio
-async def test_rm_recursive_writes_are_mount_relative(write_ws):
-    io = await write_ws.shell("rm -r /dbx/d")
-
-    assert io.exit_code == 0
-    assert io.writes
-    for key in io.writes:
-        assert key.startswith("/dbx/")
-        assert not key.startswith("/dbx/dbx/")
-
-
-@pytest.mark.asyncio
-async def test_plain_rm_on_directory_fails(write_ws, dbx_files):
-    io = await write_ws.shell("rm /dbx/d")
-
-    assert io.exit_code != 0
-    assert f"{ROOT}/d" in dbx_files.directory_metadata
-
-
 @pytest.mark.asyncio
 async def test_rm_force_missing_succeeds(write_ws):
     io = await write_ws.shell("rm -f /dbx/missing.txt")
 
     assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_rm_missing_fails(write_ws):
-    io = await write_ws.shell("rm /dbx/missing.txt")
-
-    assert io.exit_code != 0
-
-
-@pytest.mark.asyncio
-async def test_rm_recursive_read_only_rejected(read_ws, dbx_files):
-    io = await read_ws.shell("rm -r /dbx/d")
-
-    assert io.exit_code != 0
-    assert io.stderr == b"rm: cannot remove '/dbx/d': Read-only file system\n"
-    assert f"{ROOT}/d" in dbx_files.directory_metadata

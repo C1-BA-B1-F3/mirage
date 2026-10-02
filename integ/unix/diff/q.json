@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qdiff && printf 'x\\n' > /data/qdiff/q1 && printf 'y\\n' > /data/qdiff/q2 && diff -q /data/qdiff/q1 /data/qdiff/q2; echo rc=$?",
       "expect": {

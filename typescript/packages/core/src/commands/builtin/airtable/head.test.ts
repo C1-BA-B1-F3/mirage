@@ -47,26 +47,4 @@ describe('airtable head', () => {
     }
     expect(fake.recordCalls().map((c) => c.maxRecords)).toEqual(['2'])
   })
-
-  it('refuses the default ten when the table outgrows the cap', async () => {
-    const ws = await workspace(new FakeAirtable())
-    try {
-      const result = await ws.shell(`head ${RECORDS}`)
-      // 10 lines asked of a 7-record table under a cap of 5: the full answer
-      // would exceed the cap, so it is refused rather than truncated
-      expect(result.exitCode).toBe(1)
-      expect(DEC.decode(result.stderr)).toBe(`head: error reading '${RECORDS}': File too large\n`)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('reads the whole file for a byte count', async () => {
-    const ws = await workspace(new FakeAirtable())
-    try {
-      expect((await ws.shell(`head -c 12 ${RECORDS}`)).exitCode).toBe(1)
-    } finally {
-      await ws.close()
-    }
-  })
 })

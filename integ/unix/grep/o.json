@@ -528,6 +528,83 @@
         "v",
         "l"
       ]
+    },
+    {
+      "id": "grep_o_empty_matches_print_nothing",
+      "seq": 14101601,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ab\\n' | grep -o ''; echo rc=$?; printf 'ab\\n' | grep -o '^'; echo rc=$?; printf 'ab\\n' | grep -o '$'; echo rc=$?; printf 'ab\\n' | grep -ob ''; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\nrc=0\nrc=0\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "b"
+      ]
+    },
+    {
+      "id": "grep_an_empty_match_still_selects_the_line",
+      "seq": 14101602,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ab\\n' | grep -c '[0-9]*'; echo rc=$?; printf 'ab\\n' | grep '[0-9]*'; echo rc=$?; printf 'a1b\\n' | grep -on '[0-9]*'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\nrc=0\nab\nrc=0\n1:1\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "o",
+        "n"
+      ]
     }
   ]
 }

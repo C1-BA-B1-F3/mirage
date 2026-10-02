@@ -22,7 +22,10 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "gridfs",
+        "gridfs-prefix",
+        "box"
       ],
       "command": "join /data/xrl_c.txt /data2/xrl_nope.txt",
       "expect": {

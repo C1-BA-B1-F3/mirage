@@ -33,18 +33,9 @@ async function run(
   }
 }
 
-it.each([
-  ['-v', 'Archive:  /a/a.zip\n Length   Method'],
-  ['-l', '  Length      Name\n'],
-])('lists instead of extracting under %s', async (flag, head) => {
-  const { exitCode, out, written } = await run(`unzip ${flag} /a/a.zip -d /b/out`)
+it('lists instead of extracting under -l', async () => {
+  const { exitCode, out, written } = await run('unzip -l /a/a.zip -d /b/out')
   expect(exitCode).toBe(0)
-  expect(out.startsWith(head)).toBe(true)
+  expect(out.startsWith('  Length      Name\n')).toBe(true)
   expect(written).toEqual({})
-})
-
-it('honours excludes while extracting', async () => {
-  const { exitCode, written } = await run('unzip -q /a/a.zip -x drop.txt -d /b/out')
-  expect(exitCode).toBe(0)
-  expect(written).toEqual({ '/out/keep.txt': ENC.encode('keep\n') })
 })

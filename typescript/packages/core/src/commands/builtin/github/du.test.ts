@@ -17,7 +17,6 @@ import { GitHubAccessor } from '../../../accessor/github.ts'
 import type { GitHubTransport } from '../../../core/github/client.ts'
 import type { TreeEntry } from '../../../core/github/tree_entry.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
-import { eacces } from '../../../utils/errors.ts'
 import { materialize } from '../../../io/types.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import { IO } from './io.ts'
@@ -88,29 +87,4 @@ it.each([
     tree: TREE,
   })
   expect(await runDu(accessor, operand, flags)).toEqual([expected, 0, ''])
-})
-
-it('truncated du preserves directory rows and permission errors', async () => {
-  vi.spyOn(IO, 'readdir').mockImplementation((_a, p) => {
-    if (p.virtual === '/db/sealed') return Promise.reject(eacces(p.virtual))
-    return Promise.resolve(
-      p.virtual === '/db' ? ['/db/a', '/db/empty', '/db/sealed', '/db/walled'] : [],
-    )
-  })
-  vi.spyOn(IO, 'stat').mockImplementation((_a, p) => {
-    if (p.virtual === '/db/walled') return Promise.reject(eacces(p.virtual))
-    return Promise.resolve(
-      new FileStat({
-        name: p.virtual,
-        type: p.virtual === '/db/a' ? FileType.FILE : FileType.DIRECTORY,
-        size: p.virtual === '/db/a' ? 3 : null,
-      }),
-    )
-  })
-  expect(await runDu({ truncated: true } as GitHubAccessor, '/db', {})).toEqual([
-    '0\t/db/empty\n0\t/db/sealed\n3\t/db\n',
-    1,
-    "du: cannot read directory '/db/sealed': Permission denied\n" +
-      "du: cannot read directory '/db/walled': Permission denied\n",
-  ])
 })

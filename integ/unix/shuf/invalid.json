@@ -543,6 +543,144 @@
       "flags": [
         "i"
       ]
+    },
+    {
+      "id": "shuf_i_bounds_are_exact_integers",
+      "seq": 14102501,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | shuf -i 9007199254740992-9007199254740992; echo rc=$?; printf 'x\\n' | shuf -i 9007199254740993-9007199254740993; echo rc=$?; printf 'x\\n' | shuf -i 9223372036854775807-9223372036854775807; echo rc=$?; printf 'x\\n' | shuf -i 18446744073709551615-18446744073709551615; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "9007199254740992\nrc=0\n9007199254740993\nrc=0\n9223372036854775807\nrc=0\n18446744073709551615\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "shuf_i_range_overflow_refusals",
+      "seq": 14102502,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | shuf -i 18446744073709551616-18446744073709551616; echo rc=$?; printf 'x\\n' | shuf -i 1-18446744073709551616; echo rc=$?; printf 'x\\n' | shuf -i 18446744073709551616-x; echo rc=$?; printf 'x\\n' | shuf -i x-18446744073709551616; echo rc=$?; printf 'x\\n' | shuf -i 0-18446744073709551615; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\nrc=1\nrc=1\n",
+        "stderr": "shuf: invalid input range: '18446744073709551616-18446744073709551616': Value too large for defined data type\nshuf: invalid input range: '1-18446744073709551616': Value too large for defined data type\nshuf: invalid input range: '18446744073709551616-x': Value too large for defined data type\nshuf: invalid input range: 'x-18446744073709551616'\nshuf: invalid input range: '0-18446744073709551615'\n"
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "shuf_i_a_huge_range_needs_a_head_count",
+      "seq": 14102503,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | shuf -i 1-18446744073709551615 -n 0; echo rc=$?; printf 'x\\n' | shuf -i 1-18446744073709551615 -n 3 | wc -l; echo rc=$?; printf 'x\\n' | shuf -i 1-18446744073709551615; echo rc=$?; printf 'x\\n' | shuf -i 1-18446744073709551615 -r -n 2 | wc -l; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n3\nrc=0\nrc=1\n2\nrc=0\n",
+        "stderr": "shuf: memory exhausted\n"
+      },
+      "flags": [
+        "i",
+        "n",
+        "r"
+      ]
+    },
+    {
+      "id": "shuf_n_past_uintmax_max_is_clamped",
+      "seq": 14102504,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | shuf -n 18446744073709551616; echo rc=$?; printf 'x\\n' | shuf -n 99999999999999999999999999; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nrc=0\nx\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
     }
   ]
 }

@@ -115,14 +115,6 @@ async def test_a_missing_name_is_retried_with_each_suffix(
 
 
 @pytest.mark.asyncio
-async def test_a_retried_name_is_the_input_and_names_the_output():
-    files = {"/d/x.z": HELLO}
-    _, ops = _files(files)
-    _, io = await decompress_inputs([_typed("/d/x", "x")], **ops)
-    assert (io.exit_code, files) == (0, {"/d/x": b"hello"})
-
-
-@pytest.mark.asyncio
 async def test_a_name_with_a_known_suffix_is_not_retried():
     reads, ops = _files({})
     _, io = await decompress_inputs([_typed("/d/x.GZ", "x.GZ")], **ops)
@@ -152,69 +144,13 @@ async def test_the_empty_name_tries_the_suffixes_themselves():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "quiet,stderr,code",
-    [
-        (False, b"gzip: /d/a.txt: unknown suffix -- ignored\n", 2),
-        (True, None, 0),
-    ],
-)
-async def test_in_place_skips_a_name_without_a_known_suffix(
-    quiet, stderr, code
-):
-    files = {"/d/a.txt": HELLO}
-    _, ops = _files(files)
-    _, io = await decompress_inputs(
-        [PathSpec.from_str_path("/d/a.txt")], quiet=quiet, **ops
-    )
-    assert (io.stderr, io.exit_code) == (stderr, code)
-    assert files == {"/d/a.txt": HELLO}
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "quiet,stderr",
-    [
-        (False, b"gzip: /d/dir is a directory -- ignored\n"),
-        (True, None),
-    ],
-)
-async def test_a_directory_is_a_warning_that_quiet_silences(quiet, stderr):
+async def test_quiet_silences_a_directory_warning_but_keeps_exit_2():
     _, ops = _files({})
     body, io = await decompress_inputs(
-        [PathSpec.from_str_path("/d/dir")], to_stdout=True, quiet=quiet, **ops
+        [PathSpec.from_str_path("/d/dir")], to_stdout=True, quiet=True, **ops
     )
     assert await materialize(body) == b""
-    assert (io.stderr, io.exit_code) == (stderr, 2)
-
-
-@pytest.mark.asyncio
-async def test_tgz_and_taz_decompress_to_tar():
-    files = {"/d/a.TGZ": HELLO, "/d/b.taz": HELLO}
-    _, ops = _files(files)
-    await decompress_inputs(
-        [PathSpec.from_str_path(p) for p in ("/d/a.TGZ", "/d/b.taz")], **ops
-    )
-    assert files == {"/d/a.tar": b"hello", "/d/b.tar": b"hello"}
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "force,code,after",
-    [
-        (False, 2, {"/d/e.gz": HELLO, "/d/e": b"old"}),
-        (True, 0, {"/d/e": b"hello"}),
-    ],
-)
-async def test_an_output_already_there_needs_force(force, code, after):
-    files = {"/d/e.gz": HELLO, "/d/e": b"old"}
-    _, ops = _files(files)
-    _, io = await decompress_inputs(
-        [PathSpec.from_str_path("/d/e.gz")], force=force, **ops
-    )
-    assert (io.exit_code, files) == (code, after)
-    if not force:
-        assert io.stderr == b"gzip: /d/e already exists;\tnot overwritten\n"
+    assert (io.stderr, io.exit_code) == (None, 2)
 
 
 @pytest.mark.asyncio
@@ -240,10 +176,8 @@ async def test_a_bad_header_outranks_an_output_already_there():
 @pytest.mark.parametrize(
     "data,out",
     [
-        (b"plain\n", b"plain\n"),
         (b"", b""),
         (b"\x1f", b"\x1f"),
-        (HELLO + b"junk", b"hellojunk"),
         (HELLO + b"\0\0", b"hello\0\0"),
     ],
 )

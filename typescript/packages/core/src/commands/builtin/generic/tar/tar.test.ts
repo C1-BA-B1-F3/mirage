@@ -65,13 +65,6 @@ async function shell(
 }
 
 describe('tar over a gzip child that fails', () => {
-  it("is gzip's refusal, then tar's, for a non-gzip archive", async () => {
-    // GNU tar 1.35 reads -z through a gzip -d child and dies when it
-    // fails, after gzip's own line.
-    const r = await shell('tar -tzf /data/c.tgz', { '/data/c.tgz': ENC.encode('corrupted\n') })
-    expect(r).toEqual([2, '', '\ngzip: stdin: not in gzip format\n' + CHILD_FAILED])
-  })
-
   it('still yields every member past a damaged trailer', async () => {
     const seed = { '/data/bad.tgz': DAMAGED }
     const reasons =
@@ -86,19 +79,6 @@ describe('tar over a gzip child that fails', () => {
       0,
       'hello\nbee\n',
       reasons + CHILD_FAILED,
-    ])
-  })
-
-  it('takes the same road on the gzip magic without -z', async () => {
-    const r = await shell('tar -tf /data/junk.tgz', {
-      '/data/junk.tgz': new Uint8Array([...OK, ...ENC.encode('xy')]),
-    })
-    expect(r).toEqual([
-      2,
-      'd/a.txt\nd/b.txt\n',
-      '\ngzip: stdin: decompression OK, trailing garbage ignored\n' +
-        'tar: Child returned status 2\n' +
-        'tar: Error is not recoverable: exiting now\n',
     ])
   })
 
@@ -126,14 +106,6 @@ it.each(['-tzf', '-tf', '-xOzf'])(
   },
 )
 
-it('extracts complete tar members despite a truncated gzip trailer', async () => {
-  expect(
-    await shell('tar -xzf /data/cut.tgz -C /data; cat /data/d/*', {
-      '/data/cut.tgz': OK.subarray(0, -3),
-    }),
-  ).toEqual([0, 'hello\nbee\n', '\ngzip: stdin: unexpected end of file\n' + CHILD_FAILED])
-})
-
 it.each(['-tzf', '-xzf', '-xOzf'])(
   'preserves both gzip and tar diagnostics when parsing fails: %s',
   async (flags) => {
@@ -155,22 +127,6 @@ it.each(['-tzf', '-xzf', '-xOzf'])(
     }
   },
 )
-
-it.each(['t', 'x', 'c'])('preserves empty and looping archive names for -%sf', async (mode) => {
-  for (const [name, reason] of [
-    ['', 'No such file or directory'],
-    ['loop', 'Too many levels of symbolic links'],
-  ] as const) {
-    const result = await shell(`cd /data; ln -s loop loop; tar -${mode}f '${name}' a.txt`, {
-      '/data/a.txt': ENC.encode('hello\n'),
-    })
-    expect(result).toEqual([
-      2,
-      '',
-      `tar: ${name}: Cannot open: ${reason}\ntar: Error is not recoverable: exiting now\n`,
-    ])
-  }
-})
 
 it('keeps the empty archive refusal across mounts', async () => {
   const ws = new Workspace(

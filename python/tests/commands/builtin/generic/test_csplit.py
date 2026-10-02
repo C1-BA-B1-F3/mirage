@@ -30,17 +30,26 @@ async def _no_unlink(path: PathSpec) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "cwd,named",
+    "cwd,prefix,named",
     [
-        ("/data", ["/data/xx00", "/data/xx01"]),
-        ("/data/sub", ["/data/sub/xx00", "/data/sub/xx01"]),
+        ("/data", "xx", ["/data/xx00", "/data/xx01"]),
+        ("/data/sub", "xx", ["/data/sub/xx00", "/data/sub/xx01"]),
+        (
+            "/",
+            PathSpec(
+                virtual="/data/sub/cs",
+                directory="/data/sub/",
+                vfs_path="sub/cs",
+            ),
+            ["/data/sub/cs00", "/data/sub/cs01"],
+        ),
     ],
 )
-async def test_stdin_outputs_are_named_in_the_working_directory(
-    cwd: str, named: list[str]
+async def test_stdin_outputs_are_named_on_the_executing_mount(
+    cwd: str, prefix: str | PathSpec, named: list[str]
 ):
-    # No operand and no -f to read a prefix from: `xx` in the working
-    # directory names the outputs (GNU), and the writes keys stay
+    # With no -f, `xx` in the working directory names the outputs (GNU);
+    # a -f path names them by its virtual path. The writes keys stay
     # mount-relative.
     specs: list[PathSpec] = []
 
@@ -54,46 +63,12 @@ async def test_stdin_outputs_are_named_in_the_working_directory(
         write_bytes=write_bytes,
         unlink=_no_unlink,
         stdin=b"a\nb\n",
+        prefix=prefix,
         mount_prefix="/data",
         cwd=cwd,
     )
     assert [p.virtual for p in specs] == named
     assert list(io.writes) == [name[len("/data") :] for name in named]
-
-
-@pytest.mark.asyncio
-async def test_a_prefix_path_is_named_on_the_executing_mount():
-    specs: list[PathSpec] = []
-
-    async def write_bytes(path: PathSpec, data: bytes) -> None:
-        specs.append(path)
-
-    prefix = PathSpec(
-        virtual="/data/sub/cs", directory="/data/sub/", vfs_path="sub/cs"
-    )
-    _, io = await csplit(
-        [],
-        ["2"],
-        read_bytes=_no_read,
-        write_bytes=write_bytes,
-        unlink=_no_unlink,
-        stdin=b"a\nb\n",
-        prefix=prefix,
-        mount_prefix="/data",
-    )
-    assert [p.virtual for p in specs] == ["/data/sub/cs00", "/data/sub/cs01"]
-    assert list(io.writes) == ["/sub/cs00", "/sub/cs01"]
-
-
-@pytest.mark.asyncio
-async def test_a_dash_input_reads_stdin():
-    ws = Workspace(
-        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
-    )
-    r = await ws.shell(
-        "cd /data && csplit - 2 && cat xx01", stdin=b"a\nb\nc\n"
-    )
-    assert await r.materialize_stdout() == b"2\n4\nb\nc\n"
 
 
 @pytest.mark.asyncio

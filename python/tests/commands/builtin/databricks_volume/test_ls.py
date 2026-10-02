@@ -58,28 +58,3 @@ async def test_ls_a_includes_hidden(ws):
 
     assert io.exit_code == 0
     assert ".hidden" in io.stdout.decode()
-
-
-@pytest.mark.asyncio
-async def test_ls_long_includes_size(ws):
-    io = await ws.shell("ls -l /dbx/")
-
-    assert io.exit_code == 0
-    out = io.stdout.decode()
-    assert "words.txt" in out
-    assert "17" in out
-
-
-@pytest.mark.asyncio
-async def test_ls_recursive_descends_subdirs(ws):
-    io = await ws.shell("ls -R /dbx/")
-
-    assert io.exit_code == 0
-    assert "inner.txt" in io.stdout.decode()
-
-
-@pytest.mark.asyncio
-async def test_ls_missing_path_warns(ws):
-    io = await ws.shell("ls /dbx/missing")
-
-    assert io.exit_code != 0

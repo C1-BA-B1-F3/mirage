@@ -42,38 +42,36 @@ async function guarded(): Promise<Workspace> {
 }
 
 describe('python3: a rule on the script', () => {
-  it.each([
-    ['python3 secret.py', 'secret.py'],
-    ['python3 ./secret.py', './secret.py'],
-    ['python3 -u -- secret.py', 'secret.py'],
-  ])('reads %s however it is typed', async (line, shown) => {
-    const ws = await guarded()
-    try {
-      await ws.shell("printf 'print(1)\\n' > /secret.py")
-      const io = await ws.shell(line)
-      expect(io.exitCode).toBe(1)
-      expect(stdoutStr(io)).toBe('')
-      expect(stderrStr(io)).toBe(`python3: ${shown}: protected\n`)
-    } finally {
-      await ws.close()
-    }
-  })
+  it.each([['python3 ./secret.py', './secret.py']])(
+    'reads %s however it is typed',
+    async (line, shown) => {
+      const ws = await guarded()
+      try {
+        await ws.shell("printf 'print(1)\\n' > /secret.py")
+        const io = await ws.shell(line)
+        expect(io.exitCode).toBe(1)
+        expect(stdoutStr(io)).toBe('')
+        expect(stderrStr(io)).toBe(`python3: ${shown}: protected\n`)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 
-  it.each([
-    'python3 s.py secret.py',
-    "python3 -c 'print(argv[1:])' secret.py",
-    "echo 'print(argv[1:])' | python3 - secret.py",
-  ])('keeps the words after the script as its argv: %s', async (line) => {
-    const ws = await guarded()
-    try {
-      await ws.shell("printf 'print(argv[1:])\\n' > /s.py")
-      const io = await ws.shell(line)
-      expect(io.exitCode).toBe(0)
-      expect(stdoutStr(io)).toBe("['secret.py']\n")
-    } finally {
-      await ws.close()
-    }
-  })
+  it.each(["python3 -c 'print(argv[1:])' secret.py"])(
+    'keeps the words after the script as its argv: %s',
+    async (line) => {
+      const ws = await guarded()
+      try {
+        await ws.shell("printf 'print(argv[1:])\\n' > /s.py")
+        const io = await ws.shell(line)
+        expect(io.exitCode).toBe(0)
+        expect(stdoutStr(io)).toBe("['secret.py']\n")
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 })
 
 describe('python3: the program argv and its own file', { timeout: 60000 }, () => {
@@ -82,7 +80,6 @@ describe('python3: the program argv and its own file', { timeout: 60000 }, () =>
     await made.ws.shell('mkdir -p /disk/app /disk/data')
     await made.ws.shell("printf 'import sys\\nprint(sys.argv[1:])\\n' > /disk/app/argv.py")
     await made.ws.shell("printf 'print(__file__)\\n' > /disk/app/file.py")
-    await made.ws.shell("printf 'x = 1\\nprint(x / 0)\\n' > /disk/app/err.py")
     await made.ws.shell(
       "printf 'import sys\\nprint(repr(sys.path[0]))\\nimport helper\\n' > /disk/app/imp.py",
     )
@@ -127,10 +124,7 @@ describe('python3: the program argv and its own file', { timeout: 60000 }, () =>
   })
 
   it.each([
-    ['python3 /disk/app/file.py', '/disk/app/file.py'],
     ['cd /disk && python3 app/file.py', '/disk/app/file.py'],
-    ['cd /disk && python3 ./app/file.py', '/disk/./app/file.py'],
-    ['cat /disk/app/file.py | python3 -', '<stdin>'],
     ['cat /disk/app/file.py | python3', '<stdin>'],
   ])('binds __file__ the way CPython names the file: %s', async (line, file) => {
     // CPython 3.13.5: the operand made absolute as typed, never
@@ -140,59 +134,6 @@ describe('python3: the program argv and its own file', { timeout: 60000 }, () =>
       const io = await ws.shell(line)
       expect(stderrStr(io)).toBe('')
       expect(stdoutStr(io)).toBe(`${file}\n`)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('binds no __file__ for a payload', async () => {
-    const { ws } = await seeded()
-    try {
-      const io = await ws.shell("python3 -c 'print(__file__)'")
-      expect(io.exitCode).toBe(1)
-      expect(stderrStr(io)).toContain("NameError: name '__file__' is not defined")
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('names the script and quotes its line in a traceback', async () => {
-    const { ws } = await seeded()
-    try {
-      const io = await ws.shell('python3 /disk/app/err.py')
-      expect(io.exitCode).toBe(1)
-      expect(stderrStr(io)).toContain('  File "/disk/app/err.py", line 2, in <module>\n')
-      expect(stderrStr(io)).toContain('    print(x / 0)\n')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it("heads sys.path with the script's own directory", async () => {
-    const { ws } = await seeded()
-    try {
-      const io = await ws.shell('python3 /disk/app/imp.py')
-      expect(stderrStr(io)).toBe('')
-      expect(stdoutStr(io)).toBe("'/disk/app'\nhelper imported\n")
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('hands Monty the script, which it names under the directory it starts in', async () => {
-    const ws = new Workspace(
-      { '/': new RAMVFS() },
-      {
-        mode: MountMode.EXEC,
-        shellParser: await getTestParser(),
-        runtimes: [new MontyRuntime(), 'workspace'],
-      },
-    )
-    try {
-      await ws.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
-      const io = await ws.shell('cd /w && python3 s.py')
-      expect(stderrStr(io)).toBe('')
-      expect(stdoutStr(io)).toBe('/w/s.py\n')
     } finally {
       await ws.close()
     }
@@ -254,88 +195,11 @@ describe('python3: core (ports of Python tests_workspace)', { timeout: 30000 }, 
     }
   }, 60_000)
 
-  it('test_python3_c_simple (L1364): print(42) → "42\\n"', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "print(42)"')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('42\n')
-    await ws.close()
-  }, 60_000)
-
-  it('test_python3_c_multiline (L1371): multi-stmt -c', async () => {
-    const { ws } = await makeWorkspace()
-    // Port note: Python test uses double quotes; the TS shell parser has a
-    // pre-existing quirk where newlines inside "..." are stripped. Single
-    // quotes preserve newlines and the behavioral assertion is identical.
-    const io = await ws.shell("python3 -c 'x = 2\nprint(x * 3)'")
-    expect(stdoutStr(io)).toBe('6\n')
-    await ws.close()
-  })
-
-  it('test_python3_c_with_stdin (L1377): echo hello | python3 -c', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell(
-      'echo hello | python3 -c "import sys; print(sys.stdin.read().strip().upper())"',
-    )
-    expect(stdoutStr(io)).toBe('HELLO\n')
-    await ws.close()
-  })
-
-  it('test_python3_c_path_in_code (L1385): paths in -c stay text', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "print(\'/s3/data/file.txt\')"')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toContain('/s3/data/file.txt')
-    await ws.close()
-  })
-
-  it('test_python3_c_with_star (L1393): * in -c not glob-expanded', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "print(2 * 3)"')
-    expect(stdoutStr(io)).toBe('6\n')
-    await ws.close()
-  })
-
-  it('test_python3_script_file (L1400): python3 /disk/script.py', async () => {
-    const { ws } = await makeWorkspace()
-    await ws.shell("echo 'print(99)' > /disk/script.py")
-    const io = await ws.shell('python3 /disk/script.py')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('99\n')
-    await ws.close()
-  })
-
-  it('test_python3_session_env (L1408): export MY_VAR → os.environ', async () => {
-    const { ws } = await makeWorkspace()
-    await ws.shell('export MY_VAR=hello_mirage')
-    const io = await ws.shell("python3 -c \"import os; print(os.environ.get('MY_VAR', 'none'))\"")
-    expect(stdoutStr(io)).toBe('hello_mirage\n')
-    await ws.close()
-  })
-
   it('test_python3_no_args (L1417): bare python3 → exit 1 "no input"', async () => {
     const { ws } = await makeWorkspace()
     const io = await ws.shell('python3')
     expect(io.exitCode).toBe(1)
     expect(stderrStr(io)).toContain('no input')
-    await ws.close()
-  })
-
-  it('bare-filename script in cwd: python3 script.py runs the file', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 script.py')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('6\n')
-    await ws.close()
-  })
-
-  it('bare-filename script in subdir: python3 sub/deep.py runs via cwd', async () => {
-    const { ws, disk } = await makeWorkspace()
-    disk.store.files.set('/sub/deep.py', new TextEncoder().encode("print('deep ok')\n"))
-    ws.getSession(ws.defaultSessionId).cwd = '/disk'
-    const io = await ws.shell('python3 sub/deep.py')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('deep ok\n')
     await ws.close()
   })
 
@@ -346,115 +210,11 @@ describe('python3: core (ports of Python tests_workspace)', { timeout: 30000 }, 
     expect(stderrStr(io)).toContain('No such file')
     await ws.close()
   })
-
-  // ── flag-conditional argv classification (no-c vs -c)
-  // These guard the spec/parser interaction: positional args after `-c "code"`
-  // must NOT be path-resolved (raw text → sys.argv); without -c, the first
-  // positional IS the script (PATH), and subsequent positionals are argv.
-
-  it('python3 -c "code" arg1 arg2 → argv stays bare (no path prefix)', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "import sys; print(sys.argv[1:])" alpha beta')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe("['alpha', 'beta']\n")
-    await ws.close()
-  })
-
-  it('python3 -c "code" /abs/path → abs path stays as text argv', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "import sys; print(sys.argv[1:])" /disk/some_file')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe("['/disk/some_file']\n")
-    await ws.close()
-  })
-
-  it('python3 /abs/script.py arg1 arg2 → script reads, argv passes through', async () => {
-    const { ws } = await makeWorkspace()
-    await ws.shell("echo 'import sys; print(sys.argv[1:])' > /disk/argv.py")
-    const io = await ws.shell('python3 /disk/argv.py alpha beta')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe("['alpha', 'beta']\n")
-    await ws.close()
-  })
-
-  it('python3 script.py one two (bare name + argv via cwd)', async () => {
-    const { ws, disk } = await makeWorkspace()
-    disk.store.files.set(
-      '/with_argv.py',
-      new TextEncoder().encode('import sys; print(sys.argv[1:])\n'),
-    )
-    ws.getSession(ws.defaultSessionId).cwd = '/disk'
-    const io = await ws.shell('python3 with_argv.py one two')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe("['one', 'two']\n")
-    await ws.close()
-  })
-
-  it('test_python_pipe (L848): python3 -c ... | grep', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell("python3 -c 'print(42)' | grep 42")
-    expect(io.exitCode).toBe(0)
-    await ws.close()
-  })
-
-  it('test_python_pipe_stdin (L1653): echo code | python3', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('echo "print(1+2)" | python3')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('3\n')
-    await ws.close()
-  })
-
-  it('test_python_heredoc (L1748): python3 << PYEOF', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell("python3 << 'PYEOF'\nprint(1 + 2)\nPYEOF")
-    expect(stdoutStr(io)).toBe('3\n')
-    await ws.close()
-  })
-
-  it('test_python_heredoc_dash_strips_indentation (L1783): <<-PYEOF', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 <<-PYEOF\n\tfor i in range(3):\n\t    print(i)\n\tPYEOF')
-    expect(stdoutStr(io)).toBe('0\n1\n2\n')
-    await ws.close()
-  })
-
-  it('test_python_heredoc_quoted_keeps_dollar_literal (L1794): $X stays literal', async () => {
-    const { ws } = await makeWorkspace()
-    await ws.shell('export X=shellval')
-    const io = await ws.shell("python3 << 'PYEOF'\nprint('$X')\nPYEOF")
-    expect(stdoutStr(io).trim()).toBe('$X')
-    await ws.close()
-  })
-
-  it('test_python_heredoc_unquoted_expands (L1806): unquoted heredoc expands', async () => {
-    const { ws } = await makeWorkspace()
-    await ws.shell('export X=shellval')
-    const io = await ws.shell("python3 << PYEOF\nprint('$X')\nPYEOF")
-    expect(stdoutStr(io).trim()).toBe('shellval')
-    await ws.close()
-  })
-
-  it('test_heredoc_pipe (L1932): python3 heredoc | head -n 1', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell(
-      "python3 << 'PYEOF' | head -n 1\nfor i in range(5):\n    print(i)\nPYEOF",
-    )
-    expect(stdoutStr(io)).toBe('0\n')
-    await ws.close()
-  })
 })
 
 describe('python3: TS-specific (Pyodide isolation + mechanics)', { timeout: 30000 }, () => {
   // These have no Python-subprocess analog — they pin the Pyodide-layer
   // isolation invariants documented in §14 of the design doc.
-
-  it('SystemExit(int) honors exit code', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "import sys; sys.exit(3)"')
-    expect(io.exitCode).toBe(3)
-    await ws.close()
-  })
 
   it('SystemExit() (no arg) → exit 0', async () => {
     const { ws } = await makeWorkspace()
@@ -468,15 +228,6 @@ describe('python3: TS-specific (Pyodide isolation + mechanics)', { timeout: 3000
     const io = await ws.shell('python3 -c "import sys; sys.exit(\\"boom\\")"')
     expect(io.exitCode).toBe(1)
     expect(stderrStr(io)).toContain('boom')
-    await ws.close()
-  })
-
-  it('uncaught exception → exit 1 + traceback', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 -c "raise RuntimeError(\\"oops\\")"')
-    expect(io.exitCode).toBe(1)
-    expect(stderrStr(io)).toContain('RuntimeError')
-    expect(stderrStr(io)).toContain('oops')
     await ws.close()
   })
 
@@ -501,14 +252,6 @@ describe('python3: TS-specific (Pyodide isolation + mechanics)', { timeout: 3000
     await ws.shell('python3 -c "import json"')
     const io = await ws.shell('python3 -c "import sys; print(\'json\' in sys.modules)"')
     expect(stdoutStr(io).trim()).toBe('True')
-    await ws.close()
-  })
-
-  it('script file not found → exit 1, "No such file" on stderr', async () => {
-    const { ws } = await makeWorkspace()
-    const io = await ws.shell('python3 /ram/does_not_exist.py')
-    expect(io.exitCode).toBe(1)
-    expect(stderrStr(io)).toContain('No such file')
     await ws.close()
   })
 

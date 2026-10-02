@@ -347,7 +347,7 @@ async def test_copy_file_onto_folder_raises_isdir(root_accessor):
             "mirage.core.box.copy.delete_file", new_callable=AsyncMock
         ) as df,
         patch(
-            "mirage.core.box.copy.invalidate_after_write",
+            "mirage.core.box.copy.invalidate_subtree",
             new_callable=AsyncMock,
         ),
     ):
@@ -369,7 +369,7 @@ async def test_copy_folder_onto_file_raises_notdir(root_accessor):
             "mirage.core.box.copy.delete_file", new_callable=AsyncMock
         ) as df,
         patch(
-            "mirage.core.box.copy.invalidate_after_write",
+            "mirage.core.box.copy.invalidate_subtree",
             new_callable=AsyncMock,
         ),
     ):
@@ -385,7 +385,7 @@ async def test_copy_file(root_accessor):
         patch("mirage.core.box.resolve.list_folder_items", new=_fake_list),
         patch("mirage.core.box.copy.copy_file", new_callable=AsyncMock) as cf,
         patch(
-            "mirage.core.box.copy.invalidate_after_write",
+            "mirage.core.box.copy.invalidate_subtree",
             new_callable=AsyncMock,
         ),
     ):

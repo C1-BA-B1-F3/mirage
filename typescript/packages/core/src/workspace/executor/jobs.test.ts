@@ -249,6 +249,22 @@ describe('handleFg without an operand', () => {
     expect(decode(stdout as Uint8Array)).toBe('quick\nbody')
     expect(io.exitCode).toBe(3)
   })
+
+  // bash's current job is the newest one still running; a finished job
+  // answers only when nothing runs.
+  it('prefers a running job to a finished one', async () => {
+    const jt = new JobTable()
+    const late: JobRunner = async (job) => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await job.console.emit(Channel.STDOUT, new TextEncoder().encode('late'))
+      return [new IOResult(), new ExecutionNode({ command: 'older' })]
+    }
+    jt.submit({ command: 'older', run: late, abort: new AbortController(), cwd: '/' })
+    const done = jt.submit({ command: 'newer', run: quiet, abort: new AbortController(), cwd: '/' })
+    await jt.wait(done.id)
+    const [stdout] = await handleFg(jt, ['fg'])
+    expect(decode(stdout as Uint8Array)).toBe('older\nlate')
+  })
 })
 
 describe('handleFg with an invocation signal', () => {

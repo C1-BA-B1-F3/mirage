@@ -221,6 +221,17 @@ async def _run_forever(job: Job) -> tuple[IOResult, ExecutionNode]:
     return IOResult(), ExecutionNode()
 
 
+async def _emit_late(job: Job) -> tuple[IOResult, ExecutionNode]:
+    """A runner that prints only after a short wait, so it is still
+    running when the test reaches ``fg``.
+
+    Args:
+        job (Job): the job being run.
+    """
+    await asyncio.sleep(0.05)
+    return await _emit_and_settle(job, stdout=b"late")
+
+
 def _submit_settled(
     table: JobTable,
     command: str = "foo",
@@ -433,6 +444,18 @@ async def test_fg_without_an_operand_adopts_a_job_that_already_finished():
     stdout, io, _ = await handle_fg(table, ["fg"])
     assert stdout == b"quick\nbody"
     assert io.exit_code == 3
+
+
+@pytest.mark.asyncio
+async def test_fg_without_an_operand_prefers_a_running_job_to_a_finished_one():
+    # bash's current job is the newest one still running; a finished job
+    # answers only when nothing runs.
+    table = JobTable()
+    table.submit("older", _emit_late, cwd="/")
+    done = _submit_settled(table, command="newer", stdout=b"early")
+    await table.wait(done.id)
+    stdout, _, _ = await handle_fg(table, ["fg"])
+    assert stdout == b"older\nlate"
 
 
 @pytest.mark.asyncio

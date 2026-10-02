@@ -13,7 +13,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { buildApp, type BuildAppOptions, type MirageApp } from '../app.ts'
 import { DaemonConfigError, readDaemonTable } from '../daemon_config.ts'
@@ -35,16 +35,16 @@ export function buildDaemonOpts(env: Record<string, string | undefined>): Daemon
   return { port, opts }
 }
 
-function writePidFile(p: string): void {
-  mkdirSync(dirname(p), { recursive: true })
-  writeFileSync(p, String(process.pid))
+async function writePidFile(p: string): Promise<void> {
+  await mkdir(dirname(p), { recursive: true })
+  await writeFile(p, String(process.pid))
 }
 
-function removePidFile(p: string): void {
+async function removePidFile(p: string): Promise<void> {
   try {
-    unlinkSync(p)
-  } catch {
-    // file already gone; nothing to clean up.
+    await rm(p, { force: true })
+  } catch (err) {
+    console.debug(`could not remove pid file ${p}`, err)
   }
 }
 
@@ -61,8 +61,8 @@ async function main(): Promise<void> {
       .catch((err: unknown) => {
         console.error('daemon close error:', err)
       })
-      .finally(() => {
-        removePidFile(app.pidFile)
+      .finally(async () => {
+        await removePidFile(app.pidFile)
         process.exit(0)
       })
   }
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', triggerExit)
   process.on('SIGINT', triggerExit)
   await app.listen({ port, host: '127.0.0.1' })
-  writePidFile(app.pidFile)
+  await writePidFile(app.pidFile)
 }
 
 main().catch((err: unknown) => {

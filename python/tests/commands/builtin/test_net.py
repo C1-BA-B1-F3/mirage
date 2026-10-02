@@ -51,7 +51,7 @@ class TestCurl:
 def mock_http(monkeypatch):
     payload = b"hello body"
 
-    def _fake_request(
+    async def _fake_request(
         url,
         method="GET",
         headers=None,
@@ -62,7 +62,7 @@ def mock_http(monkeypatch):
     ):
         return HttpResponse(status=200, reason="OK", body=payload, url=url)
 
-    def _fake_get(url, headers=None, timeout=30, follow_redirects=True):
+    async def _fake_get(url, headers=None, timeout=30, follow_redirects=True):
         return HttpResponse(status=200, reason="OK", body=payload, url=url)
 
     monkeypatch.setattr(curl_mod, "http_request", _fake_request)
@@ -175,11 +175,11 @@ def captured_headers(monkeypatch):
             self.request = _Request(method)
             self.url = url
 
-    def _fake_request(self, method, url, headers=None, **_kw):
+    async def _fake_request(self, method, url, headers=None, **_kw):
         captured["headers"] = dict(headers or {})
         return _Resp(method, url)
 
-    monkeypatch.setattr(httpx.Client, "request", _fake_request)
+    monkeypatch.setattr(httpx.AsyncClient, "request", _fake_request)
     return captured
 
 

@@ -43,6 +43,7 @@ import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
 import { CycleError, norm, parent, posixNormpath } from '../../utils/path.ts'
+import type { EntryGate } from '../../types.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
 import type { OpRecord } from '../../observe/record.ts'
@@ -148,6 +149,12 @@ function takeIssuer(
   return [issuer, rest]
 }
 
+/** Ask a command's gate once about each distinct path an op reaches. */
+function judge(gate: EntryGate, ...paths: readonly unknown[]): void {
+  const specs = paths.filter((p): p is PathSpec => p instanceof PathSpec)
+  for (const virtual of new Set(specs.map((p) => p.virtual))) gate.check(virtual)
+}
+
 /** The byte window a read asked for, whole file when it asked none. */
 function readWindow(kwargs: OpKwargs | undefined): [number, number | null] {
   return [
@@ -238,7 +245,9 @@ export class Dispatcher {
     // The caller's own mark on the op, lifted before any gate fires so
     // each one is told whose op it judges.
     const [issuer, stripped] = takeIssuer(kwargs)
-    kwargs = stripped
+    // withDispatchRuleGuard's mark, never forwarded to an op.
+    const { ruleGate, ...unmarked } = (stripped ?? {}) as { ruleGate?: EntryGate | null }
+    kwargs = ruleGate === undefined ? stripped : unmarked
     await this.namespace.ensureLoaded()
     // Pending fingerprint checks from a strict snapshot restore run
     // before the op can touch a mount, whichever surface called: FUSE
@@ -296,11 +305,17 @@ export class Dispatcher {
     // op facade, a runtime's os.symlink), so a link made, read or removed
     // under a linked directory lands in the directory the link names, not
     // under a name nothing else would look up.
+    const [typed, typedDst] = [path, dstArg]
     path = this.walked(path, HIDDEN_CREATE_OPS.has(opName))
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       dstArg = this.walked(dstArg, true)
       args = [dstArg, ...(args ?? []).slice(1)]
     }
+    // The command's gate judges each spelling, as handed in and as walked,
+    // once both walks have answered for hidden space: here for an op on the
+    // name itself, below the follow for the rest.
+    const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
+    if (ruleGate != null && noFollow) judge(ruleGate, typed, path, typedDst, dstArg)
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
       // stay where they are written, so hidden content would land at
@@ -353,6 +368,7 @@ export class Dispatcher {
         if (!pathAllowed(p.virtual)) throw hiddenRefusal(p.virtual, HIDDEN_CREATE_OPS.has(opName))
       }
     }
+    if (ruleGate != null && !noFollow) judge(ruleGate, typed, path, p)
     if (XATTR_OPS.has(opName)) {
       return [await this.xattrOp(opName, p, kwargs ?? {}, report, issuer), new IOResult()]
     }

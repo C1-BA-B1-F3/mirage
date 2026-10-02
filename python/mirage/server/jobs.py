@@ -13,193 +13,244 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import concurrent.futures
 import logging
 import secrets
-import threading
 import time
-from collections import deque
-from enum import Enum
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
+
+from mirage.concurrency.limiter import settle
+from mirage.execution.base import ExecutionStore
+from mirage.execution.ram import RAMExecutionStore
+from mirage.execution.types import ExecutionRecord as JobEntry
+from mirage.execution.types import ExecutionStatus as JobStatus
+from mirage.types import JsonValue
+from mirage.workspace.execution import ExecutionScope
 
 logger = logging.getLogger(__name__)
 
 
-class JobStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
-    CANCELED = "canceled"
-
-
 def new_job_id() -> str:
-    """Mint a fresh job id of the form ``job_<16 hex chars>``."""
     return f"job_{secrets.token_hex(8)}"
 
 
-class JobEntry:
-    """One in-flight or completed daemon-level execute job."""
+class _Run:
+    def __init__(self) -> None:
+        self.aborted = False
+        self.work: asyncio.Task[JsonValue] | None = None
+        self.completion: asyncio.Task[None] | None = None
+        self.publication_error: Exception | None = None
+        self.settled = asyncio.Event()
 
-    def __init__(self, job_id: str, workspace_id: str, command: str) -> None:
-        self.id = job_id
-        self.workspace_id = workspace_id
-        self.command = command
-        self.status: JobStatus = JobStatus.PENDING
-        self.result: Any = None
-        self.error: str | None = None
-        self.submitted_at: float = time.time()
-        self.started_at: float | None = None
-        self.finished_at: float | None = None
-        self._task: asyncio.Task[Any] | None = None
-        self._lock = threading.Lock()
-        self._canceled = False
-        self._settled = False
-        self._done_event: asyncio.Event = asyncio.Event()
+    def abort(self) -> None:
+        self.aborted = True
+        if self.work is not None:
+            self.work.cancel()
 
 
 class JobTable:
-    """Daemon-wide table of execute jobs.
+    """Local execution owner over an asynchronous record store.
 
-    Tracks both sync and background jobs so the CLI can query
-    progress, wait, and cancel uniformly. Sync calls register the job
-    in pending/running and complete it before returning. Completed records
-    expire after one hour and are bounded to the latest 1024;
-    running jobs are never evicted. Pruning runs on completion and access.
+    Submit persists admission before any work starts. A shell marks running
+    only after acquiring its session. Cancellation is an intent; completion
+    is published after the work and its cleanup settle.
     """
 
-    def __init__(
-        self, max_completed: int = 1024, retention_seconds: float = 3600
-    ) -> None:
-        if max_completed < 1 or retention_seconds <= 0:
-            raise ValueError("job retention limits must be positive")
-        self._jobs: dict[str, JobEntry] = {}
-        self._completed: deque[str] = deque()
-        self._max_completed = max_completed
-        self._retention_seconds = retention_seconds
+    def __init__(self, store: ExecutionStore | None = None) -> None:
+        self.store = store if store is not None else RAMExecutionStore()
+        self._owns_store = store is None
+        self._live: dict[str, _Run] = {}
+        self._closed = False
+        self._closing: asyncio.Task[None] | None = None
 
-    def _prune(self) -> None:
-        cutoff = time.time() - self._retention_seconds
-        while self._completed:
-            job = self._jobs[self._completed[0]]
-            if (
-                len(self._completed) <= self._max_completed
-                and job.finished_at is not None
-                and job.finished_at > cutoff
-            ):
-                break
-            del self._jobs[self._completed.popleft()]
+    async def get(self, job_id: str) -> JobEntry:
+        entry = await self.store.get(job_id)
+        if entry is None:
+            raise KeyError(job_id)
+        return entry
 
-    def __contains__(self, job_id: str) -> bool:
-        self._prune()
-        return job_id in self._jobs
+    async def list(self, workspace_id: str | None = None) -> list[JobEntry]:
+        return await self.store.list(workspace_id)
 
-    def get(self, job_id: str) -> JobEntry:
-        self._prune()
-        return self._jobs[job_id]
+    async def _change(
+        self, job_id: str, update: Callable[[JobEntry], JobEntry | None]
+    ) -> tuple[JobEntry, bool]:
+        for _ in range(32):
+            current = await self.get(job_id)
+            replacement = update(current)
+            if replacement is None or current.finished_at is not None:
+                return current, False
+            replacement = replace(replacement, revision=current.revision + 1)
+            if await self.store.compare_and_set(replacement, current.revision):
+                return replacement, True
+        raise RuntimeError("execution record changed too often")
 
-    def list(self, workspace_id: str | None = None) -> list[JobEntry]:
-        self._prune()
-        if workspace_id is None:
-            return list(self._jobs.values())
-        return [
-            j for j in self._jobs.values() if j.workspace_id == workspace_id
-        ]
+    async def _started(self, job_id: str) -> None:
+        record, _ = await self._change(
+            job_id,
+            lambda r: (
+                None
+                if r.cancel_requested
+                else replace(
+                    r, status=JobStatus.RUNNING, started_at=time.time()
+                )
+            ),
+        )
+        if record.cancel_requested or record.finished_at is not None:
+            raise asyncio.CancelledError()
 
-    def submit(
+    async def submit(
         self,
         workspace_id: str,
         command: str,
-        schedule: Callable[[Awaitable[Any]], concurrent.futures.Future[Any]],
-        coro_factory: Callable[[], Awaitable[Any]],
+        factory: Callable[[ExecutionScope], Awaitable[JsonValue]],
+        *,
+        session_id: str,
     ) -> JobEntry:
-        """Register work; completion is published only after its coroutine unwinds.
-
-        Args:
-            workspace_id (str): owning workspace.
-            command (str): display command.
-            schedule (Callable): schedules a coroutine on the workspace loop.
-            coro_factory (Callable): creates the work on that loop.
-        """
-        self._prune()
-        entry = JobEntry(new_job_id(), workspace_id, command)
-        self._jobs[entry.id] = entry
-        entry.status = JobStatus.RUNNING
-        entry.started_at = time.time()
-        run = self._run(entry, coro_factory, asyncio.get_running_loop())
-        try:
-            schedule(run)
-        except Exception as exc:
-            run.close()
-            self._finish(
-                entry, JobStatus.FAILED, None, f"{type(exc).__name__}: {exc}"
+        if self._closed:
+            raise RuntimeError("job table is closed")
+        record = JobEntry(
+            new_job_id(), workspace_id, session_id, command, time.time()
+        )
+        if not await self.store.create(record):
+            raise RuntimeError("duplicate execution id")
+        if self._closed:
+            await self._change(
+                record.id,
+                lambda r: replace(
+                    r,
+                    status=JobStatus.CANCELED,
+                    cancel_requested=True,
+                    finished_at=time.time(),
+                ),
             )
-        return entry
+            raise RuntimeError("job table is closed")
+        control = _Run()
+        self._live[record.id] = control
+        control.completion = asyncio.create_task(
+            self._run(record.id, control, factory)
+        )
+        return record
 
     async def _run(
         self,
-        entry: JobEntry,
-        factory: Callable[[], Awaitable[Any]],
-        owner: asyncio.AbstractEventLoop,
+        job_id: str,
+        control: _Run,
+        factory: Callable[[ExecutionScope], Awaitable[JsonValue]],
     ) -> None:
-        with entry._lock:
-            entry._task = asyncio.current_task()
-            canceled = entry._canceled
+        owner = asyncio.get_running_loop()
+
+        async def started() -> None:
+            await asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(self._started(job_id), owner)
+            )
+
         status, result, error = JobStatus.DONE, None, None
         try:
-            if canceled:
+            if control.aborted:
                 raise asyncio.CancelledError()
-            result = await factory()
+            control.work = asyncio.ensure_future(
+                factory(ExecutionScope(started))
+            )
+            result = await control.work
         except asyncio.CancelledError:
             status = JobStatus.CANCELED
         except Exception as exc:
             status, error = JobStatus.FAILED, f"{type(exc).__name__}: {exc}"
-        finally:
-            with entry._lock:
-                entry._settled = True
-                if entry._canceled:
-                    status = JobStatus.CANCELED
-            owner.call_soon_threadsafe(
-                self._finish, entry, status, result, error
+        try:
+            await self._change(
+                job_id,
+                lambda r: replace(
+                    r,
+                    status=JobStatus.CANCELED
+                    if r.cancel_requested or control.aborted
+                    else status,
+                    result=result
+                    if status == JobStatus.DONE
+                    and not r.cancel_requested
+                    and not control.aborted
+                    else None,
+                    error=error,
+                    cancel_requested=r.cancel_requested or control.aborted,
+                    finished_at=time.time(),
+                ),
             )
-
-    def _finish(
-        self,
-        entry: JobEntry,
-        status: JobStatus,
-        result: Any,
-        error: str | None,
-    ) -> None:
-        entry.status = status
-        entry.result = result if status == JobStatus.DONE else None
-        entry.error = error
-        entry._task = None
-        entry.finished_at = time.time()
-        entry._done_event.set()
-        self._completed.append(entry.id)
-        self._prune()
+        except Exception as exc:
+            control.publication_error = exc
+            logger.exception("could not publish completion of %s", job_id)
+        else:
+            self._live.pop(job_id, None)
+        finally:
+            control.settled.set()
 
     async def wait(
         self, job_id: str, timeout: float | None = None
     ) -> JobEntry:
-        entry = self.get(job_id)
-        if entry.finished_at is not None:
-            return entry
-        try:
-            await asyncio.wait_for(entry._done_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            return entry
+        deadline = (
+            None if timeout is None else time.monotonic() + max(0, timeout)
+        )
+        entry = await self.get(job_id)
+        control = self._live.get(job_id)
+        while entry.finished_at is None:
+            if control is not None and control.publication_error is not None:
+                raise RuntimeError(
+                    "execution completion could not be published"
+                ) from control.publication_error
+            remaining = (
+                None if deadline is None else deadline - time.monotonic()
+            )
+            if remaining is not None and remaining <= 0:
+                break
+            changed = await self.store.wait_for_change(
+                job_id,
+                entry.revision,
+                remaining,
+                None if control is None else control.settled,
+            )
+            if changed is None:
+                raise KeyError(job_id)
+            entry = changed
         return entry
 
-    def cancel(self, job_id: str) -> bool:
-        entry = self.get(job_id)
-        if entry.finished_at is not None:
-            return False
-        with entry._lock:
-            if entry._settled or entry._canceled:
-                return False
-            entry._canceled = True
-            task = entry._task
-        if task is not None:
-            task.get_loop().call_soon_threadsafe(task.cancel)
-        return True
+    async def cancel(self, job_id: str) -> bool:
+        _, accepted = await self._change(
+            job_id,
+            lambda r: (
+                None
+                if r.cancel_requested
+                else replace(
+                    r, cancel_requested=True, status=JobStatus.STOPPING
+                )
+            ),
+        )
+        if accepted:
+            control = self._live.get(job_id)
+            if control is not None:
+                control.abort()
+        return accepted
+
+    async def close(self) -> None:
+        self._closed = True
+        if self._closing is None:
+            self._closing = asyncio.create_task(self._finish_close())
+        await settle(self._closing)
+
+    async def _finish_close(self) -> None:
+        controls = list(self._live.items())
+        errors: list[Exception] = []
+        for _, control in controls:
+            control.abort()
+        for job_id, control in controls:
+            try:
+                await self.cancel(job_id)
+            except Exception as exc:
+                errors.append(exc)
+        await asyncio.gather(
+            *(c.completion for _, c in controls if c.completion is not None)
+        )
+        if self._owns_store:
+            await self.store.close()
+        if errors:
+            raise ExceptionGroup(
+                "could not record shutdown cancellation", errors
+            )

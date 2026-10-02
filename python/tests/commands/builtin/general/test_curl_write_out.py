@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,7 +18,7 @@ from mirage.workspace import Workspace
 async def test_wget_passes_timeout_and_classifies_failure(
     argument, seconds, monkeypatch
 ):
-    request = Mock(side_effect=HttpTimeoutError("example.test", 443, 250))
+    request = AsyncMock(side_effect=HttpTimeoutError("example.test", 443, 250))
     monkeypatch.setitem(wget.__wrapped__.__globals__, "http_get", request)
     with Workspace({}) as ws:
         result = await ws.shell(
@@ -39,7 +39,7 @@ async def test_wget_passes_timeout_and_classifies_failure(
 async def test_template_failure_refuses_transfer(
     failure, silent, show_error, monkeypatch
 ):
-    request = Mock()
+    request = AsyncMock()
     monkeypatch.setitem(curl.__wrapped__.__globals__, "http_request", request)
     dispatch = AsyncMock(side_effect=failure) if failure is not None else None
     opts = CommandOpts(

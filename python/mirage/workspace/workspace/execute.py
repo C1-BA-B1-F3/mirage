@@ -44,6 +44,7 @@ from mirage.workspace.abort import (
     StatusWriter,
     set_line_writer,
 )
+from mirage.workspace.execution import ExecutionScope
 from mirage.workspace.executor.control import UNWINDING, ended
 from mirage.workspace.executor.statement import (
     StatusSnapshot,
@@ -111,6 +112,7 @@ async def recurse(
     routing_decision: RouteDecision | None,
     agent_id: str | None,
     nested: NestedRefusal,
+    execution_scope: ExecutionScope,
     substitution: bool = False,
     **opts: Any,
 ) -> Any:
@@ -185,6 +187,7 @@ async def recurse(
             routing_decision=routing_decision,
             agent_id=agent_id,
             nested=nested,
+            execution_scope=execution_scope,
             handed=inner,
         )
         io, _ = await run_command_tree(
@@ -201,6 +204,7 @@ async def recurse(
             routing_decision=routing_decision,
             handed=inner,
             command_substitution=True,
+            execution_scope=execution_scope,
         )
         record_status(session, io.exit_code, transparent=True)
     else:
@@ -213,6 +217,7 @@ async def recurse(
                 cmd,
                 cancel=cancel,
                 record=False,
+                execution_scope=execution_scope,
                 routing_decision=routing_decision,
                 agent_id=agent_id,
                 handed=inner,
@@ -287,6 +292,7 @@ async def execute_line(
     argv: tuple[str, ...] | None = None,
     sink: JobConsole | None = None,
     call_stack: CallStack | None = None,
+    execution_scope: ExecutionScope | None = None,
 ) -> IOResult:
     """The body of ``Workspace.shell``; see its docstring for the
     argument contract.
@@ -309,7 +315,6 @@ async def execute_line(
     """
     if cancel is not None and cancel.is_set():
         raise MirageAbortError()
-    cache_facts = ws._dispatcher.capture_cache_facts()
     await ws._namespace.ensure_loaded()
     await ws._meta.ensure()
     await ws._session_mgr.ensure_loaded()
@@ -333,30 +338,35 @@ async def execute_line(
         if session_id is None:
             session_id = ws._session_mgr.default_id
         session = ws._session_mgr.get(session_id)
+    execution_scope = execution_scope or ExecutionScope()
+    await execution_scope.start()
+    run_line = partial(
+        run_prepared_line,
+        ws,
+        command,
+        session,
+        stdin=stdin,
+        agent_id=agent_id,
+        cwd=cwd,
+        env=env,
+        cancel=cancel,
+        record=record,
+        runtime=runtime,
+        routing_decision=routing_decision,
+        handed=handed,
+        frame=frame,
+        argv=argv,
+        sink=sink,
+        call_stack=call_stack,
+        execution_scope=execution_scope,
+    )
     if session.process_id is None:
         results: list[IOResult] = []
 
         async def run() -> int:
             token = set_current_session(session, owner=ws._session_mgr)
             try:
-                result = await execute_line(
-                    ws,
-                    command,
-                    session_id,
-                    stdin,
-                    agent_id,
-                    cwd,
-                    env,
-                    cancel,
-                    record,
-                    runtime,
-                    routing_decision,
-                    handed,
-                    frame,
-                    argv,
-                    sink,
-                    call_stack,
-                )
+                result = await run_line()
                 results.append(result)
                 return result.exit_code
             finally:
@@ -381,6 +391,41 @@ async def execute_line(
             return results[0]
         finally:
             session.process_id = None
+    return await run_line()
+
+
+async def run_prepared_line(
+    ws: "Workspace",
+    command: str,
+    session: SessionState,
+    *,
+    stdin: ByteSource | None,
+    agent_id: str | None,
+    cwd: str | None,
+    env: dict[str, str] | None,
+    cancel: asyncio.Event | None,
+    record: bool,
+    runtime: str | None,
+    routing_decision: RouteDecision | None,
+    handed: HandOff | None,
+    frame: LineFrame | None,
+    argv: tuple[str, ...] | None,
+    sink: JobConsole | None,
+    call_stack: CallStack | None,
+    execution_scope: ExecutionScope,
+) -> IOResult:
+    """Run a line on the session it acquired, after admission is published.
+
+    Both paths of ``execute_line``, inside the managed process or not, end
+    here; the other arguments are ``execute_line``'s.
+
+    Args:
+        ws (Workspace): the workspace the line runs in.
+        command (str): the line's text.
+        session (SessionState): the session the line acquired.
+    """
+    session_id = session.session_id
+    cache_facts = ws._dispatcher.capture_cache_facts()
     effective_session = fork_for_call(session, cwd, env)
     # The agent of this line, carried with the execution rather than
     # held on the workspace: a nested line inherits it through
@@ -418,6 +463,7 @@ async def execute_line(
             offending = find_unterminated_backtick((ast.text or b"").decode())
         if offending is not None:
             io = syntax_error_result(offending, ast)
+            record_status(session, io.exit_code)
             return io
         decision = await ws._router.decide(
             ast,
@@ -448,6 +494,7 @@ async def execute_line(
             routing_decision=decision,
             agent_id=agent,
             nested=nested,
+            execution_scope=execution_scope,
         )
         held = False
         try:
@@ -634,6 +681,7 @@ async def execute_line(
                 handed=handed,
                 sink=sink,
                 call_stack=call_stack,
+                execution_scope=execution_scope,
             )
             # A record a nested line earned is the line's to report when
             # its own tree earned none (see NestedRefusal).

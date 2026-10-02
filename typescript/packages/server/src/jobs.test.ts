@@ -12,119 +12,269 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it, vi } from 'vitest'
-import { JobStatus, JobTable, newJobId } from './jobs.ts'
+import { describe, expect, it } from 'vitest'
+import { RAMExecutionStore } from '@struktoai/mirage-core/execution/ram'
+import type { ExecutionRecord } from '@struktoai/mirage-core/execution/types'
+import type { JsonValue } from '@struktoai/mirage-core/types'
+import { JobStatus, JobTable } from './jobs.ts'
 
-describe('newJobId', () => {
-  it('mints job_<hex16> ids', () => {
-    expect(newJobId()).toMatch(/^job_[a-f0-9]{16}$/)
+function gate() {
+  let release!: () => void
+  const wait = new Promise<void>((resolve) => {
+    release = resolve
   })
-})
+  return { wait, release }
+}
 
-describe('JobTable', () => {
-  it('submit -> done flow', async () => {
-    const table = new JobTable()
-    const entry = table.submit('ws1', 'echo hi', () => Promise.resolve('result-value'))
-    expect(entry.status).toBe(JobStatus.RUNNING)
-    const finished = await table.wait(entry.id)
-    expect(finished.status).toBe(JobStatus.DONE)
-    expect(finished.result).toBe('result-value')
-  })
+async function submit(table: JobTable, work: (signal: AbortSignal) => Promise<JsonValue>) {
+  return table.submit(
+    'ws',
+    'probe',
+    async (signal, scope) => {
+      await scope.start()
+      signal.throwIfAborted()
+      return work(signal)
+    },
+    'session',
+  )
+}
 
-  it('captures rejection and a synchronous throw as FAILED', async () => {
+describe('async execution ownership', () => {
+  it('retains stopping until cleanup, and a wait timeout does not cancel work', async () => {
+    const entered = gate(),
+      cleanup = gate(),
+      release = gate()
     const table = new JobTable()
-    const entry = table.submit('ws1', 'boom', () => Promise.reject(new Error('boom')))
-    const finished = await table.wait(entry.id)
-    expect(finished.status).toBe(JobStatus.FAILED)
-    expect(finished.error).toContain('boom')
-    const thrown = table.submit('ws1', 'sync', () => {
-      throw new Error('synchronous failure')
-    })
-    expect(thrown.status).toBe(JobStatus.FAILED)
-  })
-
-  it('list filtered by workspace_id', () => {
-    const table = new JobTable()
-    table.submit('a', 'x', () => Promise.resolve(null))
-    table.submit('b', 'y', () => Promise.resolve(null))
-    expect(table.list('a')).toHaveLength(1)
-    expect(table.list()).toHaveLength(2)
-  })
-
-  it('wait timeout returns still-running entry', async () => {
-    const table = new JobTable()
-    const entry = table.submit('ws1', 'slow', () => new Promise(() => undefined))
-    const result = await table.wait(entry.id, 0.01)
-    expect(result.status).toBe(JobStatus.RUNNING)
-  })
-
-  it('cancel aborts the coroutine and reports only after its cleanup settles', async () => {
-    let started!: () => void
-    let release!: () => void
-    const cleanup = new Promise<void>((resolve) => {
-      started = resolve
-    })
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const table = new JobTable()
-    const job = table.submit('ws', 'probe', async (signal) => {
+    const job = await submit(table, async (signal) => {
+      entered.release()
       try {
         await new Promise<void>((_, reject) => {
-          signal.addEventListener('abort', () => {
-            reject(new DOMException('aborted', 'AbortError'))
-          })
+          signal.addEventListener(
+            'abort',
+            () => {
+              reject(new DOMException('aborted', 'AbortError'))
+            },
+            { once: true },
+          )
         })
       } finally {
-        started()
-        await gate
+        cleanup.release()
+        await release.wait
       }
+      return null
     })
-    expect(table.cancel(job.id)).toBe(true)
-    await cleanup
-    expect(job.finishedAt).toBeNull()
-    expect(job.status).toBe(JobStatus.RUNNING)
-    expect(table.cancel(job.id)).toBe(false)
-    release()
+    await entered.wait
+    expect((await table.wait(job.id, 0)).status).toBe(JobStatus.RUNNING)
+    expect(await table.cancel(job.id)).toBe(true)
+    await cleanup.wait
+    const stopping = await table.wait(job.id, 0.001)
+    expect(stopping.status).toBe(JobStatus.STOPPING)
+    expect(stopping.finishedAt).toBeNull()
+    expect(await table.cancel(job.id)).toBe(false)
+    release.release()
     expect((await table.wait(job.id)).status).toBe(JobStatus.CANCELED)
+    expect(await table.cancel(job.id)).toBe(false)
+    await table.close()
   })
 
-  it('bounds completed retention without evicting active jobs', async () => {
-    const table = new JobTable(2, 10)
-    let release!: () => void
-    const active = table.submit(
-      'ws',
-      'active',
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve
-        }),
-    )
-    const first = table.submit('ws', 'first', () => Promise.resolve('one'))
-    await table.wait(first.id)
-    for (const name of ['second', 'third']) {
-      await table.wait(table.submit('ws', name, () => Promise.resolve(name)).id)
-    }
-    expect(table.has(first.id)).toBe(false)
-    expect(table.has(active.id)).toBe(true)
-    const last = table.list().at(-1)
-    if (last?.finishedAt == null) throw new Error('job did not finish')
-    const clock = vi.spyOn(Date, 'now').mockReturnValue((last.finishedAt + 11) * 1000)
-    try {
-      expect(table.list()).toEqual([active])
-    } finally {
-      clock.mockRestore()
-    }
-    release()
-    await table.wait(active.id)
-  })
-
-  it('AbortError without abort signal still classifies as FAILED', async () => {
+  it('cancel before session acquisition never calls the body', async () => {
+    const acquired = gate()
+    let invoked = false
     const table = new JobTable()
-    const job = table.submit('ws-1', 'weird', () =>
-      Promise.reject(new DOMException('unrelated abort', 'AbortError')),
+    const job = await table.submit(
+      'ws',
+      'probe',
+      async (_signal, scope) => {
+        await acquired.wait
+        await scope.start()
+        invoked = true
+        return null
+      },
+      'session',
     )
-    const entry = await table.wait(job.id)
-    expect(entry.status).toBe(JobStatus.FAILED)
+    expect(job.status).toBe(JobStatus.PENDING)
+    expect(await table.cancel(job.id)).toBe(true)
+    acquired.release()
+    const finished = await table.wait(job.id)
+    expect(finished.status).toBe(JobStatus.CANCELED)
+    expect(finished.startedAt).toBeNull()
+    expect(invoked).toBe(false)
+    await table.close()
+  })
+
+  it('failed admission starts nothing', async () => {
+    class BrokenStore extends RAMExecutionStore {
+      override create(): Promise<boolean> {
+        return Promise.reject(new Error('store unavailable'))
+      }
+    }
+    let invoked = false
+    const table = new JobTable(new BrokenStore())
+    await expect(
+      submit(table, () => {
+        invoked = true
+        return Promise.resolve(null)
+      }),
+    ).rejects.toThrow('unavailable')
+    expect(invoked).toBe(false)
+  })
+
+  it('cancellation survives a delayed completion CAS', async () => {
+    const completing = gate(),
+      release = gate()
+    class DelayedStore extends RAMExecutionStore {
+      override async compareAndSet(record: ExecutionRecord, revision: number): Promise<boolean> {
+        if (record.status === JobStatus.DONE) {
+          completing.release()
+          await release.wait
+        }
+        return super.compareAndSet(record, revision)
+      }
+    }
+    const table = new JobTable(new DelayedStore())
+    const job = await submit(table, () => Promise.resolve({ exitCode: 1 }))
+    await completing.wait
+    expect(await table.cancel(job.id)).toBe(true)
+    release.release()
+    const finished = await table.wait(job.id)
+    expect(finished.status).toBe(JobStatus.CANCELED)
+    expect(finished.cancelRequested).toBe(true)
+    expect(finished.result).toBeNull()
+    expect(finished.revision).toBe(3)
+  })
+
+  it('a wait keeps the completion it observed', async () => {
+    class EvictingStore extends RAMExecutionStore {
+      evicted = false
+      override async get(id: string): Promise<ExecutionRecord | null> {
+        return this.evicted ? null : super.get(id)
+      }
+      override async waitForChange(
+        id: string,
+        revision: number,
+        timeoutSeconds?: number,
+        signal?: AbortSignal,
+      ): Promise<ExecutionRecord | null> {
+        const record = await super.waitForChange(id, revision, timeoutSeconds, signal)
+        this.evicted = record?.finishedAt != null
+        return record
+      }
+    }
+    const table = new JobTable(new EvictingStore())
+    const job = await submit(table, () => Promise.resolve('value'))
+    const finished = await table.wait(job.id)
+    expect(finished.status).toBe(JobStatus.DONE)
+    expect(finished.result).toBe('value')
+  })
+
+  it('failed completion stays unconfirmed and wakes its waiter', async () => {
+    const release = gate()
+    class BrokenStore extends RAMExecutionStore {
+      override async compareAndSet(record: ExecutionRecord, revision: number): Promise<boolean> {
+        if (record.finishedAt !== null) throw new Error('store unavailable')
+        return super.compareAndSet(record, revision)
+      }
+    }
+    const table = new JobTable(new BrokenStore())
+    const job = await submit(table, async () => {
+      await release.wait
+      return 'value'
+    })
+    const outcome = expect(table.wait(job.id)).rejects.toThrow('could not be published')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const released = performance.now()
+    release.release()
+    await outcome
+    expect(performance.now() - released).toBeLessThan(500)
+    expect((await table.get(job.id)).finishedAt).toBeNull()
+  })
+
+  it('distinguishes command outcomes from service failures', async () => {
+    const table = new JobTable()
+    const command = await submit(table, () => Promise.resolve({ exitCode: 1 }))
+    const service = await submit(table, () => Promise.reject(new Error('broken runtime')))
+    expect((await table.wait(command.id)).status).toBe(JobStatus.DONE)
+    expect((await table.wait(service.id)).status).toBe(JobStatus.FAILED)
+    expect((await table.get(service.id)).error).toContain('broken runtime')
+    await table.close()
+  })
+
+  it('shutdown during admission never schedules work', async () => {
+    const creating = gate(),
+      release = gate()
+    class DelayedStore extends RAMExecutionStore {
+      override async create(record: ExecutionRecord): Promise<boolean> {
+        creating.release()
+        await release.wait
+        return super.create(record)
+      }
+    }
+    const store = new DelayedStore()
+    const table = new JobTable(store)
+    let invoked = false
+    const submission = submit(table, () => {
+      invoked = true
+      return Promise.resolve(null)
+    })
+    await creating.wait
+    await table.close()
+    release.release()
+    await expect(submission).rejects.toThrow('closed')
+    const records = await store.list()
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ status: JobStatus.CANCELED, startedAt: null })
+    expect(records[0]?.finishedAt).not.toBeNull()
+    expect(invoked).toBe(false)
+    await store.close()
+  })
+
+  it('shutdown joins every runner even when cancel writes fail', async () => {
+    const release = gate()
+    class BrokenStore extends RAMExecutionStore {
+      override async compareAndSet(record: ExecutionRecord, revision: number): Promise<boolean> {
+        if (record.status === JobStatus.STOPPING) throw new Error('cancel storage unavailable')
+        return super.compareAndSet(record, revision)
+      }
+    }
+    const store = new BrokenStore()
+    const table = new JobTable(store)
+    const probes = [0, 1].map(() => ({ entered: gate(), cleanup: gate() }))
+    const jobs = await Promise.all(
+      probes.map((probe) =>
+        submit(table, async (signal) => {
+          probe.entered.release()
+          try {
+            await new Promise<void>((_, reject) => {
+              signal.addEventListener(
+                'abort',
+                () => {
+                  reject(new DOMException('aborted', 'AbortError'))
+                },
+                { once: true },
+              )
+            })
+          } finally {
+            probe.cleanup.release()
+            await release.wait
+          }
+          return null
+        }),
+      ),
+    )
+    await Promise.all(probes.map((p) => p.entered.wait))
+    let closed = false
+    const closing = table.close().finally(() => {
+      closed = true
+    })
+    await Promise.all(probes.map((p) => p.cleanup.wait))
+    expect(closed).toBe(false)
+    release.release()
+    await expect(closing).rejects.toThrow('shutdown cancellation')
+    for (const job of jobs) {
+      const record = await store.get(job.id)
+      expect(record).toMatchObject({ status: JobStatus.CANCELED, cancelRequested: true })
+      expect(record?.finishedAt).not.toBeNull()
+    }
+    await store.close()
   })
 })

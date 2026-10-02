@@ -108,8 +108,12 @@ jobs:
         working-directory: python
         run: uv pip install .
 
-      - name: Cache the mypy incremental store
-        uses: actions/cache@v6
+      # Only main saves: the key moves with every source change, so a store
+      # saved from a pull request was a 25 MB entry that only that pull
+      # request could read. Pull requests restore main's newest store.
+      - name: Restore the mypy incremental store
+        id: mypy-cache
+        uses: actions/cache/restore@v6
         with:
           path: python/.mypy_cache
           key: mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-${{ hashFiles('python/mirage/**/*.py', 'scripts/**/*.py') }}
@@ -124,6 +128,13 @@ jobs:
       - name: Type check (mypy)
         working-directory: python
         run: uv run mypy
+
+      - name: Save the mypy incremental store
+        if: github.ref == 'refs/heads/main' && steps.mypy-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: python/.mypy_cache
+          key: ${{ steps.mypy-cache.outputs.cache-primary-key }}
 
       - name: Run pytest (main suite, camel excluded)
         working-directory: python

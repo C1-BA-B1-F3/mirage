@@ -37,8 +37,11 @@ from mirage.context import (
     path_allowed,
 )
 from mirage.context.session_context import require_paths_writable
+from mirage.io import IOResult
 from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
+from mirage.policy.constants import METADATA_OPS
 from mirage.policy.policies import Policies, pre_ops_gate
+from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, MountMode, PathSpec, WalkProbe
 from mirage.utils.errors import (
     MISS_ERRORS,
@@ -1023,6 +1026,28 @@ def with_rule_guard(ops: CommandIO) -> CommandIO:
         if fn is not None:
             changes[slot] = functools.partial(_rule_call, fn)
     return replace(ops, **changes)
+
+
+def with_dispatch_rule_guard(dispatch: DispatchFn) -> DispatchFn:
+    """Return ``dispatch`` marking each op with the admitted command's
+    gate as ``rule_gate``, which the door judges on the paths the op
+    reaches: the command's dispatcher skips its guarded slots, and the
+    door cannot tell which command issued an op. A metadata op passes
+    unmarked, as ``with_rule_guard`` lets ``stat`` pass.
+
+    Args:
+        dispatch (DispatchFn): the workspace op dispatcher.
+    """
+
+    async def guarded(
+        op: str, path: PathSpec, **options: Any
+    ) -> tuple[Any, IOResult]:
+        gate = get_admission()
+        if gate is not None and op not in METADATA_OPS:
+            options = {**options, "rule_gate": gate}
+        return await dispatch(op, path, **options)
+
+    return guarded
 
 
 def with_path_guards(ops: CommandIO) -> CommandIO:

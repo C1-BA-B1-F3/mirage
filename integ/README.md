@@ -80,7 +80,9 @@ dirs for ssh.
 A push to main runs every job in `.github/workflows/test_integ.yml`. A pull
 request runs only the jobs whose path filter matches a changed file; the
 filters live in that workflow's `changes` job, and `typescript-build` runs
-whenever a job that needs the built packages does.
+whenever a job that downloads the built packages does. `integ-ts` and
+`integ-shared-ts`, which finish last, build the packages in the job instead
+of waiting for it.
 
 ```mermaid
 flowchart LR
@@ -95,6 +97,7 @@ flowchart LR
     core --> J1["integ"]
     ts --> J2["integ-ts"]
     core & ts --> J3["integ-shared-py · integ-shared-ts<br/>integ-shared-parity · integ-selftests<br/>integ-facets · integ-wandb"]
+    core & ts --> HOST["integ-hosting<br/>FastAPI · Fastify · Monty<br/>RAM · S3 · Redis · Slack"]
     data --> J4["integ-data · integ-watch"]
     database --> J5["integ-database"]
     observability --> J6["integ-observability"]
@@ -132,6 +135,35 @@ Keep the filters and this section in step with the code: a new or moved
 backend, CLI or package belongs in the filter that tests it, a module joins
 the drop list only when nothing kept imports it, and a runtime case that
 starts mounting a dropped backend takes that name off the list.
+
+`integ-hosting` runs `hosting/cases.json` against real FastAPI and Fastify
+listeners in child processes. It checks parallel foreground HTTP requests,
+same-session queueing, independent sessions and workspaces, health responses,
+HTTP GET/form POST/wget, busy shell loops, cancellation before trailing writes,
+and snapshot round trips. The HTTP backend is held behind an explicit release
+gate, so another request must finish while the first is still active; a sleep
+duration or throughput estimate is not the assertion. The normal `python/**`,
+`typescript/**` and `integ/**` filters cover both the execution packages and this
+suite. Run it locally with `cd integ && pnpm exec tsx hosting/run.ts` after
+building TypeScript; append `python` or `typescript` to select one host.
+
+CI also passes `--mounts` to run `hosting/monty.json` on both hosts. Every
+scenario creates two workspaces with explicit Monty runtimes and RAM, S3,
+Redis and Slack mounts. One Monty call waits on a gated Slack read or spins
+in a CPU loop while another session and workspace read Slack and read/write
+all three storage mounts. The assertions cover session queueing, queued and
+running cancellation, recovery with a fresh Monty call, isolated workspace
+storage, and completed shutdown. Redis is a real service container, S3 is
+MinIO, and Slack uses the existing Web API fixture; no real Slack credentials
+are needed. Redis here is a VFS mount, not execution tracking.
+
+For this expanded run, install Python's `monty`, `s3` and `redis` extras,
+generate the Slack Prisma client (`pnpm exec prisma generate --schema prisma/slack.prisma` from `integ`, with `INTEG_DB_URL=file:/tmp/hosting.db`),
+and provide disposable services through `S3_ENDPOINT`, `REDIS_URL`,
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Run `pnpm exec tsx hosting/run.ts --mounts`. Missing services or Monty fail the run; the suite
+does not silently skip them. Each run uses a unique S3 bucket and Redis key
+prefix; the bucket and Slack fixture are cleaned up, while Redis keys are
+discarded with the service container.
 
 ## Running locally
 

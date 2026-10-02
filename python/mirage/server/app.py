@@ -23,6 +23,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from mirage.concurrency.limiter import run_blocking
 from mirage.server.auth import (
     AuthConfig,
     AuthMiddleware,
@@ -126,7 +127,7 @@ async def _start_ssh(app: FastAPI) -> SSHListener | None:
 async def _lifespan(app: FastAPI):
     ssh = await _start_ssh(app)
     app.state.ssh = ssh
-    _write_pid_file(app.state.pid_file)
+    await run_blocking(_write_pid_file, app.state.pid_file)
     exit_task = asyncio.create_task(_watch_exit(app.state.exit_event))
     try:
         yield
@@ -135,8 +136,11 @@ async def _lifespan(app: FastAPI):
         if ssh is not None:
             ssh.close()
             await ssh.wait_closed()
-        await app.state.registry.close_all()
-        _remove_pid_file(app.state.pid_file)
+        try:
+            await app.state.jobs.close()
+        finally:
+            await app.state.registry.close_all()
+            await run_blocking(_remove_pid_file, app.state.pid_file)
 
 
 def build_app(

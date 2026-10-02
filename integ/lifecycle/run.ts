@@ -60,7 +60,7 @@ type Step = (
   | ({ op: 'mount'; path: string; mode?: MountMode } & ResourceConfig)
   | { op: 'unmount' | 'read' | 'readdir' | 'stat' | 'cached'; path: string }
   | { op: 'write'; path: string; data: string }
-  | { op: 'exec'; command: string; session?: string }
+  | { op: 'exec'; command: string; session?: string; cancel_after_ms?: number }
   | { op: 'spawn'; argv: string[]; session?: string }
   | { op: 'set_mode'; path: string; mode: MountMode }
   | { op: 'session'; id: string; profile?: Record<string, unknown> }
@@ -252,10 +252,24 @@ async function action(
       return child.pid
     }
     case 'exec': {
-      const result = await ws.shell(
-        step.command,
-        step.session === undefined ? {} : { sessionId: step.session },
-      )
+      const abort = new AbortController()
+      const timer =
+        step.cancel_after_ms === undefined
+          ? undefined
+          : setTimeout(() => abort.abort(), step.cancel_after_ms)
+      let result
+      try {
+        result = await ws.shell(step.command, {
+          ...(step.session === undefined ? {} : { sessionId: step.session }),
+          signal: abort.signal,
+        })
+      } catch (error) {
+        if (abort.signal.aborted && error instanceof Error && error.name === 'AbortError')
+          return { aborted: true }
+        throw error
+      } finally {
+        clearTimeout(timer)
+      }
       return {
         exit_code: result.exitCode,
         stdout: result.stdoutText,

@@ -34,6 +34,7 @@ import { type Chunk, piece } from './types.ts'
 import { expandBraces, isAtSplat, landArithWrites, parameterChunks } from './variable.ts'
 import type { ArithResult, TSNodeLike } from '../../shell/types.ts'
 import type { HandOff } from '../../policy/types.ts'
+import type { ExecutionScope } from '../execution.ts'
 
 /**
  * The executor's door for a nested line. `node` is the node whose text
@@ -51,6 +52,7 @@ export type ExecuteFn = (
   command: string,
   opts: {
     sessionId: string
+    executionScope?: ExecutionScope
     session?: SessionState
     stdin?: ByteSource | null
     signal?: AbortSignal

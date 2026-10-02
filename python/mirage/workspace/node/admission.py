@@ -170,11 +170,29 @@ class Admitted:
         Args:
             virtual (str): absolute virtual path of the entry.
         """
-        if _norm(virtual) in self.judged:
-            return
-        reason = io_refusal(self.rules, self.tokens, virtual, self.granted)
+        reason = self._refusal(virtual)
         if reason is not None:
             raise PolicyDenied(errno.EACCES, reason, virtual)
+
+    def refuses(self, virtual: str) -> bool:
+        """Whether a rule in force refuses this entry for the running
+        command, without raising.
+
+        Args:
+            virtual (str): absolute virtual path of the entry.
+        """
+        return self._refusal(virtual) is not None
+
+    def _refusal(self, virtual: str) -> str | None:
+        """The reason a rule in force refuses this entry, None when the
+        line was admitted on it or nothing refuses it.
+
+        Args:
+            virtual (str): absolute virtual path of the entry.
+        """
+        if _norm(virtual) in self.judged:
+            return None
+        return io_refusal(self.rules, self.tokens, virtual, self.granted)
 
 
 def policy_scopes(
@@ -258,7 +276,9 @@ def policy_scopes(
 
 
 def _seen(
-    session: SessionState, specs: list[PathSpec]
+    session: SessionState,
+    specs: list[PathSpec],
+    unread: frozenset[str] = frozenset(),
 ) -> tuple[PathSpec, ...]:
     """The paths of a line the session can see.
 
@@ -266,13 +286,21 @@ def _seen(
     learn of it either: a rule scoped to it must not fire (the reason
     would say the path is there), an ask must not be raised for it (a
     request would name it to the host), and the line runs on to the
-    door, which answers ENOENT like any other absent path.
+    door, which answers ENOENT like any other absent path. A path the
+    reader could not read goes the same way, since the line may never
+    name it.
 
     Args:
         session (SessionState): the session running the line.
         specs (list[PathSpec]): the paths as the gate collected them.
+        unread (frozenset[str]): virtual paths the reader cannot vouch
+            for, as ``gate`` takes them.
     """
-    return tuple(p for p in specs if session_path_allowed(session, p.virtual))
+    return tuple(
+        p
+        for p in specs
+        if p.virtual not in unread and session_path_allowed(session, p.virtual)
+    )
 
 
 async def gate(
@@ -286,6 +314,7 @@ async def gate(
     stdin: ByteSource | None = None,
     redirects: Sequence[PathSpec] = (),
     intrinsic: bool = False,
+    unread: frozenset[str] = frozenset(),
 ) -> Refused | tuple[CommandContext, Deny | Ask | None]:
     """Everything the gate decides about one command before anything is
     spent on it: visibility, the classified context, and the policy
@@ -311,6 +340,11 @@ async def gate(
             redirect targets, empty when it has none.
         intrinsic (bool): judge a shell-provided operation as a tool even
             when a function shadows its policy name.
+        unread (frozenset[str]): virtual paths a reader of the line's
+            text cannot vouch for: what a word only the runtime expands
+            names, or a relative word after a ``cd`` it could not
+            follow. No policy is shown them; the per-command gate reads
+            the real ones and passes none.
 
     Returns:
         A Refused when the session cannot see the head word, else the
@@ -340,9 +374,12 @@ async def gate(
                 implied,
                 redirects,
             ),
+            unread,
         ),
         operands=_seen(
-            session, positional_scopes(name, args, session.cwd, list(operands))
+            session,
+            positional_scopes(name, args, session.cwd, list(operands)),
+            unread,
         ),
         argv=tuple(args),
         cwd=session.cwd,
@@ -370,6 +407,7 @@ async def admit(
     cancel: asyncio.Event | None = None,
     claimant: Claimant | None = None,
     intrinsic: bool = False,
+    unread: frozenset[str] = frozenset(),
 ) -> Refused | Admitted:
     """The command plane's admission of one command: visibility, then
     the policy chain, then the decision ledger.
@@ -416,6 +454,8 @@ async def admit(
             outside a line spends what it matched. A refusal needs no
             such care -- the record refuses the agent's retry from the
             ledger either way.
+        unread (frozenset[str]): paths no policy is shown, as ``gate``
+            takes them.
     """
     gated = await gate(
         name,
@@ -428,6 +468,7 @@ async def admit(
         stdin,
         redirects,
         intrinsic=intrinsic,
+        unread=unread,
     )
     if isinstance(gated, Refused):
         return gated

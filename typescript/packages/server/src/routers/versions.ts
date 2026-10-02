@@ -90,7 +90,7 @@ export function registerVersionsRoutes(app: FastifyInstance, deps: VersionRoutes
   // (deleted, or not loaded) is only read, so a read never recreates the
   // repo its delete removed.
   const existingStore = async (id: string): Promise<VersionStore | null> =>
-    deps.registry.has(id) || deps.versionBackend.hasRepo(id) ? openStore(id) : null
+    deps.registry.has(id) || (await deps.versionBackend.hasRepo(id)) ? openStore(id) : null
 
   app.post<{ Params: IdParams; Body: CommitBody }>(
     '/v1/workspaces/:id/commit',

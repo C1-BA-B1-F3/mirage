@@ -12,12 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
-from mirage.server.io_serde import io_result_to_dict
 from mirage.server.jobs import JobEntry
 
 router = APIRouter(prefix="/v1/jobs")
@@ -26,15 +23,18 @@ router = APIRouter(prefix="/v1/jobs")
 class JobBrief(BaseModel):
     job_id: str
     workspace_id: str
+    session_id: str
     command: str
     status: str
+    revision: int
+    cancel_requested: bool
     submitted_at: float
     started_at: float | None = None
     finished_at: float | None = None
 
 
 class JobDetail(JobBrief):
-    result: dict[str, Any] | None = None
+    result: JsonValue = None
     error: str | None = None
 
 
@@ -51,36 +51,31 @@ def _to_brief(entry: JobEntry) -> JobBrief:
     return JobBrief(
         job_id=entry.id,
         workspace_id=entry.workspace_id,
+        session_id=entry.session_id,
         command=entry.command,
         status=entry.status.value,
+        revision=entry.revision,
+        cancel_requested=entry.cancel_requested,
         submitted_at=entry.submitted_at,
         started_at=entry.started_at,
         finished_at=entry.finished_at,
     )
 
 
-async def _to_detail(entry: JobEntry) -> JobDetail:
-    result_dict: dict[str, Any] | None = None
-    if entry.result is not None:
-        result_dict = await io_result_to_dict(entry.result)
+def _to_detail(entry: JobEntry) -> JobDetail:
     return JobDetail(
-        job_id=entry.id,
-        workspace_id=entry.workspace_id,
-        command=entry.command,
-        status=entry.status.value,
-        submitted_at=entry.submitted_at,
-        started_at=entry.started_at,
-        finished_at=entry.finished_at,
-        result=result_dict,
+        **_to_brief(entry).model_dump(),
+        result=entry.result,
         error=entry.error,
     )
 
 
-def _require_job(request: Request, job_id: str) -> JobEntry:
+async def _require_job(request: Request, job_id: str) -> JobEntry:
     table = request.app.state.jobs
-    if job_id not in table:
-        raise HTTPException(status_code=404, detail="job not found")
-    return table.get(job_id)
+    try:
+        return await table.get(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
 
 
 @router.get("", response_model=list[JobBrief])
@@ -89,13 +84,13 @@ async def list_jobs(
 ) -> list[JobBrief]:
     return [
         _to_brief(j)
-        for j in request.app.state.jobs.list(workspace_id=workspace_id)
+        for j in await request.app.state.jobs.list(workspace_id=workspace_id)
     ]
 
 
 @router.get("/{job_id}", response_model=JobDetail)
 async def get_job(job_id: str, request: Request) -> JobDetail:
-    return await _to_detail(_require_job(request, job_id))
+    return _to_detail(await _require_job(request, job_id))
 
 
 @router.post("/{job_id}/wait", response_model=JobDetail)
@@ -103,16 +98,18 @@ async def wait_job(
     job_id: str, req: WaitRequest, request: Request
 ) -> JobDetail:
     table = request.app.state.jobs
-    if job_id not in table:
-        raise HTTPException(status_code=404, detail="job not found")
-    entry = await table.wait(job_id, timeout=req.timeout_s)
-    return await _to_detail(entry)
+    try:
+        entry = await table.wait(job_id, timeout=req.timeout_s)
+        return _to_detail(entry)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
 
 
 @router.delete("/{job_id}", response_model=CancelResponse)
 async def cancel_job(job_id: str, request: Request) -> CancelResponse:
     table = request.app.state.jobs
-    if job_id not in table:
-        raise HTTPException(status_code=404, detail="job not found")
-    canceled = table.cancel(job_id)
+    try:
+        canceled = await table.cancel(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
     return CancelResponse(job_id=job_id, canceled=canceled)

@@ -67,7 +67,7 @@ from mirage.shell.parse.names import literal_text
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import PipelineStages, Redirect, RedirectKind
 from mirage.types import PathSpec
-from mirage.workspace.abort import MirageAbortError
+from mirage.workspace.execution import ExecutionScope
 from mirage.workspace.executor.builtins import handle_test, handle_unset
 from mirage.workspace.executor.builtins.exec import install_exec_redirects
 from mirage.workspace.executor.builtins.shared import is_valid_name
@@ -852,7 +852,10 @@ async def execute_node(
     routing_decision: RouteDecision | None = None,
     sink: JobConsole | None = None,
     handed: HandOff | None = None,
+    execution_scope: ExecutionScope | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
+    execution_scope = execution_scope or ExecutionScope()
+    await execution_scope.checkpoint(cancel)
     outer = session._diagnostics
     session._diagnostics = []
     try:
@@ -871,6 +874,7 @@ async def execute_node(
             routing_decision,
             sink,
             handed,
+            execution_scope,
         )
         if session._diagnostics:
             err = _diagnostic_stderr(node, session)
@@ -918,6 +922,7 @@ async def _execute_node(
     routing_decision: RouteDecision | None = None,
     sink: JobConsole | None = None,
     handed: HandOff | None = None,
+    execution_scope: ExecutionScope | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Walk tree-sitter AST and dispatch each node.
 
@@ -960,8 +965,6 @@ async def _execute_node(
     # is also what silences `set -v` for the lines it never reads.
     if session.shell_options.get("noexec"):
         return None, IOResult(), ExecutionNode(command="", exit_code=0)
-    if cancel is not None and cancel.is_set():
-        raise MirageAbortError()
     cs = call_stack if call_stack is not None else CallStack()
     session.errexit_immune = False
 
@@ -979,7 +982,12 @@ async def _execute_node(
     # same reason: a background job runs without the caller's, and so
     # must the lines it evaluates, or a `$(...)` inside the job would
     # die of an abort that was never the job's.
-    execute_fn = partial(execute_fn, handed=handed, cancel=cancel)
+    execute_fn = partial(
+        execute_fn,
+        handed=handed,
+        cancel=cancel,
+        execution_scope=execution_scope,
+    )
 
     recurse = partial(
         execute_node,
@@ -992,6 +1000,7 @@ async def _execute_node(
         cancel=cancel,
         routing_decision=routing_decision,
         handed=handed,
+        execution_scope=execution_scope,
     )
 
     kind = node_kind(node)

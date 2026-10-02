@@ -476,18 +476,21 @@ async def predicted_refusal(ws, case: dict) -> tuple[int, str] | None:
     """What ``explain`` says would refuse this line, None when it says
     the line runs.
 
-    The first refusal wins, because that is the one the run reports:
-    a line is refused by its first refusing command.
+    A rule's refusal is the line's: the first one holds the whole line
+    before any of it runs. Any other refusal fails only its own command
+    and the line goes on (``tar`` refused on a mount root, then ``echo
+    after``), so it is the line's only when that command is the line.
 
     Args:
         ws: the workspace the case runs against.
         case (dict): the case as loaded from disk.
     """
     said = await ws.explain(case["command"], case.get("session") or "")
-    for expl in said:
-        if expl.exit_code != 0:
-            return expl.exit_code, expl.stderr
-    return None
+    refused = [expl for expl in said if expl.exit_code != 0]
+    held = next((expl for expl in refused if expl.rule is not None), None)
+    if held is None and len(said) == 1:
+        held = next(iter(refused), None)
+    return None if held is None else (held.exit_code, held.stderr)
 
 
 def rule_reasons(doc: dict) -> tuple[str, ...]:

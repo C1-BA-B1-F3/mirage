@@ -1024,7 +1024,8 @@ export class Workspace {
    * the refusal an agent would read come out of one place and cannot
    * disagree. It runs no command, expands nothing, spends no grant and
    * puts no question to a host, which is what makes it safe to call
-   * about a line nobody typed.
+   * about a line nobody typed. The line is judged on the static bindings'
+   * route; a route policy is not consulted.
    *
    * Host-side only. The structure of a profile's rules is an operator's
    * business, so there is no builtin an agent can type to read it.
@@ -1034,7 +1035,15 @@ export class Workspace {
     const session = this.getSession(sessionId === '' ? this.defaultSessionId : sessionId)
     const parser = await this.getShellParser()
     const reparse = (text: string): TSNodeLike => parser.parse(text)
-    return explainLine(parser.parse(line), session, this.registry, this.namespace, '', reparse)
+    return explainLine(
+      parser.parse(line),
+      session,
+      this.registry,
+      this.namespace,
+      '',
+      reparse,
+      this.runtimeWorld.wholeLineFor(null) !== null,
+    )
   }
 
   get workspaceId(): string {
@@ -1557,7 +1566,7 @@ export class Workspace {
     overrides: Record<string, BaseVFS | Mount> = {},
     cliOverrides: CLIOverrides = {},
   ): Promise<InstanceType<T>> {
-    const bytes = typeof source === 'string' ? readFileBytes(source) : source
+    const bytes = typeof source === 'string' ? await readFileBytes(source) : source
     const state = (await readSnapshotTar(bytes)) as WorkspaceStateDict
     return this.fromState(state, options, overrides, cliOverrides)
   }

@@ -40,6 +40,18 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile=false
 
+    # Built here rather than downloaded from a bootstrap job, which held
+    # every typescript-host job back by a minute and a half before it could
+    # start. The build runs in the background while the rest of this setup
+    # does (Prisma clients, services, fakes; none imports a mirage package),
+    # and the last step collects it.
+    - name: Start the mirage TypeScript build (background)
+      if: ${{ inputs.build-packages == 'true' && inputs.typescript-build-artifact == '' }}
+      shell: bash
+      run: |
+        integ/scripts/background.sh start typescript-build \
+          'cd typescript && pnpm --filter @struktoai/mirage-core --filter @struktoai/mirage-node --filter @struktoai/mirage-browser build'
+
     # Every kit fake imports a generated Prisma client out of integ/generated/,
     # which is gitignored, so all of them have to exist before any fake starts.
     # One step rather than one per fake: letting a fake rely on an earlier
@@ -55,21 +67,6 @@ runs:
         github-token: ${{ github.token }}
         name: ${{ inputs.typescript-build-artifact }}
         path: typescript/packages
-    - name: Build mirage-core
-      if: ${{ inputs.build-packages == 'true' && inputs.typescript-build-artifact == '' }}
-      working-directory: typescript
-      shell: bash
-      run: pnpm --filter @struktoai/mirage-core build
-    - name: Build mirage-node
-      if: ${{ inputs.build-packages == 'true' && inputs.typescript-build-artifact == '' }}
-      working-directory: typescript
-      shell: bash
-      run: pnpm --filter @struktoai/mirage-node build
-    - name: Build mirage-browser
-      if: ${{ inputs.build-packages == 'true' && inputs.typescript-build-artifact == '' }}
-      working-directory: typescript
-      shell: bash
-      run: pnpm --filter @struktoai/mirage-browser build
     - name: Start moto S3
       if: ${{ inputs.start-services == 'true' }}
       shell: bash
@@ -145,3 +142,7 @@ runs:
           exit 1
         fi
         grep -E '^[A-Z0-9_]+_URL=' /tmp/fakes.log >> "$GITHUB_ENV"
+    - name: Build mirage-core, mirage-node and mirage-browser
+      if: ${{ inputs.build-packages == 'true' && inputs.typescript-build-artifact == '' }}
+      shell: bash
+      run: integ/scripts/background.sh wait typescript-build

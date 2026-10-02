@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ExecutionScope } from '../execution.ts'
 import { PathSpec } from '../../types.ts'
 import { literalTree } from '../../shell/literal.ts'
 import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
@@ -125,30 +126,27 @@ function syntaxErrorResult(offending: string, root: TSNodeLike): ExecuteResult {
 }
 
 /**
- * A deny is a policy outcome, not a mistake: it folds into the line's
- * result the way a timeout does, never a throw. The typed line still
- * records and the session still flushes, mirroring Python's finally
- * path. The denied party is the command, so the message carries its
- * name like every per-command error, in bash's voice; the reason rides
- * the result's `refusal` record.
+ * A line answered before its tree runs, a syntax error or a policy deny:
+ * `$?` takes its status and the typed line still records, as on every
+ * path through Python's `finally`.
  */
-async function deniedResult(
+async function answerLine(
   env: ExecuteEnv,
   command: string,
   options: ExecuteOptions,
   session: SessionState,
-  reason: string,
+  result: ExecuteResult,
 ): Promise<ExecuteResult> {
-  const cmdName = commandName(command) || command
-  const deny: Deny = { kind: 'deny', reason, scope: 'command' }
-  const [msg, exitCode] = renderDeny(cmdName, deny)
-  const refusal = refusalOf(deny)
-  recordStatus(session, exitCode)
+  recordStatus(session, result.exitCode)
   if (options.record !== false) {
     await joinOrAbort(
       env.observer.logExecution(
         command,
-        new IOResult({ exitCode, stderr: msg, refusal }),
+        new IOResult({
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+          refusal: result.refusal,
+        }),
         [],
         options.agentId ?? env.agentId ?? '',
         session.sessionId,
@@ -157,8 +155,7 @@ async function deniedResult(
       options.signal,
     )
   }
-  await joinOrAbort(env.sessions.flush(session.sessionId), options.signal)
-  return new ExecuteResult(new Uint8Array(), msg, exitCode, refusal)
+  return result
 }
 
 /**
@@ -236,8 +233,8 @@ interface LineFrame {
 }
 
 /**
- * Order of gates: hydrate stores, drain any queued drift check, parse,
- * syntax gate, policy, then the strategies (whole-line
+ * Order of gates: hydrate stores, drain any queued drift check, resolve
+ * the session, parse, syntax gate, policy, then the strategies (whole-line
  * runtime or command tree). Failures fold into the line's result via
  * `failureResult`, except the kinds that are the caller's problem (abort,
  * drift), which propagate.
@@ -255,18 +252,6 @@ async function runLine(
   // Loads nothing the shell observes, so a stalled state store loses to
   // the signal at once rather than holding the caller.
   await abortable(preflight(env), options.signal)
-  const stdin = options.stdin ?? null
-  const parser = await abortable(env.parser(), options.signal)
-  const root = argv === undefined ? parser.parse(command) : literalTree(argv)
-  // tree-sitter accepts an unclosed backtick as a complete command, so
-  // the region is scanned separately.
-  const offending =
-    argv === undefined
-      ? (findSyntaxError(root, (source) => parser.parse(source)) ??
-        findUnterminatedBacktick(root.text))
-      : null
-  if (offending !== null) return syntaxErrorResult(offending, root)
-  const rootNode = root as unknown as TSNodeLike
   // Evaluator calls carry their exact session, including ephemeral forks.
   // Ambient re-entry is safe only with task-local storage: the browser
   // fallback's newest frame may belong to an unrelated shell call.
@@ -278,6 +263,9 @@ async function runLine(
       ? ambient
       : env.sessions.get(options.sessionId ?? env.sessions.defaultId))
   frame.session = targetSession
+  const executionScope = options.executionScope ?? new ExecutionScope()
+  options = { ...options, executionScope }
+  await executionScope.start()
   if (targetSession.processId === null) {
     const abort = new AbortController()
     const combined =
@@ -296,7 +284,15 @@ async function runLine(
         run: async () => {
           result = await runWithSession(
             targetSession,
-            () => runLine(env, command, { ...options, signal: combined }, frame, argv),
+            () =>
+              runPreparedLine(
+                env,
+                command,
+                targetSession,
+                { ...options, signal: combined },
+                frame,
+                argv,
+              ),
             env.sessions,
           )
           return result.exitCode
@@ -321,137 +317,23 @@ async function runLine(
       targetSession.processId = null
     }
   }
+  return runPreparedLine(env, command, targetSession, options, frame, argv)
+}
+
+/**
+ * Run a line on the session it acquired, after admission is published.
+ * Both paths of `runLine`, inside the managed process or not, end here.
+ */
+async function runPreparedLine(
+  env: ExecuteEnv,
+  command: string,
+  targetSession: SessionState,
+  options: ExecuteOptions,
+  frame: LineFrame,
+  argv?: readonly string[],
+): Promise<ExecuteResult> {
+  const stdin = options.stdin ?? null
   frame.statusBefore = snapshotStatus(targetSession)
-  let routingDecision: RouteDecision | null
-  try {
-    routingDecision = await abortable(
-      env.router.decide(rootNode, command, options, targetSession),
-      options.signal,
-    )
-  } catch (caught) {
-    if (caught instanceof RouteDeny) {
-      return deniedResult(env, command, options, targetSession, caught.reason)
-    }
-    throw caught
-  }
-
-  const dispatch: DispatchFn = env.dispatcher.dispatch
-
-  const nested: NestedRefusal = { latest: null }
-
-  // The line's hand-off: the grants its passes and gates claim for its
-  // commands, which the gates run on and the line's end spends. A
-  // nested evaluation runs on one made under the hand-off of the node
-  // that runs it, which the walker binds into the door (`withHandOff`),
-  // not this line's: a background job's subtree runs on a hand-off of
-  // the job's own.
-  const handed: HandOff = options.handed ?? { claimed: [], parent: null, origin: null }
-
-  const executeFn: ExecuteFn = async (cmd, opts) => {
-    // The executor's internal evals ($(), eval, source, xargs) are
-    // never a typed line: they must not record a history entry or open
-    // their own recording context, so their ops flow into this line's
-    // recorder (GNU: history is appended by the line reader).
-    const innerOpts: ExecuteOptions = {
-      record: false,
-      sessionId: opts.sessionId,
-      session: opts.session ?? effectiveSession,
-    }
-    // A builtin that bounds its inner line (`timeout`) hands a signal
-    // of its own, merged with the line's so either can end the run.
-    const innerSignal = mergeSignals(options.signal, opts.signal)
-    if (innerSignal !== undefined) innerOpts.signal = innerSignal
-    // The agent rides with the execution: an approval a nested line
-    // raises is the typed line's agent's, not the workspace default's.
-    if (options.agentId !== undefined) innerOpts.agentId = options.agentId
-    // Nested lines never re-route: the evaluator's inner lines keep
-    // the typed line's decision (runtime argument, policy, or scripts).
-    if (routingDecision !== null) innerOpts.routingDecision = routingDecision
-    // Under the hand-off the walker bound, standing at the node whose
-    // text this is; outside a walk (no hand-off bound) the inner line
-    // is a line of its own.
-    if (opts.handed !== undefined) {
-      innerOpts.handed =
-        opts.node === undefined
-          ? { claimed: [], parent: opts.handed, origin: null }
-          : evaluatedFrom(opts.node, opts.handed, opts.span)
-    }
-    // `command NAME` re-runs the inner line and must forward the pipe
-    // stdin so `... | command cat` filters the upstream output; the same
-    // path carries `echo hi | bash -c 'cat'` into the inner line.
-    if (opts.stdin !== undefined && opts.stdin !== null) innerOpts.stdin = opts.stdin
-    // A line run in place under a sink (eval, source, a nested shell)
-    // writes its statements there as they finish.
-    if (opts.sink !== undefined) innerOpts.sink = opts.sink
-    if (opts.callStack !== undefined) innerOpts.callStack = opts.callStack
-    const session = opts.session ?? effectiveSession
-    const substitutionTree =
-      opts.substitution === true && opts.node?.type === NT.COMMAND_SUBSTITUTION
-        ? parser.parse(cmd)
-        : null
-    if (substitutionTree !== null && inputSubstitutionRedirect(substitutionTree) !== null) {
-      const [stdout, io] = await runCommandTree(
-        withHandOff(deps, innerOpts.handed ?? handed),
-        substitutionTree,
-        session,
-        null,
-        true,
-      )
-      io.stdout = stdout
-      recordStatus(session, io.exitCode, true)
-      if (io.refusal !== null) nested.latest = io.refusal
-      return io
-    }
-    const saved = opts.substitution === true ? session.snapshot() : null
-    const terminalOutput = session.terminalOutput
-    if (saved !== null) session.terminalOutput = false
-    try {
-      const res = await env.execute(cmd, innerOpts)
-      // The record rides back with the streams: a refusal the inner line
-      // earned is the outer line's to report.
-      if (res.refusal !== null) nested.latest = res.refusal
-      return new IOResult({
-        exitCode: res.exitCode,
-        stdout: res.stdout,
-        stderr: res.stderr,
-        refusal: res.refusal,
-      })
-    } catch (err) {
-      // A substitution runs on a copy of the caller's frames, and it is a
-      // child shell: whatever unwinds out of it ends it.
-      if (saved === null || !isUnwinding(err)) throw err
-      return ended(err)
-    } finally {
-      if (saved !== null) {
-        session.terminalOutput = terminalOutput
-        session.restore(saved)
-      }
-    }
-  }
-
-  const deps = withHandOff(
-    {
-      dispatch,
-      registry: env.registry,
-      namespace: env.namespace,
-      jobTable: env.jobTable,
-      executeFn,
-      agentId: options.agentId ?? env.agentId ?? '',
-      workspaceId: env.workspaceId,
-      registerCloser: (fn: () => Promise<void>) => {
-        env.registerCloser(fn)
-      },
-      runtimeBindings: env.runtimes.bindings,
-      // Alias expansion rewrites the head word and reads the result as a
-      // fresh line, so it needs the same parser the line reader used. The
-      // parser is already resolved by the time the tree runs.
-      reparse: (line: string) => parser.parse(line),
-      ...(routingDecision !== null ? { routingDecision } : {}),
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      ...(options.sink !== undefined ? { sink: options.sink } : {}),
-    },
-    handed,
-  )
   // The line runs as its own fork of the session, and everything that
   // judges it runs bound to that fork: admission and the policies it
   // consults (a profile policy reads the mounts as the session it judges
@@ -462,13 +344,188 @@ async function runLine(
   try {
     // The line's signal, the caller's folded with the session's kill
     // channel, rides the async context so the status door can refuse an
-    // orphan of this line and no other.
+    // orphan of this line and no other, and every status the line stamps,
+    // a syntax error's or a deny's included, is the line's to put back.
+    // Python sets the line writer at the same point.
     return await runWithLineAbort(
       mergeSignals(options.signal, effectiveSession.abortSignal),
       [targetSession, effectiveSession],
       frame.writer,
-      () =>
-        runWithSession(
+      async () => {
+        const parser = await abortable(env.parser(), options.signal)
+        const root = argv === undefined ? parser.parse(command) : literalTree(argv)
+        // Syntax gates before policy, mirroring bash: an unparsable line exits 2
+        // and the policy is never consulted about it. tree-sitter accepts an
+        // unclosed backtick as a complete command, so the region is scanned
+        // separately.
+        const offending =
+          argv === undefined
+            ? (findSyntaxError(root, (source) => parser.parse(source)) ??
+              findUnterminatedBacktick(root.text))
+            : null
+        if (offending !== null)
+          return answerLine(
+            env,
+            command,
+            options,
+            targetSession,
+            syntaxErrorResult(offending, root),
+          )
+        const rootNode = root as unknown as TSNodeLike
+        let routingDecision: RouteDecision | null
+        try {
+          routingDecision = await abortable(
+            env.router.decide(rootNode, command, options, targetSession),
+            options.signal,
+          )
+        } catch (caught) {
+          if (caught instanceof RouteDeny) {
+            // A deny is a policy outcome, not a mistake: it folds into the line's
+            // result the way a timeout does, never a throw. The denied party is
+            // the command, so the message carries its name like every
+            // per-command error, in bash's voice; the reason rides `refusal`.
+            const deny: Deny = { kind: 'deny', reason: caught.reason, scope: 'command' }
+            const [msg, exitCode] = renderDeny(commandName(command) || command, deny)
+            return answerLine(
+              env,
+              command,
+              options,
+              targetSession,
+              new ExecuteResult(new Uint8Array(), msg, exitCode, refusalOf(deny)),
+            )
+          }
+          throw caught
+        }
+
+        const dispatch: DispatchFn = env.dispatcher.dispatch
+
+        const nested: NestedRefusal = { latest: null }
+
+        // The line's hand-off: the grants its passes and gates claim for its
+        // commands, which the gates run on and the line's end spends. A
+        // nested evaluation runs on one made under the hand-off of the node
+        // that runs it, which the walker binds into the door (`withHandOff`),
+        // not this line's: a background job's subtree runs on a hand-off of
+        // the job's own.
+        const handed: HandOff = options.handed ?? { claimed: [], parent: null, origin: null }
+
+        const executeFn: ExecuteFn = async (cmd, opts) => {
+          // The executor's internal evals ($(), eval, source, xargs) are
+          // never a typed line: they must not record a history entry or open
+          // their own recording context, so their ops flow into this line's
+          // recorder (GNU: history is appended by the line reader).
+          const innerOpts: ExecuteOptions = {
+            record: false,
+            sessionId: opts.sessionId,
+            session: opts.session ?? effectiveSession,
+          }
+          // The walker already merged its signal into this one (`executeNode`),
+          // so a `timeout` bound and a background job's own abort both reach it.
+          const innerSignal = opts.signal
+          if (innerSignal !== undefined) innerOpts.signal = innerSignal
+          if (opts.executionScope !== undefined) innerOpts.executionScope = opts.executionScope
+          // The agent rides with the execution: an approval a nested line
+          // raises is the typed line's agent's, not the workspace default's.
+          if (options.agentId !== undefined) innerOpts.agentId = options.agentId
+          // Nested lines never re-route: the evaluator's inner lines keep
+          // the typed line's decision (runtime argument, policy, or scripts).
+          if (routingDecision !== null) innerOpts.routingDecision = routingDecision
+          // Under the hand-off the walker bound, standing at the node whose
+          // text this is; outside a walk (no hand-off bound) the inner line
+          // is a line of its own.
+          if (opts.handed !== undefined) {
+            innerOpts.handed =
+              opts.node === undefined
+                ? { claimed: [], parent: opts.handed, origin: null }
+                : evaluatedFrom(opts.node, opts.handed, opts.span)
+          }
+          // `command NAME` re-runs the inner line and must forward the pipe
+          // stdin so `... | command cat` filters the upstream output; the same
+          // path carries `echo hi | bash -c 'cat'` into the inner line.
+          if (opts.stdin !== undefined && opts.stdin !== null) innerOpts.stdin = opts.stdin
+          // A line run in place under a sink (eval, source, a nested shell)
+          // writes its statements there as they finish.
+          if (opts.sink !== undefined) innerOpts.sink = opts.sink
+          if (opts.callStack !== undefined) innerOpts.callStack = opts.callStack
+          const session = opts.session ?? effectiveSession
+          const substitutionTree =
+            opts.substitution === true && opts.node?.type === NT.COMMAND_SUBSTITUTION
+              ? parser.parse(cmd)
+              : null
+          if (substitutionTree !== null && inputSubstitutionRedirect(substitutionTree) !== null) {
+            const [stdout, io] = await runCommandTree(
+              withHandOff(
+                {
+                  ...deps,
+                  ...(innerSignal !== undefined ? { signal: innerSignal } : {}),
+                  ...(opts.executionScope !== undefined
+                    ? { executionScope: opts.executionScope }
+                    : {}),
+                },
+                innerOpts.handed ?? handed,
+              ),
+              substitutionTree,
+              session,
+              null,
+              true,
+            )
+            io.stdout = stdout
+            recordStatus(session, io.exitCode, true)
+            if (io.refusal !== null) nested.latest = io.refusal
+            return io
+          }
+          const saved = opts.substitution === true ? session.snapshot() : null
+          const terminalOutput = session.terminalOutput
+          if (saved !== null) session.terminalOutput = false
+          try {
+            const res = await env.execute(cmd, innerOpts)
+            // The record rides back with the streams: a refusal the inner line
+            // earned is the outer line's to report.
+            if (res.refusal !== null) nested.latest = res.refusal
+            return new IOResult({
+              exitCode: res.exitCode,
+              stdout: res.stdout,
+              stderr: res.stderr,
+              refusal: res.refusal,
+            })
+          } catch (err) {
+            // A substitution runs on a copy of the caller's frames, and it is a
+            // child shell: whatever unwinds out of it ends it.
+            if (saved === null || !isUnwinding(err)) throw err
+            return ended(err)
+          } finally {
+            if (saved !== null) {
+              session.terminalOutput = terminalOutput
+              session.restore(saved)
+            }
+          }
+        }
+
+        const deps = withHandOff(
+          {
+            dispatch,
+            registry: env.registry,
+            namespace: env.namespace,
+            jobTable: env.jobTable,
+            executeFn,
+            agentId: options.agentId ?? env.agentId ?? '',
+            workspaceId: env.workspaceId,
+            executionScope: options.executionScope ?? new ExecutionScope(),
+            registerCloser: (fn: () => Promise<void>) => {
+              env.registerCloser(fn)
+            },
+            runtimeBindings: env.runtimes.bindings,
+            // Alias expansion rewrites the head word and reads the result as a
+            // fresh line, so it needs the same parser the line reader used. The
+            // parser is already resolved by the time the tree runs.
+            reparse: (line: string) => parser.parse(line),
+            ...(routingDecision !== null ? { routingDecision } : {}),
+            ...(options.signal !== undefined ? { signal: options.signal } : {}),
+            ...(options.sink !== undefined ? { sink: options.sink } : {}),
+          },
+          handed,
+        )
+        return runWithSession(
           effectiveSession,
           () =>
             runParsedLine(
@@ -485,7 +542,8 @@ async function runLine(
               handed,
             ),
           env.sessions,
-        ),
+        )
+      },
     )
   } finally {
     // Durable session fields (cwd, env, grants) flush at the end of

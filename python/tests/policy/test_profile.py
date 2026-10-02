@@ -21,7 +21,10 @@ from pydantic import ValidationError
 
 from mirage.agents.io_text import with_refusal
 from mirage.commands.cli.specs import cli_spec_for
+from mirage.commands.config import CommandOpts, command
+from mirage.commands.spec.types import CommandSpec
 from mirage.context import reset_current_session, set_current_session
+from mirage.io.types import IOResult
 from mirage.policy import Action, Ask, CommandContext, Decision, Policy, Scope
 from mirage.policy.constants import DEFAULT_ASK_REASON, DEFAULT_DENY_REASON
 from mirage.policy.errors import PolicyError
@@ -39,7 +42,13 @@ from mirage.process.config import ProcessPermissions
 from mirage.runtime.base import Runtime
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.types import RunResult, ScriptSource
-from mirage.types import HiddenPaths, HiddenVars, MountMode, ShowEntry
+from mirage.types import (
+    HiddenPaths,
+    HiddenVars,
+    MountMode,
+    PathSpec,
+    ShowEntry,
+)
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.abort import MirageAbortError
@@ -2031,6 +2040,636 @@ async def test_a_walk_below_the_operand_meets_the_rule_guard():
         assert code == 2 and err == ""
         assert "`-- sealed  [error opening dir]\n" in out
         assert "|   `-- y\n" in out
+    finally:
+        await ws.close()
+
+
+RELAY_DOC = {
+    "paths": {"hide": ["/data/r/ghost"]},
+    "commands": {
+        "deny": [
+            {
+                "reason": "cut",
+                "commands": {
+                    "split": ["/data/out/xab"],
+                    "csplit": ["/data/out/xx01"],
+                    "awk": ["/data/out/locked"],
+                    "mktemp": ["/data/tmpd/*"],
+                    "unzip": ["/data/uz/*"],
+                },
+            },
+            {
+                "reason": "tarred",
+                "commands": {"tar": ["/data/r/sec", "/data/r/ghost"]},
+            },
+            {
+                "reason": "copied",
+                "commands": {
+                    "cp": ["/data/r/sec", "/data/dst/sec", "/data/r/ghost"]
+                },
+            },
+        ],
+    },
+}
+
+TAR_SEC_REFUSED = (
+    "tar: Removing leading `/' from member names\n"
+    "tar: /data/r/sec: Cannot open: Permission denied\n"
+    "tar: Exiting with failure status due to previous "
+    "errors\n"
+)
+
+
+def _relay_ws() -> Workspace:
+    ws = Workspace(
+        {
+            "/data/": (RAMVFS(), MountMode.WRITE),
+            "/other/": (RAMVFS(), MountMode.WRITE),
+        },
+        mode=MountMode.WRITE,
+        profiles={"relayed": RELAY_DOC},
+    )
+    ws.create_session("g", profile="relayed")
+    return ws
+
+
+async def _seed_relay_tree(ws: Workspace) -> None:
+    await ws.shell(
+        "mkdir -p /data/r /other/src && echo s > /data/r/sec && "
+        "echo o > /data/r/open && echo g > /data/r/ghost && "
+        "echo s > /other/src/sec && echo o > /other/src/open"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_relayed_walk_meets_the_command_rules():
+    # A line that spans mounts runs through the cross-mount relay, whose
+    # reads and writes reach the op dispatcher rather than the command's
+    # own guarded slots. The command rules hold there too, in the voice
+    # the single-mount walk uses.
+    ws = _relay_ws()
+    try:
+        await _seed_relay_tree(ws)
+        assert await _line(ws, "tar -cf - /data/r | tar -tf -", "g") == (
+            0,
+            "data/r/\ndata/r/open\n",
+            TAR_SEC_REFUSED,
+        )
+        assert await _line(ws, "tar -cf /other/y.tar /data/r", "g") == (
+            2,
+            "",
+            TAR_SEC_REFUSED,
+        )
+        assert (await _line(ws, "tar -tf /other/y.tar", "g"))[
+            1
+        ] == "data/r/\ndata/r/open\n"
+        assert await _line(ws, "cp -r /data/r /other/r", "g") == (
+            1,
+            "",
+            "cp: cannot open '/data/r/sec' for reading: Permission denied\n",
+        )
+        assert (await _line(ws, "find /other/r", "g"))[
+            1
+        ] == "/other/r\n/other/r/open\n"
+        assert await _line(ws, "cp -r /other/src /data/dst", "g") == (
+            1,
+            "",
+            "cp: cannot create regular file '/data/dst/sec': "
+            "Permission denied\n",
+        )
+        assert (await _line(ws, "find /data/dst", "g"))[
+            1
+        ] == "/data/dst\n/data/dst/open\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_write_through_the_command_dispatcher_meets_the_rules():
+    # split writes each piece through the dispatcher it is handed, not a
+    # guarded slot, so a rule on one piece holds there as GNU reports an
+    # output it cannot open: the pieces before it stay, the run fails.
+    ws = _relay_ws()
+    try:
+        await ws.shell(
+            "mkdir -p /data/out && echo a > /data/f && "
+            "echo b >> /data/f && echo c >> /data/f"
+        )
+        assert await _line(ws, "split -l 1 /data/f /data/out/x", "g") == (
+            1,
+            "",
+            "split: /data/out/xab: Permission denied\n",
+        )
+        assert await _line(ws, "csplit -f /data/out/xx /data/f 2", "g") == (
+            1,
+            "2\n",
+            "csplit: /data/out/xx01: Permission denied\n",
+        )
+        assert await _line(
+            ws, "awk '{print > \"/data/out/locked\"}' /data/f", "g"
+        ) == (
+            2,
+            "",
+            'awk: cannot open "/data/out/locked" for '
+            "output (Permission denied)\n",
+        )
+        listed = (await _line(ws, "ls /data/out", "g"))[1].split()
+        assert "xaa" in listed
+        assert "xab" not in listed and "xx01" not in listed
+    finally:
+        await ws.close()
+
+
+WARM_DOC = {
+    "paths": {"hide": ["/data/w/h.txt"]},
+    "commands": {
+        "deny": [
+            {
+                "reason": "sealed",
+                "commands": {
+                    name: ["/data/w/a.txt"]
+                    for name in ("grep", "rg", "cat", "cp", "tar")
+                },
+            },
+            {"reason": "walled", "paths": ["/data/w/p.txt"]},
+        ],
+    },
+}
+
+WARM_LINES = (
+    "grep -r secret /data/w",
+    "rg secret /data/w",
+    "cat /data/w/*",
+    "cp -r /data/w /data/c; echo $?; find /data/c",
+    "tar -cf /data/x.tar /data/w; echo $?; tar -tf /data/x.tar",
+    "tar -cf - /data/w | tar -tf -",
+)
+
+
+async def _warm_ws(warm: bool) -> tuple[Workspace, RAMVFS]:
+    # A caching mount, seeded and optionally read whole by the
+    # unrestricted default session, whose reads fill the shared cache.
+    ram = RAMVFS()
+    ram.caches_reads = True
+    ws = Workspace(
+        {"/data/": (ram, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"limited": WARM_DOC},
+    )
+    ws.create_session("g", profile="limited")
+    await ws.shell(
+        "mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
+        "echo 'secret p' > /data/w/p.txt && "
+        "echo 'secret h' > /data/w/h.txt && "
+        "echo 'secret open' > /data/w/b.txt"
+    )
+    if warm:
+        await ws.shell(
+            "cat /data/w/a.txt /data/w/p.txt /data/w/h.txt "
+            "/data/w/b.txt > /dev/null"
+        )
+    return ws, ram
+
+
+@pytest.mark.asyncio
+async def test_a_warm_walk_is_refused_as_the_cold_walk_is():
+    # The cache is shared by every session, so bytes another session
+    # read must not reach a walk the running command's rules refuse:
+    # every walk answers warm exactly as it answers cold.
+    differs = []
+    for line in WARM_LINES:
+        answers = []
+        for warm in (False, True):
+            ws, _ = await _warm_ws(warm)
+            try:
+                answers.append(await _line(ws, line, "g"))
+            finally:
+                await ws.close()
+        if answers[1] != answers[0]:
+            differs.append(line)
+    assert differs == []
+    ws, _ = await _warm_ws(True)
+    try:
+        assert await _line(ws, "grep -r secret /data/w", "g") == (
+            2,
+            "/data/w/b.txt:secret open\n",
+            "grep: /data/w/a.txt: Permission denied\n"
+            "grep: /data/w/p.txt: Permission denied\n",
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_warm_entry_no_rule_refuses_is_still_served_from_cache():
+    # The backend changes behind the cache's back: the walk still sees
+    # the bytes the cache holds, so only refused entries go cold.
+    ws, ram = await _warm_ws(True)
+    try:
+        ram._store.files["/w/b.txt"] = b"secret changed\n"
+        _, out, _ = await _line(ws, "grep -r secret /data/w", "g")
+        assert "/data/w/b.txt:secret open\n" in out
+        assert "changed" not in out
+    finally:
+        await ws.close()
+
+
+FANOUT_DOC = {
+    "commands": {
+        "deny": [
+            {
+                "reason": "sealed",
+                "commands": {
+                    "rg": ["/data/w/a.txt"],
+                    "find": ["/data/w/a.txt"],
+                    "tree": ["/data/sub/x"],
+                },
+            }
+        ],
+    }
+}
+
+
+async def _fanout_ws() -> Workspace:
+    # A mount nested inside the walked one sends rg's ordered walk and
+    # find's actions through the executor's own dispatcher.
+    ws = Workspace(
+        {
+            "/data/": (RAMVFS(), MountMode.WRITE),
+            "/data/sub/": (RAMVFS(), MountMode.WRITE),
+        },
+        mode=MountMode.WRITE,
+        profiles={"limited": FANOUT_DOC},
+    )
+    ws.create_session("g", profile="limited")
+    await ws.shell(
+        "mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
+        "echo 'secret b' > /data/w/b.txt"
+    )
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_an_ordered_rg_across_mounts_meets_the_command_rules():
+    # --sort walks every mount through the dispatcher in one ordered
+    # pass; the entry the rule names is refused as the plain walk does.
+    ws = await _fanout_ws()
+    try:
+        expected = (
+            2,
+            "/data/w/b.txt:secret b\n",
+            "rg: /data/w/a.txt: Permission denied (os error 13)\n",
+        )
+        assert await _line(ws, "rg secret /data", "g") == expected
+        assert await _line(ws, "rg --sort path secret /data", "g") == expected
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_tree_across_mounts_marks_the_directory_it_may_not_open():
+    # tree lists a nested mount through the dispatcher; a directory the
+    # rule names is marked inline as on a single mount, never listed.
+    ws = await _fanout_ws()
+    try:
+        await ws.shell("mkdir -p /data/sub/x && echo s > /data/sub/x/k")
+        assert await _line(ws, "tree /data", "g") == (
+            2,
+            "/data\n|-- sub\n|   `-- x  [error opening dir]\n`-- w\n"
+            "    |-- a.txt\n    `-- b.txt\n\n4 directories, 2 files\n",
+            "",
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_find_delete_meets_the_command_rules():
+    # The deletion is find's own write: an entry the rule names stays,
+    # reported with the rule's reason, as a paths rule's refusal at the
+    # op door already is.
+    ws = await _fanout_ws()
+    try:
+        assert await _line(ws, "find /data/w -name a.txt -delete", "g") == (
+            1,
+            "",
+            "find: cannot delete '/data/w/a.txt': sealed\n",
+        )
+        assert (await _line(ws, "ls /data/w", "g"))[1] == "a.txt\nb.txt\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_create_through_the_command_dispatcher_meets_the_rules():
+    # mktemp and unzip create their files and directories through the
+    # dispatcher they are handed; a rule on the directory's contents
+    # refuses each create in the command's own voice, and nothing lands.
+    ws = _relay_ws()
+    try:
+        await _seed_relay_tree(ws)
+        await ws.shell(
+            "mkdir -p /data/tmpd /data/uz && cd /other && "
+            "zip -r /other/z.zip src > /dev/null"
+        )
+        assert await _line(ws, "mktemp -d -p /data/tmpd", "g") == (
+            1,
+            "",
+            "mktemp: failed to create directory via template "
+            "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n",
+        )
+        assert await _line(ws, "mktemp -p /data/tmpd", "g") == (
+            1,
+            "",
+            "mktemp: failed to create file via template "
+            "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n",
+        )
+        refused = "".join(
+            "checkdir error:  cannot create /data/uz/src\n"
+            "                 Permission denied\n"
+            f"                 unable to process src/{name}.\n"
+            for name in ("", "open", "sec")
+        )
+        assert await _line(ws, "unzip -q -d /data/uz /other/z.zip", "g") == (
+            50,
+            "",
+            refused,
+        )
+        assert (await _line(ws, "find /data/tmpd /data/uz", "g"))[
+            1
+        ] == "/data/tmpd\n/data/uz\n"
+    finally:
+        await ws.close()
+
+
+LINKED_DOC = {
+    "commands": {
+        "deny": [
+            {
+                "reason": "sealed",
+                "commands": {
+                    "awk": ["/data/secret"],
+                    "sed": ["/data/secret"],
+                },
+            }
+        ],
+    }
+}
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_read_through_a_link_meets_the_target_rule():
+    # A path a command names inside its own program (awk's getline, sed's
+    # r) reaches the dispatcher unjudged, and the door follows a link to
+    # its target. The rule on the target holds through the link exactly
+    # as it holds on the target itself; a link to an allowed file reads.
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"linked": LINKED_DOC},
+    )
+    ws.create_session("g", profile="linked")
+    try:
+        await ws.shell(
+            "echo TOPSECRET > /data/secret && echo ok > /data/f && "
+            "ln -s /data/secret /data/alias && ln -s /data/f /data/okalias"
+        )
+        for name in ("secret", "alias"):
+            assert await _line(
+                ws,
+                f"awk 'BEGIN {{ getline x < \"/data/{name}\"; print x }}'",
+                "g",
+            ) == (0, "\n", "")
+            assert await _line(
+                ws, f"sed -n 'r /data/{name}' /data/f", "g"
+            ) == (
+                0,
+                "",
+                "",
+            )
+        assert await _line(
+            ws, "awk 'BEGIN { getline x < \"/data/okalias\"; print x }'", "g"
+        ) == (0, "ok\n", "")
+        assert await _line(ws, "sed -n 'r /data/okalias' /data/f", "g") == (
+            0,
+            "ok\n",
+            "",
+        )
+    finally:
+        await ws.close()
+
+
+@command("zap", vfs="ram", spec=CommandSpec())
+async def _zap(
+    store, paths: list[PathSpec], texts: list[str], opts: CommandOpts
+):
+    # A host command that removes or moves a name through the dispatcher
+    # it is handed, the way a custom command reaches a mount.
+    target = PathSpec.from_str_path("/data/alias/secret")
+    try:
+        if texts and texts[0] == "rename":
+            await opts.dispatch(
+                "rename", target, dst=PathSpec.from_str_path("/data/moved")
+            )
+        else:
+            await opts.dispatch("unlink", target)
+    except OSError as exc:
+        return None, IOResult(
+            exit_code=1, stderr=f"zap: {exc.strerror}\n".encode()
+        )
+    return b"done\n", IOResult()
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_op_meets_the_rule_through_a_linked_parent():
+    # The door walks every link above the final name before it acts, so
+    # /data/alias/secret is /data/real/secret by the time anything is
+    # removed or moved. The rule on the real path holds there for an op
+    # on the name itself (unlink, rename) as for one that follows it.
+    doc = {
+        "commands": {
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {"zap": ["/data/real/secret"]},
+                }
+            ],
+        }
+    }
+    for op in ("unlink", "rename"):
+        ws = Workspace(
+            {"/data/": (RAMVFS(), MountMode.WRITE)},
+            mode=MountMode.WRITE,
+            profiles={"zapped": doc},
+        )
+        for rc in _zap._registered_commands:
+            ws._registry.mount_for("/data/").register(rc)
+        ws.create_session("g", profile="zapped")
+        try:
+            await ws.shell(
+                "mkdir -p /data/real && echo s > /data/real/secret && "
+                "ln -s /data/real /data/alias"
+            )
+            assert await _line(ws, f"zap {op}", "g") == (
+                1,
+                "",
+                "zap: sealed\n",
+            )
+            assert (await _line(ws, "ls /data/real", "g"))[1] == "secret\n"
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_rule_spelled_through_a_linked_parent_binds_a_dispatched_op():
+    # The door judges the path the command handed it as well as the one
+    # its walk reaches, so a rule written through a link holds for the
+    # command's own ops exactly as it holds for a named operand.
+    doc = {
+        "commands": {
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {
+                        "sed": ["/data/dalias/secret"],
+                        "cat": ["/data/dalias/secret"],
+                    },
+                }
+            ],
+        }
+    }
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"spelled": doc},
+    )
+    ws.create_session("g", profile="spelled")
+    try:
+        await ws.shell(
+            "mkdir -p /data/real && echo s > /data/real/secret && "
+            "ln -s /data/real /data/dalias && echo o > /data/f"
+        )
+        assert await _line(
+            ws, "sed -n 'w /data/dalias/secret' /data/f", "g"
+        ) == (
+            4,
+            "",
+            "sed: couldn't open file /data/dalias/secret: Permission denied\n",
+        )
+        assert await _line(ws, "cat /data/dalias/secret", "g") == (
+            1,
+            "",
+            "cat: /data/dalias/secret: sealed\n",
+        )
+        assert await _line(ws, "cat /data/real/secret") == (0, "s\n", "")
+    finally:
+        await ws.close()
+
+
+SPELLED_DOC = {
+    "commands": {
+        "deny": [
+            {"reason": "sealed", "commands": {"sed": ["/data/real/secret"]}}
+        ],
+    }
+}
+
+
+async def _sealed_ws() -> Workspace:
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={
+            "sealed": SPELLED_DOC,
+            "open": {},
+        },
+    )
+    ws.create_session("g", profile="sealed")
+    ws.create_session("h", profile="open")
+    await ws.shell(
+        "mkdir -p /data/real && echo s > /data/real/secret && echo o > /data/f"
+    )
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_a_nested_line_judges_its_dispatched_ops_by_its_own_command():
+    # find -exec runs sed as a line of its own: sed's write is judged by
+    # sed's rules, and the outer find (no rule) lends it nothing.
+    ws = await _sealed_ws()
+    try:
+        code, _, err = await _line(
+            ws,
+            "find /data/f -exec sed -n 'w /data/real/secret' {} \\;",
+            "g",
+        )
+        assert (
+            "sed: couldn't open file /data/real/secret: Permission denied"
+            in err
+        )
+        assert (
+            await (await ws.shell("cat /data/real/secret")).stdout_str()
+            == "s\n"
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sessions_judge_dispatched_ops_by_their_own_gate():
+    # Two sessions write at once: each op carries its own command's gate,
+    # so the sealed session is refused and the open one is not.
+    ws = await _sealed_ws()
+    try:
+        sealed, opened = await asyncio.gather(
+            _line(ws, "sed -n 'w /data/real/secret' /data/f", "g"),
+            _line(ws, "sed -n 'w /data/real/other' /data/f", "h"),
+        )
+        assert sealed == (
+            4,
+            "",
+            "sed: couldn't open file /data/real/secret: Permission denied\n",
+        )
+        assert opened == (0, "", "")
+        assert (
+            await (await ws.shell("cat /data/real/other")).stdout_str()
+            == "o\n"
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_raw_vfs_route_keeps_its_own_policy_scope():
+    # The command rules bind what a command does; the session's raw door
+    # (ws.vfs, the agent's file tool) is held to paths rules only, as
+    # before.
+    doc = {
+        "commands": {
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {"cat": ["/data/real/secret"]},
+                },
+                {"reason": "walled", "paths": ["/data/real/walled"]},
+            ],
+        }
+    }
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"mixed": doc},
+    )
+    try:
+        await ws.shell(
+            "mkdir -p /data/real && echo s > /data/real/secret && "
+            "echo w > /data/real/walled"
+        )
+        handle = await ws.session("g", profile="mixed")
+        assert await handle.vfs.read("/data/real/secret") == b"s\n"
+        with pytest.raises(PermissionError):
+            await handle.vfs.read("/data/real/walled")
+        assert (await handle.shell("cat /data/real/secret")).exit_code == 1
     finally:
         await ws.close()
 

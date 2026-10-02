@@ -743,15 +743,17 @@ export function ruleReasons(doc: unknown): string[] {
 
 /**
  * What `explain` says would refuse this line, null when it says the line
- * runs. The first refusal wins, because that is the one the run reports:
- * a line is refused by its first refusing command.
+ * runs. A rule's refusal is the line's: the first one holds the whole
+ * line before any of it runs. Any other refusal fails only its own
+ * command and the line goes on (`tar` refused on a mount root, then
+ * `echo after`), so it is the line's only when that command is the line.
  */
 async function predictedRefusal(ws: ExecWorkspace, c: Case): Promise<[number, string] | null> {
   const said = await ws.explain(c.command, c.session ?? '')
-  for (const expl of said) {
-    if (expl.exitCode !== 0) return [expl.exitCode, expl.stderr]
-  }
-  return null
+  const refused = said.filter((expl) => expl.exitCode !== 0)
+  const held =
+    refused.find((expl) => expl.rule !== null) ?? (said.length === 1 ? refused[0] : undefined)
+  return held === undefined ? null : [held.exitCode, held.stderr]
 }
 
 /**

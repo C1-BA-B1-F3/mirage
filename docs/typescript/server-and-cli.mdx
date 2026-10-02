@@ -62,6 +62,23 @@ The JSON `stdinBase64` form remains available for small requests; multipart
 avoids its base64 expansion and the daemon's JSON request-size limit. Input is
 buffered before execution.
 
+Each call has a job record containing its workspace and resolved session ID.
+Calls without a session ID use the workspace's default session. Foreground
+calls on the same session queue; other sessions and workspaces can progress
+concurrently. A queued job is `pending`, becomes `running` after acquiring its
+session, and becomes `stopping` when cancellation is accepted. `cancelRequested`
+records that intent; `canceled` is published after the managed call settles.
+A wait timeout returns the latest snapshot without canceling the job.
+
+Job records stay in the server's memory: running jobs are never evicted, and
+up to 1,024 completed jobs are kept for one hour.
+
+Shell evaluation yields cooperatively between nodes. Blocking Python CLI
+callbacks run in owned threads; cancellation waits for the callback to return.
+JavaScript callbacks and CPU-heavy runtimes still need to yield or run in an
+isolated worker. A scheduling checkpoint cannot interrupt arbitrary synchronous
+code.
+
 ```bash
 cat report.json | mirage execute -w <workspace-id> -c 'cat > /report.json'
 ```

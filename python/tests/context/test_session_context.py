@@ -222,6 +222,9 @@ class _Gate:
         if virtual == self.refused:
             raise PermissionError(virtual)
 
+    def refuses(self, virtual: str) -> bool:
+        return virtual == self.refused
+
 
 def test_the_admission_binding_is_scoped_to_one_command():
     from mirage.context import (

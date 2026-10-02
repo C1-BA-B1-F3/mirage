@@ -701,10 +701,8 @@ export class MountCore {
    */
   private async hold(path: string): Promise<void> {
     const key = this.identity(path)
-    const held = [...this.handles.values()].filter(
-      (ctx) => ctx.key === key && ctx.chunked !== undefined,
-    )
-    if (held.length === 0) return
+    const held = (ctx: Handle): boolean => ctx.key === key && ctx.chunked !== undefined
+    if (![...this.handles.values()].some(held)) return
     let data: Uint8Array
     try {
       data = await this.op(() => this.ops.readFile(this.resolve(path)))
@@ -712,7 +710,9 @@ export class MountCore {
       console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
       return
     }
-    for (const ctx of held) {
+    // Every handle on the file now, a handle opened while the read was out
+    // included.
+    for (const ctx of [...this.handles.values()].filter(held)) {
       ctx.data = data
       delete ctx.chunked
     }

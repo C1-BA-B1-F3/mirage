@@ -729,23 +729,22 @@ class MountCore:
             path (str): mount path about to be removed or replaced.
         """
         key = self.identity(path)
-        held = [
-            ctx
+        if not any(
+            ctx.key == key and ctx.chunked is not None
             for ctx in self._handles.values()
-            if ctx.key == key and ctx.chunked is not None
-        ]
-        if not held:
+        ):
             return
         try:
             data = self._run(self._ops.read(self.resolve(path)))
         except Exception as err:
-            logger.warning(
+            logger.debug(
                 "fuse: holding %s before it goes failed: %r", path, err
             )
             return
-        for ctx in held:
-            ctx.data = data
-            ctx.chunked = None
+        for ctx in self._handles.values():
+            if ctx.key == key and ctx.chunked is not None:
+                ctx.data = data
+                ctx.chunked = None
 
     def release(self, fh: int) -> None:
         ctx = self._handles.get(fh)

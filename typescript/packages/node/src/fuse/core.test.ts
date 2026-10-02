@@ -655,4 +655,28 @@ describe('MountCore chunks', () => {
     reads.mockRestore()
     await expect(ws.vfs.stat('/data/b.bin')).rejects.toMatchObject({ code: 'ENOENT' })
   })
+
+  it('holds a handle opened while the hold was reading', async () => {
+    // FUSE serves an open while an unlink's hold awaits its read, and that
+    // descriptor must keep its bytes too.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    const body = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 251)
+    await ws.vfs.writeFile('/data/a.bin', body)
+    const core = new MountCore(ws.vfs)
+    const first = await core.open('/data/a.bin')
+    await core.read('/data/a.bin', first, 0, 1)
+    const real = ws.vfs.readFile.bind(ws.vfs)
+    let late = -1
+    const reads = vi.spyOn(ws.vfs, 'readFile').mockImplementation(async (path, options) => {
+      if (options === undefined && late < 0) {
+        late = await core.open('/data/a.bin')
+        await core.read('/data/a.bin', late, 0, 1)
+      }
+      return real(path, options)
+    })
+    await core.unlink('/data/a.bin')
+    reads.mockRestore()
+    const far = 2 * READ_CHUNK + 5
+    expect(await core.read('/data/a.bin', late, far, 4)).toEqual(body.slice(far, far + 4))
+  })
 })

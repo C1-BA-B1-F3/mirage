@@ -21,7 +21,7 @@ When the check cannot be made — the backend supplies no fingerprint, registers
 
 A fresh directory listing proves a child absent only when that child is not listed. If a listed child's metadata has been evicted independently, object-store stat fetches it from the backend.
 
-The file cache holds what commands read, which goes through the VFS's own IO. A filetype renderer registered beside the VFS (a `read` op scoped to an extension that the VFS does not ship itself: on the mount in Python, on the workspace's `OpsRegistry` in TypeScript) is never what a command reads, so a rendered read of such a path (`ws.vfs.read`, FUSE) is never served from the file cache: it always runs the renderer. A renderer the VFS ships in its own `ops()`, as Google Docs, Sheets and Slides do, has to render what the VFS's command reads return, and its cached entries are served as usual.
+The file cache holds what commands read, which goes through the VFS's own IO. A read that resolves a filetype renderer (a `read` op scoped to an extension, whether the VFS ships it, as Google Docs, Sheets, Slides and Calendar do, or it is registered beside the VFS) is never served from the file cache: `ws.vfs.read`, FUSE, a cross-mount `cp` and `< file` always run the renderer. Under `read: fresh` the cached entry is still checked first, so a path the backend reports gone fails as it does for any other read. Commands that read through the VFS's own IO (`cat`, `grep`, `head`, `wc`) keep their cache hits.
 
 ## Stores
 

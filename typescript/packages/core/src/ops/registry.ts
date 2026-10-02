@@ -159,20 +159,6 @@ export class OpsRegistry {
     return entries.get(key) ?? null
   }
 
-  /**
-   * Whether a read with `filetype` resolves a filetype op the VFS does not
-   * ship. Commands read through the VFS's own IO, so the file cache holds
-   * what those reads return: a VFS that ships a renderer (gdocs) makes its
-   * command reads return the same rendering, while a renderer registered
-   * here directly is never seen by them, so its cached entry is raw. Mirrors
-   * Python's MountEntry.renders_user_read.
-   */
-  rendersUserRead(vfs: BaseVFS, filetype: string | null): boolean {
-    if (filetype === null) return false
-    const key = keyFor('read', filetype, vfs.name)
-    return this.registered.has(key) && !this.owners.has(key)
-  }
-
   find(
     name: string,
     vfs: string | BaseVFS | null,

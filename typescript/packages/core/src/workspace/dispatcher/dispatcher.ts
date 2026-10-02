@@ -461,8 +461,8 @@ export class Dispatcher {
     }
     const caches = vfs.cachesReads
     // The file cache holds what commands read, keyed on the path alone. A
-    // raw read, or a read through a renderer registered beside the VFS,
-    // asks for a different value under the same key, so it must not be
+    // raw read, or a read through a filetype renderer (whoever registered
+    // it), asks for a different value under the same key, so it must not be
     // served from that cache; nothing populates it from here, so skipping
     // the probe is the whole fix. Mirrors Python's Dispatcher.dispatch.
     await mount.ensureReady()
@@ -476,7 +476,9 @@ export class Dispatcher {
         : typeof requested === 'string'
           ? requested
           : null
-    if (eligible && this.opsRegistry.rendersUserRead(vfs, readType)) {
+    const renders = (): boolean =>
+      readType !== null && this.opsRegistry.find('read', vfs, readType) !== null
+    if (eligible && renders()) {
       // The cached bytes are never this read's rendering, but their
       // freshness check still runs, so a path the backend reports gone fails
       // here as it does for any other warm read.
@@ -488,7 +490,7 @@ export class Dispatcher {
       if (
         cached !== null &&
         (await this.reconciler.mayServeCached(mount, p.virtual)) &&
-        !this.opsRegistry.rendersUserRead(vfs, readType) &&
+        !renders() &&
         !mount.retiring &&
         this.namespace.tryMountFor(p.virtual) === mount
       ) {

@@ -280,7 +280,6 @@ class MountEntry:
         self._prefix_index: dict[str, list[int]] | None = None
         self.command_limits: dict[str, Limit] = {}
         self._ops: dict[tuple[Any, ...], RegisteredOp] = {}
-        self._vfs_ops: dict[tuple[Any, ...], RegisteredOp] = {}
         self._general_ops: dict[str, RegisteredOp] = {}
         # key: (cmd_name, target_resource_type)
 
@@ -634,37 +633,14 @@ class MountEntry:
         key = (op.name, op.filetype)
         self._ops[key] = op
 
-    def register_vfs_ops(self, ops: Iterable[Any]) -> None:
-        """Register the VFS's own op table and remember it as the VFS's.
-
-        Ops registered later (``register_fns``, ``register_op``) are the
-        mount's extension point, which ``renders_user_read`` tells apart.
+    def has_filetype_op(self, name: str, filetype: str) -> bool:
+        """Whether an op named ``name`` is registered for ``filetype``.
 
         Args:
-            ops (iterable): the VFS's ``ops()`` table.
+            name (str): the op name.
+            filetype (str): the extension the op is scoped to.
         """
-        self.register_fns(ops)
-        self._vfs_ops = dict(self._ops)
-
-    def renders_user_read(self, filetype: str | None) -> bool:
-        """Whether a read with ``filetype`` resolves a filetype op the VFS
-        does not ship.
-
-        Commands read through the VFS's own IO, so the file cache holds
-        what those reads return. A VFS that ships a renderer (gdocs) makes
-        its command reads return the same rendering; a renderer added on
-        the mount is never seen by them, so its cached entry is raw.
-
-        Args:
-            filetype (str | None): the filetype the read resolves by: the
-                caller's explicit one, else the path's extension.
-        """
-        if filetype is None:
-            return False
-        op = self._ops.get(("read", filetype))
-        return (
-            op is not None and self._vfs_ops.get(("read", filetype)) is not op
-        )
+        return (name, filetype) in self._ops
 
     def _resolve_cascade(
         self,

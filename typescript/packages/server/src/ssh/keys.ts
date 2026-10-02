@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { constants } from 'node:fs'
-import { type FileHandle, mkdir, open, readFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 import type * as Ssh2Mod from 'ssh2'
 
 const HOST_KEY_ALGORITHM = 'ed25519'
@@ -41,7 +41,8 @@ export function mintKeyPair(utils: typeof Ssh2Mod.utils): Ssh2Mod.utils.KeyPairR
  * A fresh key per start would make every client's known_hosts entry look
  * like a man-in-the-middle, so the first start writes one with owner-only
  * permissions and every later start reads it back. Two daemons racing to
- * mint it both end up reading the one that won. The format is OpenSSH's
+ * mint it both end up reading the one that won: the key is written whole
+ * before it is linked into place, so the loser never reads a partial file. The format is OpenSSH's
  * own, the same file the Python daemon writes, so either daemon can serve
  * the other's key.
  */
@@ -53,17 +54,15 @@ export async function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): Pr
   }
   const pair = mintKeyPair(utils)
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  let file: FileHandle
+  const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}`)
+  await writeFile(temp, pair.private, { mode: 0o600, flag: 'wx' })
   try {
-    file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
+    await link(temp, path)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return readFile(path, 'utf-8')
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return await readFile(path, 'utf-8')
     throw err
-  }
-  try {
-    await file.writeFile(pair.private)
   } finally {
-    await file.close()
+    await rm(temp, { force: true })
   }
   return pair.private
 }

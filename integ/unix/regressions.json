@@ -23,7 +23,7 @@
         "opfs",
         "disk"
       ],
-      "command": "set -o pipefail; for i in 1 2 3; do echo \"$i\"; done | head -n 1; echo \"status=$? pipestatus=${PIPESTATUS[*]}\"",
+      "command": "set -o pipefail; for i in 1 2 3; do echo \"$i\"; done | { sleep 0.05; head -n 1; }; echo \"status=$? pipestatus=${PIPESTATUS[*]}\"",
       "expect": {
         "exit": 0,
         "stdout": "1\nstatus=0 pipestatus=0 0\n",

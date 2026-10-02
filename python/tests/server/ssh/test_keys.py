@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import stat
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import asyncssh
@@ -43,6 +44,14 @@ def test_an_existing_key_is_read_not_replaced(tmp_path):
     mine = asyncssh.generate_private_key("ssh-ed25519")
     path.write_bytes(mine.export_private_key())
     assert _public(load_host_key(path)) == _public(mine)
+
+
+def test_racing_loads_never_read_a_partial_key(tmp_path):
+    path = tmp_path / "host_key"
+    with ThreadPoolExecutor(8) as pool:
+        keys = list(pool.map(load_host_key, [path] * 8))
+    assert len({_public(key) for key in keys}) == 1
+    assert [p.name for p in tmp_path.iterdir()] == ["host_key"]
 
 
 def test_losing_the_mint_race_reads_the_winner(tmp_path, monkeypatch):

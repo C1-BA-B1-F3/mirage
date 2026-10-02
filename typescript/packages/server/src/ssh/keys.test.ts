@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import ssh2 from 'ssh2'
@@ -39,6 +39,14 @@ describe('loadHostKey', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
     const first = await loadHostKey(path, ssh2.utils)
     expect(publicOf(await loadHostKey(path, ssh2.utils))).toBe(publicOf(first))
+  })
+
+  it('racing loads never read a partial key', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
+    const path = join(dir, 'host_key')
+    const keys = await Promise.all(Array.from({ length: 8 }, () => loadHostKey(path, ssh2.utils)))
+    expect(new Set(keys.map(publicOf)).size).toBe(1)
+    expect(readdirSync(dir)).toEqual(['host_key'])
   })
 
   it('reads an existing key instead of replacing it', async () => {

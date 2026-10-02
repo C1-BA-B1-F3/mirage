@@ -43,6 +43,19 @@ async def _cross_readdir(
     return await readdir_path(path.virtual)
 
 
+async def _not_crossed(
+    path: PathSpec, index: IndexCacheStore | None
+) -> list[str]:
+    """List a mount point ``-x`` keeps the walk out of: empty, the way
+    GNU tree draws a directory on another filesystem.
+
+    Args:
+        path (PathSpec): the mount point.
+        index (IndexCacheStore | None): unused.
+    """
+    return []
+
+
 async def _cross_stat(
     stat_path: StatPath, path: PathSpec, index: IndexCacheStore | None
 ) -> FileStat:
@@ -266,6 +279,7 @@ async def tree(
     stat_path: StatPath | None = None,
     readdir_path: ReaddirPath | None = None,
     mounts: MountView | None = None,
+    one_file_system: bool = False,
 ) -> tuple[bytes, IOResult]:
     """Render one directory tree, GNU ``tree``'s drawing and summary.
 
@@ -291,6 +305,7 @@ async def tree(
         readdir_path (ReaddirPath | None): dispatcher-backed readdir,
             which is how a subtree on another mount is read at all.
         mounts (MountView | None): where the mount boundaries are.
+        one_file_system (bool): -x, draw a mount point but nothing in it.
     """
     warnings: list[str] = []
     root_label = path.raw_path or path.virtual
@@ -307,11 +322,13 @@ async def tree(
             return _unopenable(root_label, dirs_only, 0, 2)
         if start.type != FileType.DIRECTORY:
             return _unopenable(root_label, dirs_only, 1, 0)
-    cross_readdir = (
+    cross_readdir: Readdir | None = (
         partial(_cross_readdir, readdir_path)
         if readdir_path is not None
         else None
     )
+    if cross_readdir is not None and one_file_system:
+        cross_readdir = _not_crossed
     cross_stat = (
         partial(_cross_stat, stat_path) if stat_path is not None else None
     )
@@ -359,6 +376,7 @@ class TreeFlags:
     ignore_pattern: str | None = None
     dirs_only: bool = False
     match_pattern: str | None = None
+    one_file_system: bool = False
 
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> TreeFlags:
@@ -370,6 +388,7 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> TreeFlags:
         ignore_pattern=fl.as_str("args_I"),
         dirs_only=fl.as_bool("d"),
         match_pattern=fl.as_str("P"),
+        one_file_system=fl.as_bool("x"),
     )
 
 
@@ -394,4 +413,5 @@ async def tree_generic(
         stat_path=opts.stat_path,
         readdir_path=opts.readdir_path,
         mounts=opts.ns.mounts if opts.ns is not None else None,
+        one_file_system=parsed.one_file_system,
     )

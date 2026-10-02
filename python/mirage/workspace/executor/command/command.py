@@ -395,6 +395,7 @@ async def handle_command(
     # it. A line is not cross-mount because one of its words is empty.
     # A prepared program line already holds its positional operands.
     routing_scopes: list[PathSpec] = []
+    flag_scopes: list[PathSpec] = []
     if not option_loop_exits(
         cmd_name,
         cmd_mount.spec_for(cmd_name) if cmd_mount else None,
@@ -409,11 +410,10 @@ async def handle_command(
                 cmd_name, raw_argv, session.cwd, parts[1:], path_scopes
             ),
         )
+        flag_scopes = path_flag_scopes(cmd_name, raw_argv, session.cwd)
         routing_scopes = [
             s
-            for s in merge_scopes(
-                routed, path_flag_scopes(cmd_name, raw_argv, session.cwd)
-            )
+            for s in merge_scopes(routed, flag_scopes)
             if s.walk_error != "ENOENT"
         ]
 
@@ -454,7 +454,7 @@ async def handle_command(
 
     # Path-valued flags count: `cp -t /other/mount/dir src` spans mounts
     # exactly like a positional destination would.
-    if is_cross_mount(cmd_name, routing_scopes, registry):
+    if is_cross_mount(cmd_name, routing_scopes, registry, flag_scopes):
         # Cross-mount execution bypasses a VFS command handler. Parse
         # against the shared spec so flags and text operands do not depend on
         # the source mount. The bound single-mount runner lets the strategy
@@ -489,11 +489,14 @@ async def handle_command(
                     command=cmd_str, exit_code=code, stderr=refusal_msg
                 ),
             )
-        # sort's output flag routes to its owning mount but is not an input.
-        # Use the parser's operands so aliases and repeated paths keep their
-        # positions instead of subtracting matching path strings afterward.
+        # sort's output flag and cp/mv's -t route to their owning mount but
+        # are not inputs. Use the parser's operands so aliases and repeated
+        # paths keep their positions instead of subtracting matching path
+        # strings afterward.
         cross_scopes = (
-            cross_parsed.paths if cmd_name == "sort" else path_scopes
+            cross_parsed.paths
+            if cmd_name in ("sort", "cp", "mv")
+            else path_scopes
         )
         cross_flags = cross_parsed.flag_kwargs
         if strategy_for(cmd_name) is Strategy.RELAY:

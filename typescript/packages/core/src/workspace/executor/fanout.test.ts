@@ -539,7 +539,11 @@ describe('fanOutTraversal operands spanning mounts', () => {
     // Chooses whether a run counts the symlinks on its own mount, which
     // is a per-run question; the merge only ever sees the rows.
     const perRun = ['L', 'P']
-    expect([...specFlagNames(specOf('du'))].sort()).toEqual([...central, ...perRun].sort())
+    // Keeps the walk on its operand's mount, so there is no merge at all.
+    const noFanOut = ['one_file_system']
+    expect([...specFlagNames(specOf('du'))].sort()).toEqual(
+      [...central, ...perRun, ...noFanOut].sort(),
+    )
   })
 
   // -S has to survive both fan-outs at once: the per-operand one that

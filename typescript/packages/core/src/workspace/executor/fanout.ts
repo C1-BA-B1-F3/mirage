@@ -21,7 +21,7 @@ import { FileType, PathSpec } from '../../types.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import { MountCommandUnsupported, type MountRegistry } from '../mount/registry.ts'
 import { ExecutionNode } from '../types.ts'
-import { respellOne } from '../../utils/path.ts'
+import { parent, respellOne } from '../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import {
   bindTree,
@@ -185,6 +185,7 @@ export function shouldFanOut(
   // A refused operand names nothing; every valid operand may own a subtree.
   if (!paths.some((p) => p.walkError === null && registry.descendantMounts(p.virtual).length > 0))
     return false
+  if (cmdName === 'du') return flagKwargs.one_file_system !== true
   if (TRAVERSAL_CMDS.has(cmdName)) return true
   if (cmdName === 'grep') {
     return flagKwargs.r === true || flagKwargs.R === true || flagKwargs.recursive === true
@@ -569,6 +570,13 @@ export async function fanOutTraversal(
     flags = { ...rest, a: true, s: false, c: false, h: false, separate_dirs: false }
   }
 
+  // -xdev keeps the walk on its start point's filesystem: the mount points
+  // right below it are entries, nothing under them is.
+  const xdev = cmdName === 'find' && (flagKwargs.xdev === true || flagKwargs.mount === true)
+  if (xdev)
+    descendants = descendants.filter(
+      (m) => registry.tryMountFor(parent(rstripSlash(m.prefix))) === primaryMount,
+    )
   const synthesized =
     cmdName === 'find'
       ? await synthesizeFindMountEntries(
@@ -589,7 +597,7 @@ export async function fanOutTraversal(
   const exitCodes: number[] = []
   const errored: boolean[] = []
 
-  const mountsToRun: MountEntry[] = [primaryMount, ...descendants]
+  const mountsToRun: MountEntry[] = [primaryMount, ...(xdev ? [] : descendants)]
   for (const mount of mountsToRun) {
     signal?.throwIfAborted()
     let subPaths: PathSpec[]

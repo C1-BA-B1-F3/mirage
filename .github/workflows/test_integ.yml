@@ -1684,15 +1684,19 @@ jobs:
             sleep 1
           done
 
-      # The CLI step is the long pole, so both JSON drivers run behind it. They
+      # The CLI step is the long pole, so the JSON drivers run behind it. They
       # share nothing with it: run ids scope the MinIO prefixes, the sandbox
-      # suites send stateless commands, and no driver binds a fixed port.
+      # suites send stateless commands, no driver binds a fixed port, and the
+      # CLI never reaches MongoDB. They do share MongoDB with each other: each
+      # drops and reseeds the bridge suite's database, so they run in turn,
+      # and the second still runs when the first fails.
       - name: Start every runtime through the JSON suites (background)
         run: |
-          integ/scripts/background.sh start json-python \
-            './python/.venv/bin/python integ/runtime/run.py $SUITES'
-          integ/scripts/background.sh start json-typescript \
-            'cd integ && pnpm exec tsx runtime/run.ts $SUITES'
+          integ/scripts/background.sh start json '
+            status=0
+            ./python/.venv/bin/python integ/runtime/run.py $SUITES || status=1
+            (cd integ && pnpm exec tsx runtime/run.ts $SUITES) || status=1
+            exit $status'
 
       - name: Run every runtime through the CLI and both daemons
         run: |
@@ -1701,15 +1705,10 @@ jobs:
             "node typescript/packages/cli/dist/bin/mirage.js" \
             $SUITES
 
-      - name: Run every runtime through the JSON suites (python)
+      - name: Run every runtime through the JSON suites (python, then typescript)
         if: ${{ !cancelled() }}
         timeout-minutes: 10
-        run: integ/scripts/background.sh wait json-python
-
-      - name: Run every runtime through the JSON suites (typescript)
-        if: ${{ !cancelled() }}
-        timeout-minutes: 10
-        run: integ/scripts/background.sh wait json-typescript
+        run: integ/scripts/background.sh wait json
 
   integ-observability:
     needs: [changes, typescript-build]

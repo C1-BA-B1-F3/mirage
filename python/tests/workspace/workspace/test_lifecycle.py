@@ -15,6 +15,7 @@
 import asyncio
 import errno
 import os
+import threading
 from fnmatch import fnmatchcase
 from uuid import uuid4
 
@@ -52,6 +53,28 @@ from mirage.workspace.snapshot import to_state_dict
 from mirage.workspace.types import ExecutionNode
 
 _RELEASE: list[asyncio.Event] = []
+
+
+@pytest.mark.asyncio
+async def test_close_keeps_loop_responsive_while_kernel_unmount_blocks(
+    monkeypatch,
+):
+    entered, release = threading.Event(), threading.Event()
+    ws = Workspace({})
+
+    def unmount():
+        entered.set()
+        assert release.wait(2)
+
+    monkeypatch.setattr(ws._kernel_mounts, "close", unmount)
+    closing = asyncio.create_task(ws.close())
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        await asyncio.sleep(0)
+        assert not closing.done()
+    finally:
+        release.set()
+        await closing
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ import os
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, cast
 
+from mirage.concurrency.limiter import run_blocking
 from mirage.runtime.python.host.fs import os_routing
 from mirage.runtime.python.host.open import make_open
 from mirage.shell.job_table import cancel_job
@@ -97,13 +98,10 @@ def stop_vfs_loop(
     loop.close()
 
 
-def close_sync_parts(
+async def close_local_parts(
     ws: "Workspace",
 ) -> None:
-    """Tear down everything that needs no event loop (idempotent).
-
-    Kernel mounts, running jobs, and in-flight cache drains; the
-    async half (``close_async``) owns mounts and stores.
+    """Release kernel mounts and remaining local bookkeeping.
 
     Args:
         ws: the workspace being closed.
@@ -111,16 +109,14 @@ def close_sync_parts(
     if ws._closed:
         return
     ws._closed = True
-    ws._kernel_mounts.close()
-    for job in ws.job_table.all_running_jobs():
-        # Last resort only: with no loop to await on, a job can be asked
-        # to stop but not settled, so it keeps its RUNNING status and its
-        # console never ends. ``close_async`` settles first, so anything
-        # still running here arrived by a path that had no loop at all.
-        cancel_job(job)
-    for task in ws._cache._drain_tasks.values():
-        task.cancel()
-    ws._cache._drain_tasks.clear()
+    try:
+        await run_blocking(ws._kernel_mounts.close)
+    finally:
+        for job in ws.job_table.all_running_jobs():
+            cancel_job(job)
+        for task in ws._cache._drain_tasks.values():
+            task.cancel()
+        ws._cache._drain_tasks.clear()
 
 
 async def _drop_state(ws: "Workspace") -> None:
@@ -147,7 +143,7 @@ async def close_async(
     Order matters: the watch runtime goes first (it reads mounts), then
     background jobs, then the line runtimes, then mounts not shared
     with a sibling workspace, then the state store if this workspace
-    built it, then the sync parts, and finally the cache once its drains
+    built it, then the kernel mounts, and finally the cache once its drains
     have settled.
 
     Jobs are settled here rather than merely cancelled. ``kill_all``
@@ -217,17 +213,14 @@ async def close_async(
             # deleted, so they go first. A failed drop must not skip the
             # rest of teardown: a mount left up keeps the process alive.
             try:
-                ws._kernel_mounts.close()
+                await run_blocking(ws._kernel_mounts.close)
             except Exception as exc:
                 failures.append(exc)
             ws._state_dropped = True
             await settle(_drop_state(ws))
         if ws._owns_state_store:
             await settle(ws._state_store.close())
-        try:
-            close_sync_parts(ws)
-        except Exception as exc:
-            failures.append(exc)
+        await settle(close_local_parts(ws))
         drains = await asyncio.gather(*drain_tasks, return_exceptions=True)
         failures.extend(
             result

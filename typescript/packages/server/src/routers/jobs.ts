@@ -14,7 +14,7 @@
 
 import type { FastifyInstance } from 'fastify'
 import { toBriefDict, type JobBriefDict, type JobEntry, type JobTable } from '../jobs.ts'
-import { ioResultToDict, type ResultDict } from '../io_serde.ts'
+import type { JsonValue } from '@struktoai/mirage-core/types'
 
 export interface JobsRoutesDeps {
   jobs: JobTable
@@ -33,40 +33,42 @@ interface WaitBody {
 }
 
 interface JobDetailDict extends JobBriefDict {
-  result: ResultDict | null
+  result: JsonValue
   error: string | null
 }
 
 function toDetailDict(entry: JobEntry): JobDetailDict {
   const brief = toBriefDict(entry)
-  const result = entry.result !== null ? ioResultToDict(entry.result) : null
-  return { ...brief, result, error: entry.error }
+  return { ...brief, result: entry.result, error: entry.error }
 }
 
 export function registerJobsRoutes(app: FastifyInstance, deps: JobsRoutesDeps): void {
-  app.get<{ Querystring: JobsListQuery }>('/v1/jobs', (req) => {
-    return deps.jobs.list(req.query.workspaceId).map(toBriefDict)
+  app.get<{ Querystring: JobsListQuery }>('/v1/jobs', async (req) => {
+    return (await deps.jobs.list(req.query.workspaceId)).map(toBriefDict)
   })
 
-  app.get<{ Params: JobIdParams }>('/v1/jobs/:id', (req, reply) => {
+  app.get<{ Params: JobIdParams }>('/v1/jobs/:id', async (req, reply) => {
     const { id } = req.params
-    if (!deps.jobs.has(id)) return reply.status(404).send({ detail: 'job not found' })
-    return toDetailDict(deps.jobs.get(id))
+    const entry = await deps.jobs.store.get(id)
+    if (entry === null) return reply.status(404).send({ detail: 'job not found' })
+    return toDetailDict(entry)
   })
 
   app.post<{ Params: JobIdParams; Body: WaitBody | null }>(
     '/v1/jobs/:id/wait',
     async (req, reply) => {
       const { id } = req.params
-      if (!deps.jobs.has(id)) return reply.status(404).send({ detail: 'job not found' })
+      if ((await deps.jobs.store.get(id)) === null)
+        return reply.status(404).send({ detail: 'job not found' })
       const entry = await deps.jobs.wait(id, req.body?.timeoutS)
       return toDetailDict(entry)
     },
   )
 
-  app.delete<{ Params: JobIdParams }>('/v1/jobs/:id', (req, reply) => {
+  app.delete<{ Params: JobIdParams }>('/v1/jobs/:id', async (req, reply) => {
     const { id } = req.params
-    if (!deps.jobs.has(id)) return reply.status(404).send({ detail: 'job not found' })
-    return { jobId: id, canceled: deps.jobs.cancel(id) }
+    if ((await deps.jobs.store.get(id)) === null)
+      return reply.status(404).send({ detail: 'job not found' })
+    return { jobId: id, canceled: await deps.jobs.cancel(id) }
   })
 }

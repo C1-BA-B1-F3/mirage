@@ -1,0 +1,353 @@
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
+import { setTimeout as delay } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
+import type { startMounts } from './mounts.ts'
+
+const mountFixtures = process.argv.includes('--mounts') ? await import('./mounts.ts') : undefined
+
+type Host = 'python' | 'typescript'
+interface Case {
+  id: string
+  command: string
+  finish: 'release' | 'cancel'
+  gate?: 'slack' | 'file'
+}
+interface Job {
+  jobId: string
+  command: string
+  status: string
+  sessionId: string
+  startedAt: number | null
+}
+interface Result {
+  stdout: string
+  exitCode: number
+}
+const here = dirname(fileURLToPath(import.meta.url))
+const root = resolve(here, '../..')
+const cases = JSON.parse(await readFile(join(here, 'cases.json'), 'utf8')) as Case[]
+const montyCases = JSON.parse(await readFile(join(here, 'monty.json'), 'utf8')) as Case[]
+
+function normalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalize)
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()),
+      normalize(item),
+    ]),
+  )
+}
+
+async function poll<T>(read: () => Promise<T | undefined>): Promise<T> {
+  const deadline = Date.now() + 10_000
+  do {
+    const value = await read()
+    if (value !== undefined) return value
+    await delay(10)
+  } while (Date.now() < deadline)
+  throw new Error('condition did not become true')
+}
+
+async function run(
+  host: Host,
+  mounts: Awaited<ReturnType<typeof startMounts>> | undefined,
+): Promise<void> {
+  const home = await mkdtemp(join(tmpdir(), `mirage-hosting-${host}-`))
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('MIRAGE_')),
+  )
+  Object.assign(env, { MIRAGE_HOME: home, PYTHONPATH: join(root, 'python') })
+  const child =
+    host === 'python'
+      ? spawn(
+          process.env.PYTHON ?? join(root, 'python/.venv/bin/python'),
+          [join(here, 'host.py')],
+          { env, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] },
+        )
+      : spawn(process.execPath, ['--import', 'tsx', join(here, 'host.ts')], {
+          env,
+          cwd: resolve(here, '..'),
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+  const exited = once(child, 'exit')
+  let errors = ''
+  let output = ''
+  child.stdout.setEncoding('utf8').on('data', (text: string) => {
+    output += text
+  })
+  child.stderr.setEncoding('utf8').on('data', (text: string) => {
+    errors += text
+  })
+  const lines = createInterface({ input: child.stdout })
+  const startup = setTimeout(() => child.kill('SIGKILL'), 30_000)
+  try {
+    let base: string | undefined
+    for await (const line of lines) {
+      if (line.startsWith('READY ')) {
+        base = line.slice(6)
+        break
+      }
+    }
+    clearTimeout(startup)
+    assert(base, `server did not start: ${errors}`)
+    const url = base
+
+    async function request<T>(
+      method: string,
+      path: string,
+      body?: Record<string, unknown>,
+      expected = 200,
+    ): Promise<T> {
+      const payload =
+        body === undefined
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(body).map(([key, value]) => [
+                host === 'python'
+                  ? key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+                  : key,
+                value,
+              ]),
+            )
+      const response = await fetch(url + path, {
+        method,
+        ...(payload === undefined
+          ? {}
+          : { body: JSON.stringify(payload), headers: { 'content-type': 'application/json' } }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      const result: unknown = await response.json()
+      assert.equal(response.status, expected, `${method} ${path}: ${JSON.stringify(result)}`)
+      return normalize(result) as T
+    }
+
+    for (const wid of ['a', 'b']) {
+      await request(
+        'POST',
+        '/v1/workspaces',
+        {
+          id: wid,
+          config: {
+            mode: 'write',
+            mounts: { '/work': { vfs: 'ram', mode: 'write' } },
+            runtimes: [],
+          },
+        },
+        201,
+      )
+      await request('POST', `/v1/workspaces/${wid}/execute`, { command: 'true' })
+    }
+    await request('POST', '/v1/workspaces/a/sessions', { sessionId: 'other' }, 201)
+
+    for (const scenario of [...cases, ...(mounts === undefined ? [] : montyCases)]) {
+      const mounted = scenario.gate !== undefined
+      const a = mounted ? `${host}-${scenario.id}-a` : 'a'
+      const b = mounted ? `${host}-${scenario.id}-b` : 'b'
+      if (mounted) {
+        assert(mounts)
+        for (const wid of [a, b]) {
+          await request('POST', '/v1/workspaces', { id: wid, config: mounts.config(wid) }, 201)
+          await request('POST', `/v1/workspaces/${wid}/sessions`, { sessionId: 'other' }, 201)
+          const seeded: Result = await request<Result>('POST', `/v1/workspaces/${wid}/execute`, {
+            command: mounts.seed(wid),
+          })
+          assert.equal(seeded.exitCode, 0, JSON.stringify(seeded))
+          assert.match(seeded.stdout, /monty/)
+        }
+      }
+      const gate = scenario.gate === 'slack' ? mounts?.arm(a) : undefined
+      const path = `/v1/workspaces/${a}/execute`
+      const command = `${scenario.command.replace('{url}', `${url}/__integ/hold/${scenario.id}`)} && echo done > /work/${scenario.id}-tail`
+      let settled = false
+      const foreground = request<Result>(
+        'POST',
+        path,
+        { command },
+        scenario.finish === 'cancel' ? 499 : 200,
+      ).finally(() => {
+        settled = true
+      })
+      // Attach a rejection observer immediately; the assertion below still awaits the original promise.
+      void foreground.catch((error: unknown) => {
+        console.error('foreground request failed', error)
+      })
+      try {
+        const running = await poll(async () => {
+          if (settled)
+            assert.fail(
+              `${scenario.id} finished before admission: ${JSON.stringify(await foreground)}`,
+            )
+          const jobs = await request<Job[]>('GET', '/v1/jobs')
+          return jobs.find((job) => job.command === command && job.status === 'running')
+        })
+        if (gate !== undefined) {
+          await poll(async () => {
+            if (settled)
+              assert.fail(
+                `${scenario.id} finished before its mount read: ${JSON.stringify(await foreground)}`,
+              )
+            return gate.entered ? true : undefined
+          })
+        } else if (scenario.gate === 'file') {
+          await poll(async () =>
+            (
+              await request<Result>('POST', path, {
+                command: 'test -e /work/started',
+                sessionId: 'other',
+              })
+            ).exitCode === 0
+              ? true
+              : undefined,
+          )
+        } else if (scenario.id !== 'shell_loop') {
+          await poll(async () =>
+            (await request<{ entered: boolean }>('GET', `/__integ/entered/${scenario.id}`)).entered
+              ? true
+              : undefined,
+          )
+        }
+        const queued = await Promise.all(
+          ['discard', 'keep'].map((tag) =>
+            request<Job>(
+              'POST',
+              `${path}?background=true`,
+              {
+                command: `echo ${tag} > /work/${scenario.id}-${tag}`,
+              },
+              202,
+            ),
+          ),
+        )
+        const [discard, keep] = queued
+        assert(discard && keep)
+        for (const submitted of queued) {
+          const job = await request<Job>('GET', `/v1/jobs/${submitted.jobId}`)
+          assert.equal(job.status, 'pending')
+          assert.equal(job.sessionId, running.sessionId)
+          assert.equal(job.startedAt, null)
+        }
+        const [sameWorkspace, otherWorkspace, health] = await Promise.all([
+          request<Result>('POST', path, {
+            command: mounted ? 'python3 /work/probe.py other' : 'echo same-workspace',
+            sessionId: 'other',
+          }),
+          request<Result>('POST', `/v1/workspaces/${b}/execute`, {
+            command: mounted ? 'python3 /work/probe.py default' : 'echo other-workspace',
+          }),
+          request<{ status: string }>('GET', '/v1/health'),
+        ])
+        assert.equal(sameWorkspace.exitCode, 0, JSON.stringify(sameWorkspace))
+        assert.equal(otherWorkspace.exitCode, 0, JSON.stringify(otherWorkspace))
+        assert.equal(
+          sameWorkspace.stdout,
+          mounted ? `${a}:other:ram,s3,redis,slack\n` : 'same-workspace\n',
+        )
+        assert.equal(
+          otherWorkspace.stdout,
+          mounted ? `${b}:default:ram,s3,redis,slack\n` : 'other-workspace\n',
+        )
+        assert.equal(health.status, 'ok')
+        assert.equal(
+          settled,
+          false,
+          'the independent requests must finish while the first is still active',
+        )
+        await request('DELETE', `/v1/jobs/${discard.jobId}`)
+        const canceled = await request<Job>('POST', `/v1/jobs/${discard.jobId}/wait`, {})
+        assert.equal(canceled.status, 'canceled')
+        assert.equal(canceled.startedAt, null)
+        if (scenario.finish === 'cancel') await request('DELETE', `/v1/jobs/${running.jobId}`)
+        else if (gate !== undefined) gate.release()
+        else await request('POST', `/__integ/release/${scenario.id}`, {})
+        const completed = await foreground
+        if (scenario.finish === 'release')
+          assert.equal(completed.exitCode, 0, JSON.stringify(completed))
+        assert.equal((await request<Job>('POST', `/v1/jobs/${keep.jobId}/wait`, {})).status, 'done')
+        const tail = scenario.finish === 'cancel' ? '! -e' : '-e'
+        const check = await request<Result>('POST', path, {
+          command: `test ! -e /work/${scenario.id}-discard && test ${tail} /work/${scenario.id}-tail && cat /work/${scenario.id}-keep`,
+        })
+        assert.equal(check.exitCode, 0)
+        assert.equal(check.stdout, 'keep\n')
+        if (mounted) {
+          const recovered = await request<Result>('POST', path, {
+            command: 'python3 /work/probe.py recovered',
+          })
+          assert.equal(recovered.exitCode, 0, JSON.stringify(recovered))
+          assert.equal(recovered.stdout, `${a}:recovered:ram,s3,redis,slack\n`)
+          const isolated = await request<Result>('POST', `/v1/workspaces/${b}/execute`, {
+            command:
+              'test ! -e /work/probe-other.txt && test ! -e /s3/probe-other.txt && test ! -e /redis/probe-other.txt',
+          })
+          assert.equal(isolated.exitCode, 0, JSON.stringify(isolated))
+        }
+        console.log(
+          `ok ${host}/${scenario.id}: same-session queue, independent requests, ${scenario.finish}, no canceled writes${mounted ? ', Monty + RAM/S3/Redis/Slack + recovery + isolation' : ''}`,
+        )
+      } finally {
+        gate?.release()
+        await request('POST', `/__integ/release/${scenario.id}`, {})
+        await Promise.allSettled([foreground])
+        if (mounted) {
+          for (const wid of [a, b]) await request('DELETE', `/v1/workspaces/${wid}`)
+        }
+      }
+    }
+    await request('POST', '/v1/workspaces/a/snapshot', { path: 'nested/state.tar' })
+    await request('POST', '/v1/workspaces/load', { path: 'nested/state.tar', id: 'loaded' }, 201)
+    assert.equal(
+      (
+        await request<Result>('POST', '/v1/workspaces/loaded/execute', {
+          command: 'cat /work/curl_get-keep',
+        })
+      ).stdout,
+      'keep\n',
+    )
+    console.log(`ok ${host}/snapshot_roundtrip`)
+  } catch (error) {
+    console.error(errors)
+    throw error
+  } finally {
+    clearTimeout(startup)
+    lines.close()
+    const watchdog = setTimeout(() => child.kill('SIGKILL'), 5000)
+    child.kill('SIGTERM')
+    await exited
+    clearTimeout(watchdog)
+    await rm(home, { recursive: true, force: true })
+  }
+  const [exitCode, signal] = await exited
+  assert(output.includes('STOPPED\n'), `${host} did not finish shutdown: ${errors}`)
+  // Uvicorn re-raises SIGTERM after its lifespan has finished.
+  assert(
+    signal === null || (host === 'python' && signal === 'SIGTERM'),
+    `${host} was killed: ${String(signal)}`,
+  )
+  if (signal === null) assert.equal(exitCode, 0, `${host} shutdown failed: ${errors}`)
+}
+
+const selected = process.argv.slice(2).filter((arg) => arg !== '--mounts')
+const hosts = selected.length === 0 ? ['python', 'typescript'] : selected
+const mounts =
+  mountFixtures !== undefined
+    ? await mountFixtures.startMounts(
+        hosts.flatMap((host) =>
+          montyCases.flatMap(({ id }) => [`${host}-${id}-a`, `${host}-${id}-b`]),
+        ),
+      )
+    : undefined
+try {
+  for (const host of hosts) {
+    assert(host === 'python' || host === 'typescript', `unknown host: ${host}`)
+    await run(host, mounts)
+  }
+} finally {
+  await mounts?.close()
+}

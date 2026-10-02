@@ -47,7 +47,7 @@ def _ok(
 def _stub(monkeypatch, resp=None, exc=None) -> list[dict]:
     calls: list[dict] = []
 
-    def fake(
+    async def fake(
         url,
         method="GET",
         headers=None,
@@ -225,7 +225,7 @@ def test_write_failure_silenced_by_s(monkeypatch):
 def test_form_field_uses_the_form_helper(monkeypatch):
     calls: list[dict] = []
 
-    def fake_form(
+    async def fake_form(
         url,
         method="POST",
         form_data=None,

@@ -285,12 +285,12 @@ describe('execute router', () => {
         payload: { command: 'sleep 60' },
       })
       .then((reply) => reply)
-    const job = await vi.waitFor(() => {
-      const [entry] = app.jobs.list('ecancel')
+    const job = await vi.waitFor(async () => {
+      const [entry] = await app.jobs.list('ecancel')
       if (entry === undefined) throw new Error('execute did not register a job')
       return entry
     })
-    app.jobs.cancel(job.id)
+    await app.jobs.cancel(job.id)
     const res = await pending
     expect(res.statusCode).toBe(499)
     expect(res.json()).toEqual({ detail: 'job canceled' })

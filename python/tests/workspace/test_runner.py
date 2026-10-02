@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -83,6 +84,41 @@ async def test_two_runners_are_isolated():
     finally:
         await runner_a.stop()
         await runner_b.stop()
+
+
+@pytest.mark.asyncio
+async def test_work_is_refused_once_stop_begins():
+    runner = WorkspaceRunner(_make_ws())
+    stopping = asyncio.create_task(runner.stop())
+    await asyncio.sleep(0)
+    for _ in range(2):
+        line = runner.ws.shell("echo late")
+        with pytest.raises(RuntimeError, match="stopped"):
+            await runner.call(line)
+        assert line.cr_frame is None
+        await stopping
+
+
+@pytest.mark.asyncio
+async def test_cancelled_call_waits_for_the_work_to_settle():
+    runner = WorkspaceRunner(_make_ws())
+    entered, cleaned = threading.Event(), threading.Event()
+
+    async def work():
+        entered.set()
+        try:
+            await asyncio.sleep(10)
+        finally:
+            await asyncio.sleep(0.05)
+            cleaned.set()
+
+    call = asyncio.create_task(runner.call(work()))
+    assert await asyncio.to_thread(entered.wait, 2)
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert cleaned.is_set()
+    await asyncio.gather(runner.stop(), runner.stop())
 
 
 @pytest.mark.asyncio

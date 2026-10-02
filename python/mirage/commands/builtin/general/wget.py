@@ -62,7 +62,7 @@ async def wget(
 
     # wget follows redirects unconditionally; it has no -L equivalent.
     try:
-        resp = http_get(
+        resp = await http_get(
             url, timeout=30 if timeout is None else (timeout or None)
         )
     except HttpTimeoutError as exc:

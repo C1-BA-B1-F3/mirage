@@ -13,167 +13,239 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { randomBytes } from 'node:crypto'
+import type { ExecutionStore } from '@struktoai/mirage-core/execution/base'
+import { RAMExecutionStore } from '@struktoai/mirage-core/execution/ram'
+import {
+  ExecutionStatus as JobStatus,
+  type ExecutionRecord as JobEntry,
+} from '@struktoai/mirage-core/execution/types'
+import { ExecutionScope } from '@struktoai/mirage-core/workspace/execution'
+import type { JsonValue } from '@struktoai/mirage-core/types'
 
-export const JobStatus = Object.freeze({
-  PENDING: 'pending',
-  RUNNING: 'running',
-  DONE: 'done',
-  FAILED: 'failed',
-  CANCELED: 'canceled',
-} as const)
-export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus]
+export { JobStatus, type JobEntry }
 
-export function newJobId(): string {
+function newJobId(): string {
   return `job_${randomBytes(8).toString('hex')}`
 }
 
-export class JobEntry {
-  readonly id: string
-  readonly workspaceId: string
-  readonly command: string
-  readonly controller: AbortController = new AbortController()
-  status: JobStatus = JobStatus.PENDING
-  result: unknown = null
-  error: string | null = null
-  readonly submittedAt: number = Date.now() / 1000
-  startedAt: number | null = null
-  finishedAt: number | null = null
-  readonly done: Promise<void>
-  private resolveDone!: () => void
-
-  constructor(id: string, workspaceId: string, command: string) {
-    this.id = id
-    this.workspaceId = workspaceId
-    this.command = command
-    this.done = new Promise((resolve) => {
-      this.resolveDone = resolve
-    })
-  }
-
-  markFinished(): void {
-    this.finishedAt = Date.now() / 1000
-    this.resolveDone()
-  }
+interface Run {
+  controller: AbortController
+  completion: Promise<void>
+  publicationError: unknown
+  settled: AbortController
 }
 
-/** Keep at most 1024 completed jobs; expire them after one hour on access/completion. */
+/**
+ * Local execution owner over an asynchronous record store.
+ *
+ * Submit persists admission before any work starts. A shell marks running
+ * only after acquiring its session. Cancellation is an intent; completion
+ * is published after the work and its cleanup settle.
+ */
 export class JobTable {
-  private jobs = new Map<string, JobEntry>()
-  private completed = new Map<string, JobEntry>()
+  readonly store: ExecutionStore
+  private ownsStore: boolean
+  private live = new Map<string, Run>()
+  private closed = false
+  private closing: Promise<void> | undefined
 
-  constructor(
-    private readonly maxCompleted = 1024,
-    private readonly retentionSeconds = 3600,
-  ) {
-    if (maxCompleted < 1 || retentionSeconds <= 0)
-      throw new Error('job retention limits must be positive')
+  constructor(store?: ExecutionStore) {
+    this.store = store ?? new RAMExecutionStore()
+    this.ownsStore = store === undefined
   }
 
-  private prune(): void {
-    const cutoff = Date.now() / 1000 - this.retentionSeconds
-    for (const [id, job] of this.completed) {
-      if (
-        this.completed.size <= this.maxCompleted &&
-        job.finishedAt !== null &&
-        job.finishedAt > cutoff
-      )
-        break
-      this.completed.delete(id)
-      this.jobs.delete(id)
+  private isClosed(): boolean {
+    return this.closed
+  }
+
+  async get(id: string): Promise<JobEntry> {
+    const record = await this.store.get(id)
+    if (record === null) throw new Error(`job not found: ${id}`)
+    return record
+  }
+
+  async list(workspaceId?: string): Promise<JobEntry[]> {
+    return this.store.list(workspaceId)
+  }
+
+  private async change(
+    id: string,
+    update: (record: JobEntry) => JobEntry | null,
+  ): Promise<[JobEntry, boolean]> {
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const current = await this.get(id)
+      const replacement = update(current)
+      if (replacement === null || current.finishedAt !== null) return [current, false]
+      const next = { ...replacement, revision: current.revision + 1 }
+      if (await this.store.compareAndSet(next, current.revision)) return [next, true]
     }
+    throw new Error('execution record changed too often')
   }
 
-  has(id: string): boolean {
-    this.prune()
-    return this.jobs.has(id)
+  private async started(id: string): Promise<void> {
+    const [record] = await this.change(id, (r) =>
+      r.cancelRequested
+        ? null
+        : {
+            ...r,
+            status: JobStatus.RUNNING,
+            startedAt: Date.now() / 1000,
+          },
+    )
+    if (record.cancelRequested || record.finishedAt !== null)
+      throw new DOMException('execution canceled', 'AbortError')
   }
 
-  get(id: string): JobEntry {
-    this.prune()
-    const entry = this.jobs.get(id)
-    if (entry === undefined) throw new Error(`job not found: ${id}`)
-    return entry
-  }
-
-  list(workspaceId?: string): JobEntry[] {
-    this.prune()
-    const all = Array.from(this.jobs.values())
-    if (workspaceId === undefined) return all
-    return all.filter((j) => j.workspaceId === workspaceId)
-  }
-
-  submit(
+  async submit(
     workspaceId: string,
     command: string,
-    coroFactory: (signal: AbortSignal) => Promise<unknown>,
-  ): JobEntry {
-    this.prune()
-    const entry = new JobEntry(newJobId(), workspaceId, command)
-    this.jobs.set(entry.id, entry)
-    entry.status = JobStatus.RUNNING
-    entry.startedAt = Date.now() / 1000
-    void this.run(entry, coroFactory)
-    return entry
+    factory: (signal: AbortSignal, scope: ExecutionScope) => Promise<JsonValue>,
+    sessionId: string,
+  ): Promise<JobEntry> {
+    if (this.isClosed()) throw new Error('job table is closed')
+    const record: JobEntry = {
+      id: newJobId(),
+      workspaceId,
+      sessionId,
+      command,
+      submittedAt: Date.now() / 1000,
+      status: JobStatus.PENDING,
+      revision: 0,
+      cancelRequested: false,
+      startedAt: null,
+      finishedAt: null,
+      result: null,
+      error: null,
+    }
+    if (!(await this.store.create(record))) throw new Error('duplicate execution id')
+    if (this.isClosed()) {
+      await this.change(record.id, (r) => ({
+        ...r,
+        status: JobStatus.CANCELED,
+        cancelRequested: true,
+        finishedAt: Date.now() / 1000,
+      }))
+      throw new Error('job table is closed')
+    }
+    const control: Run = {
+      controller: new AbortController(),
+      completion: Promise.resolve(),
+      publicationError: null,
+      settled: new AbortController(),
+    }
+    this.live.set(record.id, control)
+    control.completion = this.run(record.id, control, factory)
+    return record
   }
 
   private async run(
-    entry: JobEntry,
-    factory: (signal: AbortSignal) => Promise<unknown>,
+    id: string,
+    control: Run,
+    factory: (signal: AbortSignal, scope: ExecutionScope) => Promise<JsonValue>,
   ): Promise<void> {
+    let status: JobStatus = JobStatus.DONE
+    let result: JsonValue = null
+    let error: string | null = null
     try {
-      entry.result = await factory(entry.controller.signal)
-      entry.status = JobStatus.DONE
+      control.controller.signal.throwIfAborted()
+      result = await factory(control.controller.signal, new ExecutionScope(() => this.started(id)))
     } catch (err) {
-      entry.status = JobStatus.FAILED
-      entry.error = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      status = JobStatus.FAILED
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    }
+    try {
+      await this.change(id, (r) => ({
+        ...r,
+        status:
+          r.cancelRequested || control.controller.signal.aborted ? JobStatus.CANCELED : status,
+        result:
+          status === JobStatus.DONE && !r.cancelRequested && !control.controller.signal.aborted
+            ? result
+            : null,
+        cancelRequested: r.cancelRequested || control.controller.signal.aborted,
+        error,
+        finishedAt: Date.now() / 1000,
+      }))
+      this.live.delete(id)
+    } catch (err) {
+      control.publicationError = err
+      console.error(`could not publish completion of ${id}`, err)
     } finally {
-      if (entry.controller.signal.aborted) {
-        entry.status = JobStatus.CANCELED
-        entry.result = null
-      }
-      entry.markFinished()
-      this.completed.set(entry.id, entry)
-      this.prune()
+      control.settled.abort()
     }
   }
 
   async wait(id: string, timeoutSeconds?: number): Promise<JobEntry> {
-    const entry = this.get(id)
-    if (entry.finishedAt !== null) return entry
-    if (timeoutSeconds === undefined) {
-      await entry.done
-      return entry
+    const deadline =
+      timeoutSeconds === undefined
+        ? Infinity
+        : performance.now() + Math.max(0, timeoutSeconds) * 1000
+    const control = this.live.get(id)
+    let record = await this.get(id)
+    while (record.finishedAt === null) {
+      if (control?.publicationError != null)
+        throw new Error('execution completion could not be published', {
+          cause: control.publicationError,
+        })
+      const remaining = (deadline - performance.now()) / 1000
+      if (remaining <= 0) break
+      const changed = await this.store.waitForChange(
+        id,
+        record.revision,
+        timeoutSeconds === undefined ? undefined : remaining,
+        control?.settled.signal,
+      )
+      if (changed === null) throw new Error(`job not found: ${id}`)
+      record = changed
     }
-    let timer: ReturnType<typeof setTimeout> | undefined
-    try {
-      await Promise.race([
-        entry.done,
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, timeoutSeconds * 1000)
-        }),
-      ])
-    } finally {
-      clearTimeout(timer)
-    }
-    return entry
+    return record
   }
 
-  cancel(id: string): boolean {
-    const entry = this.get(id)
-    if (entry.finishedAt !== null) {
-      return false
+  async cancel(id: string): Promise<boolean> {
+    const [, accepted] = await this.change(id, (r) =>
+      r.cancelRequested
+        ? null
+        : {
+            ...r,
+            cancelRequested: true,
+            status: JobStatus.STOPPING,
+          },
+    )
+    if (accepted) this.live.get(id)?.controller.abort()
+    return accepted
+  }
+
+  close(): Promise<void> {
+    this.closed = true
+    return (this.closing ??= this.finishClose())
+  }
+
+  private async finishClose(): Promise<void> {
+    const controls = [...this.live]
+    const errors: unknown[] = []
+    for (const [, control] of controls) control.controller.abort()
+    for (const [id] of controls) {
+      try {
+        await this.cancel(id)
+      } catch (error) {
+        errors.push(error)
+      }
     }
-    if (entry.controller.signal.aborted) return false
-    entry.controller.abort()
-    return true
+    await Promise.all(controls.map(([, control]) => control.completion))
+    if (this.ownsStore) await this.store.close()
+    if (errors.length > 0)
+      throw new AggregateError(errors, 'could not record shutdown cancellation')
   }
 }
 
 export interface JobBriefDict {
   jobId: string
   workspaceId: string
+  sessionId: string
   command: string
   status: JobStatus
+  revision: number
+  cancelRequested: boolean
   submittedAt: number
   startedAt: number | null
   finishedAt: number | null
@@ -183,8 +255,11 @@ export function toBriefDict(entry: JobEntry): JobBriefDict {
   return {
     jobId: entry.id,
     workspaceId: entry.workspaceId,
+    sessionId: entry.sessionId,
     command: entry.command,
     status: entry.status,
+    revision: entry.revision,
+    cancelRequested: entry.cancelRequested,
     submittedAt: entry.submittedAt,
     startedAt: entry.startedAt,
     finishedAt: entry.finishedAt,

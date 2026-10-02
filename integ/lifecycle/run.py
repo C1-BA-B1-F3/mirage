@@ -41,6 +41,7 @@ from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs, register_vfs
 from mirage.workspace import Workspace
+from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.snapshot import apply_state_dict, to_state_dict
 
 SUITE = Path(__file__).with_name("cases.json")
@@ -200,9 +201,23 @@ async def action(
         child.stdin.close()
         return child.pid
     elif op == "exec":
-        result = await ws.shell(
-            step["command"], session_id=step.get("session")
+        cancel = asyncio.Event() if "cancel_after_ms" in step else None
+        timer = (
+            asyncio.get_running_loop().call_later(
+                step["cancel_after_ms"] / 1000, cancel.set
+            )
+            if cancel is not None
+            else None
         )
+        try:
+            result = await ws.shell(
+                step["command"], session_id=step.get("session"), cancel=cancel
+            )
+        except MirageAbortError:
+            return {"aborted": True}
+        finally:
+            if timer is not None:
+                timer.cancel()
         return {
             "exit_code": result.exit_code,
             "stdout": await result.stdout_str(),

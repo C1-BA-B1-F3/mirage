@@ -13,18 +13,47 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import threading
 from dataclasses import dataclass
 
 import pytest
 
 from mirage.concurrency import ConcurrencyLimiter
-from mirage.concurrency.limiter import bounded_map
+from mirage.concurrency.limiter import bounded_map, run_blocking
 
 
 @dataclass
 class _ConcurrencyState:
     active: int = 0
     peak: int = 0
+
+
+@pytest.mark.asyncio
+async def test_blocking_work_keeps_loop_live_and_retains_ownership_on_cancel():
+    loop = asyncio.get_running_loop()
+    entered, release = asyncio.Event(), threading.Event()
+    finished = []
+
+    def work():
+        loop.call_soon_threadsafe(entered.set)
+        assert release.wait(2)
+        finished.append(True)
+
+    task = asyncio.create_task(run_blocking(work))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert finished == [True]
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def _hold_permit(

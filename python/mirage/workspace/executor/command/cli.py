@@ -41,6 +41,7 @@ from mirage.commands.spec.constants import HELP_OPTION
 from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.types import FlagValue, Operand, UsageStyle
+from mirage.concurrency.limiter import run_blocking
 from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource, CommandOutput
@@ -71,19 +72,20 @@ PASSTHROUGH_REST = Operand(type="str")
 async def call_leaf(fn: Callable[..., Any], inv: CLIInvocation[Any]) -> Any:
     """Run a leaf handler, whether it was written ``async def`` or not.
 
-    Deferring the call into this coroutine is what the TypeScript twin
-    does with ``(async () => fn(inv))()``: a leaf that returns its
-    result directly is awaited like one that returns a coroutine, and
-    a leaf that raises synchronously lands in the same catch arms as
-    one that raises after an await. Before this a plain ``def`` leaf
-    failed at the ``await`` with a TypeError the generic arm rendered
-    as ``prog: object tuple can't be used in 'await' expression``.
+    Async handlers run on the workspace loop. Synchronous Python handlers
+    run in an owned thread so blocking SDK calls cannot stall the loop.
+    Cancellation waits for that thread before releasing the session.
 
     Args:
         fn (Callable[..., Any]): the leaf's handler.
         inv (CLIInvocation): the one record every leaf receives.
     """
-    result = fn(inv)
+    result = (
+        fn(inv)
+        if inspect.iscoroutinefunction(fn)
+        or inspect.iscoroutinefunction(getattr(fn, "__call__", None))
+        else await run_blocking(fn, inv)
+    )
     if inspect.isawaitable(result):
         return await result
     return result

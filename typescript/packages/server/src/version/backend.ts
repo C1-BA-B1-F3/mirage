@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { existsSync, mkdirSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { mkdir, rm, stat } from 'node:fs/promises'
 import * as nodeFs from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import git from 'isomorphic-git'
@@ -28,7 +27,7 @@ export interface GitRepo {
 
 export interface VersionBackend {
   openRepo(workspaceId: string): Promise<GitRepo>
-  hasRepo(workspaceId: string): boolean
+  hasRepo(workspaceId: string): Promise<boolean>
   dropRepo(workspaceId: string): Promise<void>
 }
 
@@ -48,8 +47,8 @@ export class LocalBackend implements VersionBackend {
   async openRepo(workspaceId: string): Promise<GitRepo> {
     const gitdir = this.gitdirOf(workspaceId)
     const fs = nodeFs as unknown as FsClient
-    if (!existsSync(join(gitdir, 'objects'))) {
-      mkdirSync(gitdir, { recursive: true })
+    if (!(await this.hasRepo(workspaceId))) {
+      await mkdir(gitdir, { recursive: true })
       await git.init({ fs, dir: gitdir, bare: true, defaultBranch: 'main' })
     }
     return { fs, gitdir }
@@ -59,7 +58,7 @@ export class LocalBackend implements VersionBackend {
    * that is not one safe path segment can never have had a repo, so it
    * has none rather than an error.
    */
-  hasRepo(workspaceId: string): boolean {
+  async hasRepo(workspaceId: string): Promise<boolean> {
     let gitdir: string
     try {
       gitdir = this.gitdirOf(workspaceId)
@@ -67,12 +66,17 @@ export class LocalBackend implements VersionBackend {
       if (err instanceof PathOutsideRootError) return false
       throw err
     }
-    return existsSync(join(gitdir, 'objects'))
+    try {
+      return (await stat(join(gitdir, 'objects'))).isDirectory()
+    } catch (error: unknown) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
+      return false
+    }
   }
 
   /** Delete one workspace's version repo, when it has one. */
   async dropRepo(workspaceId: string): Promise<void> {
-    if (this.hasRepo(workspaceId)) {
+    if (await this.hasRepo(workspaceId)) {
       await rm(this.gitdirOf(workspaceId), { recursive: true, force: true })
     }
   }

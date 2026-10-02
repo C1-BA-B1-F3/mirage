@@ -98,7 +98,7 @@ def _timeout(url: str, started: float) -> HttpTimeoutError:
     )
 
 
-def http_request(
+async def http_request(
     url: str,
     method: str = "GET",
     headers: dict[str, str] | None = None,
@@ -106,6 +106,8 @@ def http_request(
     timeout: float | None = 30,
     follow_redirects: bool = False,
     verify: bool = True,
+    *,
+    form_data: dict[str, str] | None = None,
 ) -> HttpResponse:
     # A None timeout is no deadline at all (curl's `--max-time 0`), which
     # is what httpx spells it as too. `verify=False` is curl's -k: the
@@ -113,12 +115,16 @@ def http_request(
     if httpx is None:
         raise ImportError(MISSING_HTTPX)
     started = time.monotonic()
-    with httpx.Client(
+    async with httpx.AsyncClient(
         timeout=timeout, follow_redirects=follow_redirects, verify=verify
     ) as client:
         try:
-            resp = client.request(
-                method, url, headers=_with_default_ua(headers), content=data
+            resp = await client.request(
+                method,
+                url,
+                headers=_with_default_ua(headers),
+                content=data,
+                data=form_data,
             )
         # A timeout is a transport error too, so it is told apart first:
         # curl answers it with its own code (28), not the connect one.
@@ -130,7 +136,7 @@ def http_request(
         return _response(resp)
 
 
-def http_form_request(
+async def http_form_request(
     url: str,
     method: str = "POST",
     form_data: dict[str, str] | None = None,
@@ -139,34 +145,24 @@ def http_form_request(
     follow_redirects: bool = False,
     verify: bool = True,
 ) -> HttpResponse:
-    if httpx is None:
-        raise ImportError(MISSING_HTTPX)
-    started = time.monotonic()
-    with httpx.Client(
-        timeout=timeout, follow_redirects=follow_redirects, verify=verify
-    ) as client:
-        try:
-            resp = client.request(
-                method,
-                url,
-                data=form_data or {},
-                headers=_with_default_ua(headers),
-            )
-        except httpx.TimeoutException as exc:
-            raise _timeout(url, started) from exc
-        except httpx.TransportError as exc:
-            host, port = _endpoint(url)
-            raise HttpConnectError(host, port) from exc
-        return _response(resp)
+    return await http_request(
+        url,
+        method,
+        headers,
+        timeout=timeout,
+        follow_redirects=follow_redirects,
+        verify=verify,
+        form_data=form_data or {},
+    )
 
 
-def http_get(
+async def http_get(
     url: str,
     headers: dict[str, str] | None = None,
     timeout: float | None = 30,
     follow_redirects: bool = True,
 ) -> HttpResponse:
-    return http_request(
+    return await http_request(
         url,
         method="GET",
         headers=headers,

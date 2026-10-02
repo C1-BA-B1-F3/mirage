@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { MountSpec } from '@struktoai/mirage-core/workspace/workspace/workspace'
@@ -184,7 +184,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       }
       let tarBuf: Buffer
       try {
-        tarBuf = readFileSync(safePath)
+        tarBuf = await readFile(safePath)
       } catch {
         return reply.status(400).send({ detail: `snapshot not found: ${path}` })
       }
@@ -290,9 +290,9 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       if (!safePath.startsWith(snapshotRoot + sep)) {
         return reply.status(400).send({ detail: 'path escapes the configured root' })
       }
-      mkdirSync(dirname(safePath), { recursive: true })
+      await mkdir(dirname(safePath), { recursive: true })
       await deps.registry.get(id).runner.ws.snapshot(safePath)
-      return reply.status(200).send({ id, path: safePath, size: statSync(safePath).size })
+      return reply.status(200).send({ id, path: safePath, size: (await stat(safePath)).size })
     },
   )
 }

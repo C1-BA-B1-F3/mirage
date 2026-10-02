@@ -144,8 +144,16 @@ class RAMFileCacheStore(RAMVFS, FileCacheMixin, KeyLockMixin):
         self._discard_lock(key)
 
     async def exists(self, key: str) -> bool:
-        entry = self._entries.get(key)
-        return entry is not None and not entry.expired
+        async with self._lock_for(key):
+            entry = self._entries.get(key)
+            if entry is None:
+                return False
+            if entry.expired:
+                self._cache_size -= entry.size
+                del self._entries[key]
+                self._store.files.pop(key, None)
+                return False
+            return True
 
     async def is_fresh(self, key: str, remote_fingerprint: str) -> bool:
         entry = self._entries.get(key)

@@ -513,28 +513,30 @@ class Dispatcher:
         # so skipping the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
 
-        if (
-            caches_reads
-            and not raw
-            and op in DISPATCH_READ_OPS
-            and mount.renders_user_read(
+        eligible = caches_reads and not raw and op in DISPATCH_READ_OPS
+        filetype = (
+            (
                 kwargs["filetype"]
                 if "filetype" in kwargs
                 else get_extension(path.virtual)
             )
-        ):
+            if eligible
+            else None
+        )
+        if eligible and mount.renders_user_read(filetype):
             # The cached bytes are never this read's rendering, but their
             # freshness check still runs, so a path the backend reports
             # gone fails here as it does for any other warm read.
             if await self._cache.exists(path.virtual):
                 await self._reconciler.may_serve_cached(mount, path.virtual)
-        elif caches_reads and not raw and op in DISPATCH_READ_OPS:
+        elif eligible:
             cached = await self._cache.get(path.virtual)
             if (
                 cached is not None
                 and await self._reconciler.may_serve_cached(
                     mount, path.virtual
                 )
+                and not mount.renders_user_read(filetype)
                 and not mount.retiring
                 and self._namespace.try_mount_for(path.virtual) is mount
             ):

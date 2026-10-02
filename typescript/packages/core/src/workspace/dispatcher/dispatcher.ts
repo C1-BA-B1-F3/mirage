@@ -469,17 +469,14 @@ export class Dispatcher {
     const raw = kwargs?.filetype === null
     const requested = kwargs?.filetype
     const eligible = caches && !raw && DISPATCH_READ_OPS.has(opName)
-    if (
-      eligible &&
-      this.opsRegistry.rendersUserRead(
-        vfs,
-        requested === undefined
-          ? getExtension(p.virtual)
-          : typeof requested === 'string'
-            ? requested
-            : null,
-      )
-    ) {
+    const readType = !eligible
+      ? null
+      : requested === undefined
+        ? getExtension(p.virtual)
+        : typeof requested === 'string'
+          ? requested
+          : null
+    if (eligible && this.opsRegistry.rendersUserRead(vfs, readType)) {
       // The cached bytes are never this read's rendering, but their
       // freshness check still runs, so a path the backend reports gone fails
       // here as it does for any other warm read.
@@ -491,6 +488,7 @@ export class Dispatcher {
       if (
         cached !== null &&
         (await this.reconciler.mayServeCached(mount, p.virtual)) &&
+        !this.opsRegistry.rendersUserRead(vfs, readType) &&
         !mount.retiring &&
         this.namespace.tryMountFor(p.virtual) === mount
       ) {

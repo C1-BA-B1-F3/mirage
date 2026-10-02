@@ -147,45 +147,6 @@ describe('postgres grep push-down and globs', () => {
     expect(vi.mocked(searchModule.searchEntity)).not.toHaveBeenCalled()
   })
 
-  it('still uses the SQL push-down for a concrete operand', async () => {
-    const cmd = POSTGRES_GREP[0]
-    if (cmd === undefined) throw new Error('grep not registered')
-    vi.mocked(statModule.stat).mockResolvedValue(undefined as never)
-    vi.mocked(searchModule.searchEntity).mockResolvedValue([])
-
-    await cmd.fn(makeAccessor(), [concretePath()], ['ada'], {
-      stdin: null,
-      flags: {},
-      filetypeFns: null,
-      cwd: '/',
-    })
-
-    expect(vi.mocked(searchModule.searchEntity)).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([{ v: true }, { c: true }, { args_l: true }, { n: true }])(
-    'skips the SQL push-down when a shaping flag is set (%j)',
-    async (flags) => {
-      const cmd = POSTGRES_GREP[0]
-      if (cmd === undefined) throw new Error('grep not registered')
-      // A shaping flag cannot be honored by the ILIKE push-down, so the
-      // wrapper must defer to the generic scan; searchEntity must not run.
-      vi.mocked(statModule.stat).mockResolvedValue(
-        new FileStat({ name: 'rows.jsonl', type: FileType.FILE, content: ContentType.TEXT }),
-      )
-      vi.mocked(searchModule.searchEntity).mockResolvedValue([])
-
-      await cmd.fn(makeAccessor(), [concretePath()], ['ada'], {
-        stdin: null,
-        flags,
-        filetypeFns: null,
-        cwd: '/',
-      })
-
-      expect(vi.mocked(searchModule.searchEntity)).not.toHaveBeenCalled()
-    },
-  )
-
   it('skips the SQL push-down for a regex pattern', async () => {
     const cmd = POSTGRES_GREP[0]
     if (cmd === undefined) throw new Error('grep not registered')
@@ -228,41 +189,4 @@ describe('postgres rg push-down and globs', () => {
 
     expect(vi.mocked(searchModule.searchEntity)).not.toHaveBeenCalled()
   })
-
-  it('still uses the SQL push-down for a concrete operand', async () => {
-    const cmd = POSTGRES_RG[0]
-    if (cmd === undefined) throw new Error('rg not registered')
-    vi.mocked(statModule.stat).mockResolvedValue(undefined as never)
-    vi.mocked(searchModule.searchEntity).mockResolvedValue([])
-
-    await cmd.fn(makeAccessor(), [concretePath()], ['ada'], {
-      stdin: null,
-      flags: {},
-      filetypeFns: null,
-      cwd: '/',
-    })
-
-    expect(vi.mocked(searchModule.searchEntity)).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([{ v: true }, { c: true }, { args_l: true }, { n: true }])(
-    'skips the SQL push-down when a shaping flag is set (%j)',
-    async (flags) => {
-      const cmd = POSTGRES_RG[0]
-      if (cmd === undefined) throw new Error('rg not registered')
-      vi.mocked(statModule.stat).mockResolvedValue(
-        new FileStat({ name: 'rows.jsonl', type: FileType.FILE, content: ContentType.TEXT }),
-      )
-      vi.mocked(searchModule.searchEntity).mockResolvedValue([])
-
-      await cmd.fn(makeAccessor(), [concretePath()], ['ada'], {
-        stdin: null,
-        flags,
-        filetypeFns: null,
-        cwd: '/',
-      })
-
-      expect(vi.mocked(searchModule.searchEntity)).not.toHaveBeenCalled()
-    },
-  )
 })

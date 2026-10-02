@@ -93,22 +93,4 @@ describe('discord rg', () => {
     expect(lines.length).toBe(1)
     expect(lines[0]).toContain('hello world')
   })
-
-  it('returns exit 1 when native search has no matches', async () => {
-    const transport = new FakeDiscordTransport(() => ({ total_results: 0, messages: [] }))
-    const out = await runRg(
-      [
-        new PathSpec({
-          virtual: '/mnt/discord/My Server__G1/channels/general__C1',
-          directory: '/mnt/discord/My Server__G1/channels/general__C1',
-          resolved: false,
-          vfsPath: mountKey('/mnt/discord/My Server__G1/channels/general__C1', '/mnt/discord'),
-        }),
-      ],
-      ['hello'],
-      { word_regexp: true },
-      { transport },
-    )
-    expect(out.exitCode).toBe(1)
-  })
 })

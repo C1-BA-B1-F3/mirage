@@ -465,7 +465,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "echo hi > $'/data/ansi f.txt' && cat '/data/ansi f.txt' && rm '/data/ansi f.txt'",
       "expect": {

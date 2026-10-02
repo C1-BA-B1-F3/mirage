@@ -705,8 +705,8 @@ describe('expr string operators count bytes, not characters', () => {
 })
 
 describe('expr through the shell', () => {
-  // The same lines the integ and conformance batteries type, so the
-  // quoting an operator needs to reach expr intact is pinned here too.
+  // The same lines the integ battery types, so the quoting an operator
+  // needs to reach expr intact is pinned here too.
   async function makeWs(): Promise<Workspace> {
     const parser = await getTestParser()
     const ram = new RAMVFS()

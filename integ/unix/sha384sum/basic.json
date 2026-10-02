@@ -124,7 +124,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qsha384sum && printf 'hello' > /data/qsha384sum/sh.txt && sha384sum /data/qsha384sum/sh.txt > /data/qsha384sum/sums && sha384sum -c /data/qsha384sum/sums",
       "expect": {

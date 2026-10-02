@@ -58,7 +58,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -A1 -B2 timeout /data/g4/app.log",
       "expect": {
@@ -69,6 +73,83 @@
       "flags": [
         "A",
         "B"
+      ]
+    },
+    {
+      "id": "grep_A_context_length_refusals",
+      "seq": 14101101,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/cfgA; printf 'hello\\nworld\\nfoo\\nbar\\nbaz\\n' > /data/cfgA/a.txt; grep -A -1 world /data/cfgA/a.txt; echo rc=$?; grep -A x world /data/cfgA/a.txt; echo rc=$?; grep -B -1 -A x world /data/cfgA/a.txt; echo rc=$?; rm -rf /data/cfgA",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\nrc=2\nrc=2\n",
+        "stderr": "grep: -1: invalid context length argument\ngrep: x: invalid context length argument\ngrep: -1: invalid context length argument\n"
+      },
+      "flags": [
+        "A",
+        "B"
+      ]
+    },
+    {
+      "id": "grep_A_separates_groups_from_different_files",
+      "seq": 14101102,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/cfgA; printf 'a\\nb\\nc\\n' > /data/cfgA/g1; printf 'x\\na\\ny\\n' > /data/cfgA/g2; printf 'zzz\\n' > /data/cfgA/g0; grep -A1 a /data/cfgA/g1 /data/cfgA/g2; echo rc=$?; grep -n -A1 a /data/cfgA/g1 /data/cfgA/g2; echo rc=$?; grep -h -A1 a /data/cfgA/g1 /data/cfgA/g2; echo rc=$?; grep -A1 a /data/cfgA/g0 /data/cfgA/g2; echo rc=$?; rm -rf /data/cfgA",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/cfgA/g1:a\n/data/cfgA/g1-b\n--\n/data/cfgA/g2:a\n/data/cfgA/g2-y\nrc=0\n/data/cfgA/g1:1:a\n/data/cfgA/g1-2-b\n--\n/data/cfgA/g2:2:a\n/data/cfgA/g2-3-y\nrc=0\na\nb\n--\na\ny\nrc=0\n/data/cfgA/g2:a\n/data/cfgA/g2-y\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "A",
+        "n",
+        "h"
       ]
     }
   ]

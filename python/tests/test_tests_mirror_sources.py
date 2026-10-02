@@ -37,9 +37,6 @@ UNMIRRORED_DIRS = {
     ),
     "config": "loader tests plus the bad-config YAML shared with the TypeScript tree",
     "config/fixtures": "the YAML files themselves",
-    "conformance": (
-        "runs the cross-language cases under the top-level conformance/ tree"
-    ),
     "e2e": (
         "end-to-end suites that span the package, so no one source dir owns "
         "them"
@@ -61,7 +58,7 @@ UNMIRRORED_DIRS = {
 # would count 816 today. What the ratchet buys is narrower than it looks:
 # a module whose name appears nowhere in the suite cannot be added
 # silently.
-MIRROR_BASELINE = 133
+MIRROR_BASELINE = 107
 
 
 def _test_dirs() -> list[pathlib.Path]:
@@ -126,10 +123,18 @@ def test_no_stale_directory_exemption():
 
 
 def test_module_mirror_coverage_holds_the_baseline():
-    """Ratchet the number of source modules that no test file is named for."""
-    named = {p.name for p in TESTS.rglob("test_*.py")}
+    """Ratchet the number of source modules that no test file is named for.
+
+    A private module's leading underscore is folded, as the layout gate
+    folds it: `test_sampler.py` is the test for `_sampler.py`.
+    """
+    named = {
+        p.name.replace("test__", "test_", 1) for p in TESTS.rglob("test_*.py")
+    }
     unmirrored = [
-        m for m in _source_modules() if f"test_{m.stem}.py" not in named
+        m
+        for m in _source_modules()
+        if f"test_{m.stem.lstrip('_')}.py" not in named
     ]
     count = len(unmirrored)
     if count > MIRROR_BASELINE:

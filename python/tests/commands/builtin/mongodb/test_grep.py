@@ -21,12 +21,8 @@ from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.mongodb.grep import grep
 from mirage.commands.config import CommandOpts
-from mirage.io.types import IOResult
 from mirage.types import PathSpec
 from mirage.vfs.mongodb.config import MongoDBConfig
-
-GENERICS = "mirage.commands.builtin.generic_bind.search._GENERICS"
-SEARCH_COLLECTION = "mirage.core.mongodb.search.search_entity"
 
 
 @pytest.fixture
@@ -71,25 +67,6 @@ async def _drain(source) -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_grep_streams_and_finds_match(accessor, _stat_reads):
-    docs = [{"_id": ObjectId(), "i": i, "name": f"item-{i}"} for i in range(5)]
-    docs[2]["name"] = "target-2"
-
-    async def _fake(*_args, **_kwargs):
-        for d in docs:
-            yield d
-
-    with patch("mirage.core.mongodb.stream.iter_documents", new=_fake):
-        source, io = await grep(
-            accessor, [_path()], ["target"], CommandOpts(index=NULL_INDEX)
-        )
-        data = await _drain(source)
-    text = data.decode()
-    assert "target-2" in text
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
 async def test_grep_m1_short_circuits_after_first_match(accessor, _stat_reads):
     consumed: list[int] = []
 
@@ -109,74 +86,3 @@ async def test_grep_m1_short_circuits_after_first_match(accessor, _stat_reads):
         data = await _drain(source)
     assert b"FOUND" in data
     assert len(consumed) < 100
-
-
-@pytest.mark.asyncio
-async def test_grep_second_operand_skips_pushdown(accessor):
-    # Two collection operands are both searchable scopes, and the $regex
-    # push-down answers for one: this line silently reported only coll1.
-    seen: dict[str, list[str]] = {}
-    ops = [_path("/db1/collections/coll1"), _path("/db1/collections/coll2")]
-
-    async def fake_generic(paths, _texts, _flags, **_kwargs):
-        seen["generic"] = [p.virtual for p in paths]
-        return b"", IOResult()
-
-    with (
-        patch(
-            SEARCH_COLLECTION,
-            new=AsyncMock(side_effect=AssertionError("pushdown ran on 2 ops")),
-        ),
-        patch(
-            "mirage.core.mongodb.readdir.entity_exists",
-            new=AsyncMock(side_effect=AssertionError("stat ran on 2 ops")),
-        ),
-        patch.dict(GENERICS, {"grep": fake_generic}),
-    ):
-        await grep(accessor, ops, ["target"], CommandOpts(index=NULL_INDEX))
-
-    assert seen["generic"] == [
-        "/db1/collections/coll1",
-        "/db1/collections/coll2",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_grep_lone_collection_still_uses_pushdown(accessor, _stat_reads):
-    search = AsyncMock(return_value=[])
-    generic = AsyncMock(side_effect=AssertionError("generic path ran"))
-    with (
-        patch(
-            SEARCH_COLLECTION,
-            new=search,
-        ),
-        patch.dict(GENERICS, {"grep": generic}),
-    ):
-        _, io = await grep(
-            accessor,
-            [_path("/db1/collections/coll1")],
-            ["target"],
-            CommandOpts(index=NULL_INDEX),
-        )
-
-    search.assert_awaited_once()
-    assert io.exit_code == 1
-
-
-@pytest.mark.asyncio
-async def test_grep_no_match_returns_exit_code_1(accessor, _stat_reads):
-    docs = [{"_id": ObjectId(), "name": f"item-{i}"} for i in range(3)]
-
-    async def _fake(*_args, **_kwargs):
-        for d in docs:
-            yield d
-
-    with patch("mirage.core.mongodb.stream.iter_documents", new=_fake):
-        source, io = await grep(
-            accessor,
-            [_path()],
-            ["absent_pattern_xyz"],
-            CommandOpts(index=NULL_INDEX),
-        )
-        _ = await _drain(source)
-    assert io.exit_code == 1

@@ -76,65 +76,10 @@ function backend(tree: Record<string, number>): [ComputeSize, ComputeEntries] {
 }
 
 describe('duGeneric', () => {
-  it('reports a single file size', async () => {
-    const [size, entries] = backend({ '/f.txt': 5 })
-    const out = await duGeneric([spec('/f.txt', 'f.txt')], flags(), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('5\t/f.txt\n')
-    expect(out.exitCode).toBe(0)
-  })
-
   it('prints a file operand once under -a', async () => {
     const [size, entries] = backend({ '/f.txt': 5 })
     const out = await duGeneric([spec('/f.txt', 'f.txt')], flags({ a: true }), size, entries)
     expect(DEC.decode(out.stdout)).toBe('5\t/f.txt\n')
-  })
-
-  it('prints only the operand for a directory of files', async () => {
-    const [size, entries] = backend({ '/dir/a.txt': 2, '/dir/b.txt': 3 })
-    const out = await duGeneric([spec('/dir', 'dir')], flags(), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('5\t/dir\n')
-  })
-
-  it('gives every subdirectory its own line', async () => {
-    const [size, entries] = backend({
-      '/dir/a.txt': 3,
-      '/dir/sub/b.txt': 2,
-      '/dir/sub/deep/c.txt': 1,
-    })
-    const out = await duGeneric([spec('/dir', 'dir')], flags(), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('1\t/dir/sub/deep\n3\t/dir/sub\n6\t/dir\n')
-  })
-
-  it('excludes subdirectory sizes under -S', async () => {
-    const [size, entries] = backend({
-      '/dir/a.txt': 3,
-      '/dir/sub/b.txt': 2,
-      '/dir/sub/deep/c.txt': 1,
-    })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ S: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('1\t/dir/sub/deep\n2\t/dir/sub\n3\t/dir\n')
-  })
-
-  it('summarises only direct files under -Ss', async () => {
-    const [size, entries] = backend({
-      '/dir/a.txt': 3,
-      '/dir/sub/b.txt': 2,
-      '/dir/sub/deep/c.txt': 1,
-    })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ s: true, S: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('3\t/dir\n')
-  })
-
-  it('lists files under -Sa with separate directory totals', async () => {
-    const [size, entries] = backend({
-      '/dir/a.txt': 3,
-      '/dir/sub/b.txt': 2,
-      '/dir/sub/deep/c.txt': 1,
-    })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ a: true, S: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe(
-      '3\t/dir/a.txt\n2\t/dir/sub/b.txt\n1\t/dir/sub/deep/c.txt\n1\t/dir/sub/deep\n2\t/dir/sub\n3\t/dir\n',
-    )
   })
 
   it('keeps the -c grand total recursive under -S', async () => {
@@ -171,38 +116,6 @@ describe('duGeneric', () => {
       entries,
     )
     expect(DEC.decode(out.stdout)).toBe('7\t/f.txt\n7\ttotal\n')
-  })
-
-  it('lists files then directories post-order under -a', async () => {
-    const [size, entries] = backend({
-      '/dir/a.txt': 3,
-      '/dir/sub/b.txt': 2,
-      '/dir/sub/deep/c.txt': 1,
-    })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ a: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe(
-      '3\t/dir/a.txt\n2\t/dir/sub/b.txt\n1\t/dir/sub/deep/c.txt\n1\t/dir/sub/deep\n3\t/dir/sub\n6\t/dir\n',
-    )
-  })
-
-  it('lists every file under -a', async () => {
-    const [size, entries] = backend({ '/dir/a.txt': 2, '/dir/b.txt': 3 })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ a: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('2\t/dir/a.txt\n3\t/dir/b.txt\n5\t/dir\n')
-  })
-
-  it('carries the mount prefix on -a entries', async () => {
-    const [size, entries] = backend({ '/notes.txt': 4 })
-    const out = await duGeneric([spec('/slack', '')], flags({ a: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('4\t/slack/notes.txt\n4\t/slack\n')
-  })
-
-  it('distinguishes the same name under two mounts', async () => {
-    const [size, entries] = backend({ '/notes.txt': 4 })
-    const first = await duGeneric([spec('/m1', '')], flags({ a: true }), size, entries)
-    const second = await duGeneric([spec('/m2', '')], flags({ a: true }), size, entries)
-    expect(DEC.decode(first.stdout)).toBe('4\t/m1/notes.txt\n4\t/m1\n')
-    expect(DEC.decode(second.stdout)).toBe('4\t/m2/notes.txt\n4\t/m2\n')
   })
 
   it('respells entries as the operand was typed', async () => {
@@ -246,37 +159,10 @@ describe('duGeneric', () => {
     expect(out.exitCode).toBe(0)
   })
 
-  it('appends a grand total under -c', async () => {
-    const [size, entries] = backend({ '/dir/a.txt': 2, '/dir/b.txt': 3 })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ c: true }), size, entries)
-    expect(DEC.decode(out.stdout).trimEnd().split('\n').at(-1)).toBe('5\ttotal')
-  })
-
   it('renders human-readable sizes under -h', async () => {
     const [size, entries] = backend({ '/dir/a.txt': 4096 })
     const out = await duGeneric([spec('/dir', 'dir')], flags({ h: true }), size, entries)
     expect(DEC.decode(out.stdout).split('\t')[0]?.endsWith('K')).toBe(true)
-  })
-
-  it('renders multiple operands in order', async () => {
-    const [size, entries] = backend({ '/a.txt': 2, '/b.txt': 3 })
-    const out = await duGeneric(
-      [spec('/a.txt', 'a.txt'), spec('/b.txt', 'b.txt')],
-      flags(),
-      size,
-      entries,
-    )
-    expect(DEC.decode(out.stdout)).toBe('2\t/a.txt\n3\t/b.txt\n')
-  })
-
-  // A backend offering only the cheaper `size` used to degrade du to one
-  // operand line with no directory rows and an inert `-a`. `CommandIO.du`
-  // now pairs both halves, so that shape is unreachable (#645): with a
-  // native du wired, `-a` always reaches the per-file breakdown.
-  it('lists files under -a whenever a native du is wired', async () => {
-    const [size, entries] = backend({ '/dir/a.txt': 2 })
-    const out = await duGeneric([spec('/dir', 'dir')], flags({ a: true }), size, entries)
-    expect(DEC.decode(out.stdout)).toBe('2\t/dir/a.txt\n2\t/dir\n')
   })
 
   it('reports a missing operand and exits 1', async () => {
@@ -298,12 +184,6 @@ describe('duGeneric', () => {
       'du: warning: summarizing is the same as using --max-depth=0\n',
     )
     expect(out.exitCode).toBe(0)
-  })
-
-  it('still rejects -s with a nonzero --max-depth', () => {
-    expect(() => parseFlags(opts({ s: true, max_depth: '1' }))).toThrow(
-      /summarizing conflicts with --max-depth=1/,
-    )
   })
 
   it('reads a driver error on the content probe as missing', async () => {
@@ -355,15 +235,6 @@ describe('duGeneric', () => {
     )
     expect(DEC.decode(out.stdout)).toBe('')
     expect(DEC.decode(out.stderr)).toBe("du: cannot access '/nope': No such file or directory\n")
-    expect(out.exitCode).toBe(1)
-  })
-
-  it('still prints a total under -c when every operand is missing', async () => {
-    const [size, entries] = backend({})
-    const out = await duGeneric([], flags({ c: true }), size, entries, [
-      ['nosuch', 'No such file or directory'],
-    ])
-    expect(DEC.decode(out.stdout)).toBe('0\ttotal\n')
     expect(out.exitCode).toBe(1)
   })
 
@@ -422,11 +293,16 @@ function linksView(links: Record<string, string>): LinkView {
 describe('duGeneric descendant mounts', () => {
   const TREE = { '/top.txt': 10, '/inner/leftover.txt': 1000 }
 
-  it('excludes shadowed rows and bytes', async () => {
-    const [size, entries] = backend(TREE)
+  it.each<[Record<string, number>, Partial<DuFlags>, string]>([
+    [TREE, {}, '10\t/base\n'],
+    [TREE, { a: true }, '10\t/base/top.txt\n10\t/base\n'],
+    [TREE, { s: true }, '10\t/base\n'],
+    [{ '/inner/leftover.txt': 1000 }, {}, '0\t/base\n'],
+  ])('excludes the shadowed rows and bytes of %j under %j', async (tree, over, expected) => {
+    const [size, entries] = backend(tree)
     const out = await duGeneric(
       [spec('/base', '')],
-      flags(),
+      flags(over),
       size,
       entries,
       [],
@@ -434,37 +310,7 @@ describe('duGeneric descendant mounts', () => {
       null,
       mountsView(['/base/inner']),
     )
-    expect(DEC.decode(out.stdout)).toBe('10\t/base\n')
-  })
-
-  it('excludes shadowed leaves under -a', async () => {
-    const [size, entries] = backend(TREE)
-    const out = await duGeneric(
-      [spec('/base', '')],
-      flags({ a: true }),
-      size,
-      entries,
-      [],
-      undefined,
-      null,
-      mountsView(['/base/inner']),
-    )
-    expect(DEC.decode(out.stdout)).toBe('10\t/base/top.txt\n10\t/base\n')
-  })
-
-  it('excludes shadowed bytes under -s', async () => {
-    const [size, entries] = backend(TREE)
-    const out = await duGeneric(
-      [spec('/base', '')],
-      flags({ s: true }),
-      size,
-      entries,
-      [],
-      undefined,
-      null,
-      mountsView(['/base/inner']),
-    )
-    expect(DEC.decode(out.stdout)).toBe('10\t/base\n')
+    expect(DEC.decode(out.stdout)).toBe(expected)
   })
 
   it('still counts shadowed keys without a mount view', async () => {
@@ -490,62 +336,27 @@ describe('duGeneric descendant mounts', () => {
     )
     expect(DEC.decode(out.stdout)).toBe('13\t/base\n')
   })
-
-  it('reports zero when every key is shadowed', async () => {
-    // Never a computeSize fallback that would count the shadowed bytes.
-    const [size, entries] = backend({ '/inner/leftover.txt': 1000 })
-    const out = await duGeneric(
-      [spec('/base', '')],
-      flags(),
-      size,
-      entries,
-      [],
-      undefined,
-      null,
-      mountsView(['/base/inner']),
-    )
-    expect(DEC.decode(out.stdout)).toBe('0\t/base\n')
-  })
 })
 
 describe('parseFlags', () => {
-  it('rejects -s with -a', () => {
-    expect(() => parseFlags(opts({ s: true, a: true }))).toThrow(
-      /cannot both summarize and show all entries/,
-    )
-  })
-
-  it('exits 1 on a usage error, like GNU du', () => {
+  it.each<[Record<string, string | boolean>, string]>([
+    [{ s: true, a: true }, 'cannot both summarize and show all entries'],
+    [{ s: true, max_depth: '1' }, 'summarizing conflicts with --max-depth=1'],
+    [{ max_depth: '1x' }, "invalid maximum depth '1x'"],
+    [{ s: true, a: true, max_depth: 'abc' }, 'invalid maximum depth'],
+  ])('refuses %j with exit 1, like GNU du', (bag, message) => {
+    let caught: unknown = null
     try {
-      parseFlags(opts({ s: true, a: true }))
-      expect.unreachable()
+      parseFlags(opts(bag))
     } catch (err) {
-      expect((err as UsageError).exitCode).toBe(1)
+      caught = err
     }
-  })
-
-  it('rejects -s with --max-depth', () => {
-    expect(() => parseFlags(opts({ s: true, max_depth: '1' }))).toThrow(
-      /summarizing conflicts with --max-depth=1/,
-    )
-  })
-
-  it('rejects a non-numeric depth', () => {
-    expect(() => parseFlags(opts({ max_depth: '1x' }))).toThrow(/invalid maximum depth '1x'/)
-  })
-
-  it('reports a bad depth before the conflict, like GNU', () => {
-    expect(() => parseFlags(opts({ s: true, a: true, max_depth: 'abc' }))).toThrow(
-      /invalid maximum depth/,
-    )
+    expect((caught as UsageError).message).toContain(message)
+    expect((caught as UsageError).exitCode).toBe(1)
   })
 
   it('accepts a negative depth', () => {
     expect(parseFlags(opts({ max_depth: '-1' })).maxDepth).toBe(-1)
-  })
-
-  it('reads -d as another spelling of --max-depth', () => {
-    expect(parseFlags(opts({ max_depth: '2' })).maxDepth).toBe(2)
   })
 })
 

@@ -635,7 +635,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "mkdir -p /data/zbc9/sub && echo x > /data/zbc9/sub/f.txt && chmod -R 700 /data/zbc9 && stat -c '%A' /data/zbc9/sub/f.txt",
       "expect": {
@@ -667,7 +669,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "mkdir -p /data/zbo9/sub && echo x > /data/zbo9/sub/f.txt && chown -R nobody /data/zbo9 && stat -c '%U' /data/zbo9/sub/f.txt",
       "expect": {
@@ -1039,7 +1043,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "printf 'echo a\\nreturn\\necho b\\n' > /data/zsrc9.sh; . /data/zsrc9.sh; echo after:$?; rm /data/zsrc9.sh",
       "expect": {

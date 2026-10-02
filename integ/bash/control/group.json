@@ -91,7 +91,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "{ echo x; echo y; } > /data/zctg.txt && cat /data/zctg.txt",
       "expect": {

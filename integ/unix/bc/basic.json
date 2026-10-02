@@ -2827,6 +2827,142 @@
         "stdout": "25510FF\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "bc_modulo_by_zero_exits_0",
+      "seq": 14100001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo '1%0' | bc",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "Runtime error (func=(main), adr=3): Modulo by zero\n"
+      }
+    },
+    {
+      "id": "bc_l_sin_zero_is_bare_zero",
+      "seq": 14100002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo 's(0)' | bc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "bc_l_cos_zero_is_padded",
+      "seq": 14100003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo 'c(0)' | bc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.00000000000000000000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "bc_l_divide_by_zero_exits_0",
+      "seq": 14100004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo '1/0' | bc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "Runtime error (func=(main), adr=3): Divide by zero\n"
+      }
     }
   ]
 }

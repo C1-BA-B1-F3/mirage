@@ -336,8 +336,8 @@
       ]
     },
     {
-      "id": "rg_bn_context_gets_every_field_right",
-      "seq": 612107,
+      "id": "rg_bn_context_prints_the_raw_byte",
+      "seq": 14102401,
       "targets": [
         "ram",
         "disk",
@@ -358,10 +358,10 @@
         "nextcloud",
         "box"
       ],
-      "command": "printf 'one\\n\\377\\ntwo abc\\nthree\\n' > /data/rcx.bin; rg -bn -A1 -B1 abc /data/rcx.bin",
+      "command": "printf 'one\\n\\377\\ntwo abc\\nthree\\n' > /data/cfrgb.bin; rg -bn -A1 -B1 abc /data/cfrgb.bin | od -An -tx1; echo rc=${PIPESTATUS[0]}; rm -f /data/cfrgb.bin",
       "expect": {
         "exit": 0,
-        "stdout": "2-4-�\n3:6:two abc\n4-14-three\n",
+        "stdout": " 32 2d 34 2d ff 0a 33 3a 36 3a 74 77 6f 20 61 62\n 63 0a 34 2d 31 34 2d 74 68 72 65 65 0a\nrc=0\n",
         "stderr": ""
       },
       "flags": [
@@ -369,8 +369,7 @@
         "n",
         "A",
         "B"
-      ],
-      "note": "ripgrep prints the invalid byte raw; the battery compares a replacing decode, so it reads as U+FFFD here (conformance/cases/rg.json pins the byte)"
+      ]
     }
   ]
 }

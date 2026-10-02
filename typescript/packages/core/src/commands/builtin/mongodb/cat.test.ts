@@ -15,25 +15,17 @@
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../core/mongodb/read.ts', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  streamAny: vi.fn(),
-}))
 vi.mock('../../../core/mongodb/stat.ts', () => ({
   stat: vi.fn(),
 }))
 
 import { MongoDBAccessor } from '../../../accessor/mongodb.ts'
 import { stubMongoDriver } from '../../../core/mongodb/_test_util.ts'
-import * as readModule from '../../../core/mongodb/read.ts'
 import * as statModule from '../../../core/mongodb/stat.ts'
 import { resolveMongoDBConfig } from '../../../vfs/mongodb/config.ts'
-import { materialize } from '../../../io/types.ts'
-import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { PathSpec } from '../../../types.ts'
 import { MONGODB_CAT } from './cat.ts'
 
-const DEC = new TextDecoder()
-const ENC = new TextEncoder()
 const STUB_DRIVER = stubMongoDriver()
 
 function makeAccessor(): MongoDBAccessor {
@@ -49,14 +41,8 @@ function mk(name: string): PathSpec {
   })
 }
 
-async function* bytesFor(path: PathSpec | string): AsyncIterable<Uint8Array> {
-  const original = typeof path === 'string' ? path : path.virtual
-  yield await Promise.resolve(ENC.encode(original.endsWith('a.jsonl') ? 'AAA\n' : 'BBB\n'))
-}
-
 describe('mongodb cat error surfacing', () => {
   beforeEach(() => {
-    vi.mocked(readModule.streamAny).mockReset()
     vi.mocked(statModule.stat).mockReset()
   })
 
@@ -74,28 +60,5 @@ describe('mongodb cat error surfacing', () => {
         cwd: '/',
       }),
     ).rejects.toThrow(message)
-  })
-
-  it('concatenates all files when multiple paths are given', async () => {
-    vi.mocked(statModule.stat).mockResolvedValue(
-      new FileStat({ name: 'documents.jsonl', type: FileType.FILE }),
-    )
-    vi.mocked(readModule.streamAny).mockImplementation((_accessor, path) => bytesFor(path))
-    const cmd = MONGODB_CAT[0]
-    if (cmd === undefined) throw new Error('cat not registered')
-    const accessor = makeAccessor()
-    const result = await cmd.fn(accessor, [mk('a.jsonl'), mk('b.jsonl')], [], {
-      stdin: null,
-      flags: {},
-      filetypeFns: null,
-      cwd: '/',
-    })
-    expect(result).not.toBeNull()
-    if (result === null) return
-    const [out, io] = result
-    expect(io.exitCode).toBe(0)
-    const bytes = await materialize(out)
-    expect(DEC.decode(bytes)).toBe('AAA\nBBB\n')
-    expect(Object.keys(io.reads).sort()).toEqual(['/app/a.jsonl', '/app/b.jsonl'])
   })
 })

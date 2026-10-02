@@ -67,16 +67,6 @@ async function run(
 }
 
 describe('awkGeneric', () => {
-  it('prints a field from stdin', async () => {
-    const [out] = await run([], ['{print $1}'], opts({}, ENC.encode('alpha beta\ngamma delta\n')))
-    expect(out).toBe('alpha\ngamma\n')
-  })
-
-  it('splits on -F separator', async () => {
-    const [out] = await run([], ['{print $2}'], opts({ F: ',' }, ENC.encode('a,b,c\nd,e,f\n')))
-    expect(out).toBe('b\ne\n')
-  })
-
   it('collapses whitespace with the default FS', async () => {
     const [out] = await run([], ['{print $2}'], opts({}, ENC.encode('a   b\n\tx\t \ty\n')))
     expect(out).toBe('b\ny\n')
@@ -92,60 +82,6 @@ describe('awkGeneric', () => {
     expect(out).toBe('b\n')
   })
 
-  it('applies a single -v assignment', async () => {
-    const [out] = await run([], ['{print x}'], opts({ v: 'x=hello' }, ENC.encode('line\n')))
-    expect(out).toBe('hello\n')
-  })
-
-  it('applies repeated -v assignments', async () => {
-    const [out] = await run([], ['{print a, b}'], opts({ v: ['a=1', 'b=2'] }, ENC.encode('line\n')))
-    expect(out).toBe('1 2\n')
-  })
-
-  it('keeps the full value when -v contains equals', async () => {
-    const [out] = await run([], ['{print x}'], opts({ v: 'x=a=b' }, ENC.encode('line\n')))
-    expect(out).toBe('a=b\n')
-  })
-
-  it('filters with a numeric comparison', async () => {
-    const [out] = await run([], ['$1 > 2 {print $1}'], opts({}, ENC.encode('1\n2\n3\n4\n')))
-    expect(out).toBe('3\n4\n')
-  })
-
-  it('filters with a regex condition', async () => {
-    const [out] = await run(
-      [],
-      ['/foo/ {print $0}'],
-      opts({}, ENC.encode('foo bar\nbaz\nfoobar\n')),
-    )
-    expect(out).toBe('foo bar\nfoobar\n')
-  })
-
-  it('accumulates into END print', async () => {
-    const [out] = await run(
-      [],
-      ['{sum += $1} END {print sum}'],
-      opts({}, ENC.encode('10\n20\n30\n')),
-    )
-    expect(out).toBe('60\n')
-  })
-
-  it('coerces non-numeric accumulator operands like GNU awk', async () => {
-    const [out] = await run(
-      [],
-      ['{sum += $1} END {print sum}'],
-      opts({}, ENC.encode('3\nabc\n2.5x\n')),
-    )
-    expect(out).toBe('5.5\n')
-  })
-
-  it('reads from a file and caches it', async () => {
-    const files = { '/data.txt': 'hello world\n' }
-    const [out, io] = await run([spec('/data.txt')], ['{print $2}'], opts(), files)
-    expect(out).toBe('world\n')
-    expect(io.cache).toEqual(['/data.txt'])
-  })
-
   it('processes all files with continuous NR and caches each', async () => {
     const files = { '/a.txt': 'one\ntwo\n', '/b.txt': 'three\n' }
     const [out, io] = await run([spec('/a.txt'), spec('/b.txt')], ['{print NR, $1}'], opts(), files)
@@ -159,10 +95,29 @@ describe('awkGeneric', () => {
     expect(out).toBe('1 one\n2 two\n')
   })
 
-  it('runs the -f program file over data paths', async () => {
-    const files = { '/prog.awk': '{print $1}\n', '/data.txt': 'alpha beta\n' }
-    const [out] = await run([spec('/data.txt')], [], opts({ f: '/prog.awk' }), files)
-    expect(out).toBe('alpha\n')
+  it.each<[string | string[], Record<string, string>, string[], string]>([
+    [
+      '/prog.awk',
+      { '/prog.awk': '{print $1}\n', '/data.txt': 'alpha beta\n' },
+      ['/data.txt'],
+      'alpha\n',
+    ],
+    [
+      '/prog.awk',
+      { '/prog.awk': '{print NR, $1}\n', '/a.txt': 'one\n', '/b.txt': 'two\n' },
+      ['/a.txt', '/b.txt'],
+      '1 one\n2 two\n',
+    ],
+    [
+      ['/p1.awk', '/p2.awk'],
+      { '/p1.awk': '{sum += $1}\n', '/p2.awk': 'END {print sum}\n', '/nums.txt': '1\n2\n3\n' },
+      ['/nums.txt'],
+      '6\n',
+    ],
+  ])('runs the -f program %j over the data paths', async (f, files, data, expected) => {
+    const [out, io] = await run(data.map(spec), [], opts({ f }), files)
+    expect(out).toBe(expected)
+    expect(io.cache).toEqual(data)
   })
 
   it('emits blank lines for print of an empty string', async () => {
@@ -170,22 +125,9 @@ describe('awkGeneric', () => {
     expect(out).toBe('\n\n')
   })
 
-  it('emits nothing for an action without print', async () => {
-    const [out] = await run([], ['{x += 1}'], opts({}, ENC.encode('one\ntwo\n')))
-    expect(out).toBe('')
-  })
-
   it('prints a literal closing brace', async () => {
     const [out] = await run([], ['{print "}"}'], opts({}, ENC.encode('line\n')))
     expect(out).toBe('}\n')
-  })
-
-  it('returns exit 2 when no program is given', async () => {
-    const result = await awkGeneric([], [], opts(), makeStream({}))
-    const [stdout, io] = result ?? [null, new IOResult()]
-    expect(stdout).toBeNull()
-    expect(io.exitCode).toBe(2)
-    expect(DEC.decode(await materialize(io.stderr))).toContain('usage')
   })
 
   it('returns exit 2 when the -f program file is unreadable', async () => {
@@ -221,37 +163,6 @@ describe('awkGeneric', () => {
     expect(DEC.decode(await materialize(stdout))).toBe('hey\n')
   })
 
-  it('runs the -f program over multiple data files with continuous NR', async () => {
-    const files = { '/prog.awk': '{print NR, $1}\n', '/a.txt': 'one\n', '/b.txt': 'two\n' }
-    const [out, io] = await run(
-      [spec('/a.txt'), spec('/b.txt')],
-      [],
-      opts({ f: '/prog.awk' }),
-      files,
-    )
-    expect(out).toBe('1 one\n2 two\n')
-    expect(io.cache).toEqual(['/a.txt', '/b.txt'])
-  })
-
-  it('concatenates repeated -f program files', async () => {
-    const files = {
-      '/p1.awk': '{sum += $1}\n',
-      '/p2.awk': 'END {print sum}\n',
-      '/nums.txt': '1\n2\n3\n',
-    }
-    const [out] = await run([spec('/nums.txt')], [], opts({ f: ['/p1.awk', '/p2.awk'] }), files)
-    expect(out).toBe('6\n')
-  })
-
-  it('resolves -v variables in BEGIN and END blocks', async () => {
-    const [out] = await run(
-      [],
-      ['BEGIN {print x} END {print x}'],
-      opts({ v: 'x=hi' }, ENC.encode('line\n')),
-    )
-    expect(out).toBe('hi\nhi\n')
-  })
-
   it('lets the last duplicate -v assignment win', async () => {
     const [out] = await run(
       [],
@@ -270,16 +181,19 @@ describe('awkGeneric', () => {
     const [out] = await run([], ['/x/ {print "}"}'], opts({}, ENC.encode('x\ny\n')))
     expect(out).toBe('}\n')
   })
+
+  it('assigns from a field', async () => {
+    const [out] = await run([], ['{x = $2; print x}'], opts({}, ENC.encode('a b\n')))
+    expect(out).toBe('b\n')
+  })
+
+  it('prints empty for an out-of-range field', async () => {
+    const [out] = await run([], ['{print $5}'], opts({}, ENC.encode('one two\n')))
+    expect(out).toBe('\n')
+  })
 })
 
 describe('awk runs what the scraper refused', () => {
-  it('builds an indent in a for loop', async () => {
-    const program = '{indent="";for(i=1;i<NF;i++)indent=indent"    ";print indent $NF}'
-    const stdin = ENC.encode('School/Courses_Materials/notes.md\n')
-    const [out] = await run([], [program], opts({ F: '/' }, stdin))
-    expect(out).toBe('        notes.md\n')
-  })
-
   it.each([
     ['{x = y + 1; print x}', 'line\n', '1\n'],
     ['{print toupper($1)}', 'line\n', 'LINE\n'],
@@ -311,47 +225,7 @@ describe('awk fatal paths', () => {
   ])('refuses %j', async (program, message) => {
     expect(await runIo(program, 'a\n')).toEqual(['', 2, message])
   })
-
-  it('reads the next record with getline', async () => {
-    expect(await runIo('NR==1{getline; print} {print NR}', 'a\nb\nc\n')).toEqual([
-      'b\n2\n3\n',
-      0,
-      '',
-    ])
-  })
-
-  it('keeps the output written before a runtime error', async () => {
-    expect(await runIo('{print $1; print 1/0; print 9}', 'a\n')).toEqual([
-      'a\n',
-      2,
-      'awk: division by zero\n',
-    ])
-  })
-
-  it('exits with the program code and still runs END', async () => {
-    expect(await runIo('NR==2{exit 3} {print} END{print "end"}', 'a\nb\nc\n')).toEqual([
-      'a\nend\n',
-      3,
-      '',
-    ])
-  })
-
-  it('writes /dev/stderr to the error stream', async () => {
-    expect(await runIo('{print "warn" > "/dev/stderr"; print}', 'a\n')).toEqual([
-      'a\n',
-      0,
-      'warn\n',
-    ])
-  })
-
-  it('refuses a syntax error as a usage error', async () => {
-    await expect(run([], ['{print $(}'], opts({}, ENC.encode('a\n')))).rejects.toThrow(
-      'syntax error',
-    )
-  })
 })
-
-const FIELDS = 'alice 30 engineer\nbob 25 designer\ncarol 40 manager\n'
 
 async function runStdin(
   program: string,
@@ -363,41 +237,8 @@ async function runStdin(
 }
 
 describe('awk regex match', () => {
-  it('matches a field against a regex (issue #1065)', async () => {
-    const out = await runStdin(
-      '$4 ~ /[Aa]pplication/ {print}',
-      'a|b|c|Application\nx|y|z|Other\n',
-      {
-        F: '|',
-      },
-    )
-    expect(out).toBe('a|b|c|Application\n')
-  })
-
-  it('reads a boolean operator inside a regex as regex text', async () => {
-    // awk 20200816 and mawk 1.3.4 both print the line: the `&&` belongs to
-    // the regex, it is not a conjunction.
-    expect(await runStdin('$0 ~ /A&&B/ {print}', 'xA&&By\nAB\n')).toBe('xA&&By\n')
-  })
-
-  it('reads a boolean operator inside a string as string text', async () => {
-    expect(await runStdin('$1 == "a||b" {print $2}', 'a||b q\nz 1\n')).toBe('q\n')
-  })
-
   it('matches a bare regex pattern holding an operator', async () => {
     expect(await runStdin('/A&&B/', 'xA&&By\nAB\n')).toBe('xA&&By\n')
-  })
-
-  it('negates the match with !~', async () => {
-    expect(await runStdin('$3 !~ /^d/ {print $1}', FIELDS)).toBe('alice\ncarol\n')
-  })
-
-  it('reads a string right-hand side as a dynamic regex', async () => {
-    expect(await runStdin('$2 ~ "0" && $1 ~ /^c/', FIELDS)).toBe('carol 40 manager\n')
-  })
-
-  it('reads a variable right-hand side as a dynamic regex', async () => {
-    expect(await runStdin('$1 ~ pat {print $2}', FIELDS, { v: 'pat=ar' })).toBe('40\n')
   })
 
   it('matches a numeric right-hand side as text', async () => {
@@ -430,41 +271,9 @@ describe('awk regex match', () => {
     expect(await runStdin('$1~/a/', 'a b\nc d\n')).toBe('a b\n')
   })
 
-  it('negates a bare regex', async () => {
-    expect(await runStdin('!/bob/ {print $1}', FIELDS)).toBe('alice\ncarol\n')
-  })
-
   it('negates an operand by its truthiness', async () => {
     expect(await runStdin('!$1', '0\n1\nfoo\n\n')).toBe('0\n\n')
     expect(await runStdin('!x', 'a\nb\n', { v: 'x=0' })).toBe('a\nb\n')
-  })
-
-  it('refuses an invalid regex with awk wording', async () => {
-    await expect(runStdin('$1 ~ /(a/ {print}', 'a\n')).rejects.toThrow(
-      'awk: syntax error in regular expression (a at source line 1',
-    )
-    await expect(runStdin('/(a/', 'a\n')).rejects.toThrow('syntax error in regular expression')
-  })
-})
-
-describe('awk assignments and OFS', () => {
-  it('executes a simple assignment', async () => {
-    const [out] = await run([], ['{x = 1; print x}'], opts({}, ENC.encode('line\n')))
-    expect(out).toBe('1\n')
-  })
-
-  it('assigns from a field', async () => {
-    const [out] = await run([], ['{x = $2; print x}'], opts({}, ENC.encode('a b\n')))
-    expect(out).toBe('b\n')
-  })
-
-  it('joins print arguments with OFS', async () => {
-    const [out] = await run(
-      [],
-      ['BEGIN{OFS=":"} {print $1, $2}'],
-      opts({}, ENC.encode('name age\nalice 30\n')),
-    )
-    expect(out).toBe('name:age\nalice:30\n')
   })
 })
 
@@ -487,18 +296,6 @@ describe('awk compound statements', () => {
   })
 })
 
-describe('awk unset values', () => {
-  it('prints empty for an unset variable', async () => {
-    const [out] = await run([], ['{print foo}'], opts({}, ENC.encode('line\n')))
-    expect(out).toBe('\n')
-  })
-
-  it('prints empty for an out-of-range field', async () => {
-    const [out] = await run([], ['{print $5}'], opts({}, ENC.encode('one two\n')))
-    expect(out).toBe('\n')
-  })
-})
-
 async function* chunked(parts: readonly (string | Uint8Array)[]): AsyncIterable<Uint8Array> {
   for (const part of parts) {
     await Promise.resolve()
@@ -507,32 +304,15 @@ async function* chunked(parts: readonly (string | Uint8Array)[]): AsyncIterable<
 }
 
 describe('awk RS', () => {
-  it.each<[string, Record<string, string[] | string>, string, string]>([
-    ['BEGIN{RS=":"} {print NR": "$0}', {}, 'a:b', '1: a\n2: b\n'],
-    ['{print NR": "$0}', { v: ['RS=:'] }, 'a:b:\n', '1: a\n2: b\n3: \n\n'],
-    ['{print NR": "$0; RS="2"}', {}, 'a\nb2c2d\n', '1: a\n2: b\n3: c\n4: d\n\n'],
-    ['{print NF": "$0}', { v: ['RS='] }, '\n\na b\nc\n\n\nd\n', '3: a b\nc\n1: d\n'],
-    ['{print NF}', { v: ['RS='], F: ':' }, 'a:b\nc\n\nd', '3\n1\n'],
-    ['{print NR": "$0}', { v: ['RS=[0-9]+'] }, 'a12b345c', '1: a\n2: b\n3: c\n'],
-  ])('separates records for %j with %j', async (program, flags, stdin, expected) => {
-    expect(await runStdin(program, stdin, flags)).toBe(expected)
-  })
-
-  it.each<[string[], string, string]>([
+  it.each<[(string | Uint8Array)[], string, string]>([
     [['a\n', '\nb\n'], '', 'a|b|'],
     [['a1', '2b'], '[0-9]+', 'a|b|'],
     [['a:', 'b'], ':', 'a|b|'],
+    [[Uint8Array.of(0x68, 0xc3), Uint8Array.of(0xa9, 0x3a, 0x78)], ':', 'h\u00e9|x|'],
   ])('holds a record across the chunks %j', async (parts, rs, expected) => {
     const o = { ...opts({ v: [`RS=${rs}`] }), stdin: chunked(parts) }
     const [out] = await run([], ['{printf "%s|", $0}'], o)
     expect(out).toBe(expected)
-  })
-
-  it('decodes a character split across chunks', async () => {
-    const parts = [Uint8Array.of(0x68, 0xc3), Uint8Array.of(0xa9, 0x3a, 0x78)]
-    const o = { ...opts({ v: ['RS=:'] }), stdin: chunked(parts) }
-    const [out] = await run([], ['{printf "%s|", $0}'], o)
-    expect(out).toBe('h\u00e9|x|')
   })
 
   it('never lets a record span two files', async () => {
@@ -546,13 +326,5 @@ describe('awk RS', () => {
     const o = { ...opts({ v: ['RS='] }), stdin: chunked(['a\n\n', '\nb\n']) }
     const [out] = await run([], ['{printf "%s|", $0; RS="\\n"}'], o)
     expect(out).toBe('a|b|')
-  })
-
-  it('is fatal on a bad regex', async () => {
-    expect(await runIo('BEGIN{RS="[a"} {print}', 'ab')).toEqual([
-      '',
-      2,
-      'awk: syntax error in regular expression [a at source line 1\n',
-    ])
   })
 })

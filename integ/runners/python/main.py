@@ -104,11 +104,19 @@ async def run_consistency_case(
         target, spec, mount_read_of(case)
     )
     try:
-        exit_code, out, err = await harness.run_scenario(
+        exit_code, out, err, notes = await harness.run_scenario(
             read_ws, mutate, mutate_line, case["scenario"]
         )
         _emit_or_record(
-            emit, report, target["id"], case, exit_code, out, err, 0.0
+            emit,
+            report,
+            target["id"],
+            case,
+            exit_code,
+            out,
+            err,
+            0.0,
+            notes=notes,
         )
     finally:
         await cleanup()

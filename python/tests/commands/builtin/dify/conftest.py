@@ -39,20 +39,3 @@ def knowledge_root() -> PathSpec:
         virtual="/knowledge",
         directory="/knowledge",
     )
-
-
-@pytest.fixture
-def guide_path() -> PathSpec:
-    return PathSpec.from_str_path(
-        "/knowledge/guides/quickstart.md",
-        mount_key("/knowledge/guides/quickstart.md", "/knowledge"),
-    )
-
-
-@pytest.fixture
-def guides_path() -> PathSpec:
-    return PathSpec(
-        vfs_path=mount_key("/knowledge/guides", "/knowledge"),
-        virtual="/knowledge/guides",
-        directory="/knowledge/guides",
-    )

@@ -17,30 +17,25 @@ import { UsageError } from '../../errors.ts'
 import { parseCount } from './od.ts'
 
 describe('od parseCount', () => {
-  it('parses decimal', () => {
-    expect(parseCount('64', '-N')).toBe(64)
-  })
-
-  it('honors strtol base 0: 0x is hex, a leading 0 is octal', () => {
-    expect(parseCount('0x10', '-N')).toBe(16)
-    expect(parseCount('010', '-j')).toBe(8)
-    expect(parseCount('0', '-j')).toBe(0)
-  })
-
-  it('applies GNU size suffixes', () => {
-    expect(parseCount('3k', '-N')).toBe(3072)
-    expect(parseCount('1KiB', '-N')).toBe(1024)
-    expect(parseCount('1KB', '-N')).toBe(1000)
-    expect(parseCount('2b', '-N')).toBe(1024)
-    expect(parseCount('010K', '-N')).toBe(8192)
-  })
-
-  it('skips leading whitespace and one + while keeping the radix', () => {
-    expect(parseCount('+10', '-N')).toBe(10)
-    expect(parseCount(' 10', '-N')).toBe(10)
-    expect(parseCount('+0x10', '-N')).toBe(16)
-    expect(parseCount('+010', '-j')).toBe(8)
-    expect(parseCount('+10K', '-N')).toBe(10240)
+  // strtoumax base 0 (0x hex, leading 0 octal), GNU size suffixes, and one
+  // leading '+' or whitespace that keeps the radix.
+  it.each([
+    ['64', '-N', 64],
+    ['0x10', '-N', 16],
+    ['010', '-j', 8],
+    ['0', '-j', 0],
+    ['3k', '-N', 3072],
+    ['1KiB', '-N', 1024],
+    ['1KB', '-N', 1000],
+    ['2b', '-N', 1024],
+    ['010K', '-N', 8192],
+    ['+10', '-N', 10],
+    [' 10', '-N', 10],
+    ['+0x10', '-N', 16],
+    ['+010', '-j', 8],
+    ['+10K', '-N', 10240],
+  ] as const)("parses '%s' for %s as %d", (raw, flag, value) => {
+    expect(parseCount(raw, flag)).toBe(value)
   })
 
   it.each(['abc', '', 'x10', '++10', '-10', '+ 10'])(

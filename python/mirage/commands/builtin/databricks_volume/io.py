@@ -50,5 +50,3 @@ IO = VFSAdapter(
     is_mounted=lambda a: True,
     local=False,
 ).to_command_io()
-
-resolve_glob = IO.resolve_glob

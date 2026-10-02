@@ -124,7 +124,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qsha && printf 'hello' > /data/qsha/sh.txt && sha256sum /data/qsha/sh.txt > /data/qsha/sums && sha256sum -c /data/qsha/sums",
       "expect": {
@@ -155,7 +158,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qshm && printf 'hello' > /data/qshm/sh.txt && sha256sum /data/qshm/sh.txt > /data/qshm/sums && sha256sum -c /data/qshm/sums /data/qshm/nope.sums",
       "expect": {
@@ -184,7 +190,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qshr/d && printf 'hello' > /data/qshr/sh.txt && sha256sum /data/qshr/sh.txt > /data/qshr/sums && sha256sum -c /data/qshr/sums /data/qshr/d",
       "expect": {

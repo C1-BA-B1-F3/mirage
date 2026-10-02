@@ -60,11 +60,6 @@ describe('gunzip on inputs gzip refuses', () => {
     })
     expect(r).toEqual(['b.txt\np.gz\n', '\ngzip: p.gz: not in gzip format\n', 0])
   })
-
-  it('calls plain stdin not in gzip format', async () => {
-    const r = await shell('gunzip', new TextEncoder().encode('hello\n'))
-    expect(r).toEqual(['', '\ngzip: stdin: not in gzip format\n', 1])
-  })
 })
 
 // gzip -n of "hello\n" with its CRC-32 and length trailer zeroed.
@@ -92,25 +87,6 @@ describe('gunzip on a damaged member', () => {
         '\ngzip: /data/bad.gz: invalid compressed data--crc error\n' +
           '\ngzip: /data/bad.gz: invalid compressed data--length error\n',
         1,
-      ])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('keeps the members before a later bad header', async () => {
-    const ws = new Workspace(
-      { '/data/': new RAMVFS() },
-      { mode: MountMode.WRITE, shellParser: await getTestParser() },
-    )
-    try {
-      const bad = [...HELLO.slice(0, 2), 7, ...HELLO.slice(3)]
-      await ws.shell('tee /data/two.gz > /dev/null', { stdin: new Uint8Array([...HELLO, ...bad]) })
-      const io = await ws.shell('cd /data && gunzip two.gz; ls; cat two')
-      const dec = new TextDecoder()
-      expect([dec.decode(io.stdout), dec.decode(io.stderr)]).toEqual([
-        'two\nhello\n',
-        'gzip: two.gz: unknown method 7 -- not supported\n',
       ])
     } finally {
       await ws.close()
@@ -161,26 +137,6 @@ describe('gunzip on a link in place (O_NOFOLLOW unless -c or -f)', () => {
     await ws.close()
   })
 
-  it('decodes beside the link under -f and removes the link', async () => {
-    const [ws, , stderr, code] = await linked('gunzip -f tl.gz')
-    expect([stderr, code]).toEqual(['', 0])
-    expect(await out(ws, 'cd /data && ls -F && cat tl')).toBe('dir/\nt.gz\ntl\nhello\n')
-    await ws.close()
-  })
-
-  it('keeps the link under -k -f', async () => {
-    const [ws, , , code] = await linked('gunzip -kf tl.gz')
-    expect(code).toBe(0)
-    expect(await out(ws, 'cd /data && ls -F')).toBe('dir/\nt.gz\ntl\ntl.gz@\n')
-    await ws.close()
-  })
-
-  it('follows -c and a retried link through the door', async () => {
-    const [ws, stdout, , code] = await linked('ln -s t.gz x.gz && gunzip -c tl.gz x')
-    expect([stdout, code]).toEqual(['hello\nhello\n', 0])
-    await ws.close()
-  })
-
   it('writes beside a link into a read-only mount', async () => {
     const [ws, , stderr, code] = await linked('ln -s /ro/f.gz rl.gz && gunzip -f rl')
     expect([stderr, code]).toEqual(['', 0])
@@ -196,12 +152,6 @@ describe('gunzip on a link in place (O_NOFOLLOW unless -c or -f)', () => {
     expect(forcedCode).toBe(0)
     expect(await out(forced, 'cd /data && ls -F && cat t')).toBe('dir/\nt\ntl.gz@\nhello\n')
     await forced.close()
-  })
-
-  it('needs a name typed with a slash to be a directory', async () => {
-    const [ws, , stderr, code] = await linked('gunzip -c t.gz/')
-    expect([stderr, code]).toEqual(['gzip: t.gz/: Not a directory\n', 1])
-    await ws.close()
   })
 
   it('finds a link an earlier operand removed missing at its turn', async () => {

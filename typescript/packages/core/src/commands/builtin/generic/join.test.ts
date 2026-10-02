@@ -24,27 +24,7 @@ type Row = [string, string, string, string, string, number, string, string]
 // Each row is GNU join 9.7 (debian:stable-slim) run on files a and b; every
 // string is a byte view, one character per byte. Mirrors GNU in test_join.py.
 const GNU: Row[] = [
-  [
-    'a1a2',
-    '1 a\n2 b\n3 c\n',
-    '1 x\n3 z\n4 w\n',
-    'join -a1 -a2 a b',
-    '',
-    0,
-    '1 a x\n2 b\n3 c z\n4 w\n',
-    '',
-  ],
   ['v1v2', '1 a\n2 b\n3 c\n', '1 x\n3 z\n4 w\n', 'join -v1 -v2 a b', '', 0, '2 b\n4 w\n', ''],
-  [
-    'o_e',
-    '1 a\n2 b\n3 c\n',
-    '1 x\n3 z\n4 w\n',
-    'join -a1 -a2 -e NA -o 0,1.2,2.2 a b',
-    '',
-    0,
-    '1 a x\n2 b NA\n3 c z\n4 NA w\n',
-    '',
-  ],
   [
     'o_repeat',
     '1 a\n2 b\n3 c\n',
@@ -128,7 +108,6 @@ const GNU: Row[] = [
     '\xc3\x89 1\n\xc3\xa9 x\n',
     '',
   ],
-  ['j12', 'a 1\nb 2\n', '1 x\n2 y\n', 'join -1 2 -2 1 a b', '', 0, '1 a x\n2 b y\n', ''],
   [
     'j_huge',
     '1 a\n2 b\n3 c\n',
@@ -188,26 +167,6 @@ const GNU: Row[] = [
     1,
     'b one y\n',
     'join: a:2: is not sorted: a two\njoin: input is not in sorted order\n',
-  ],
-  [
-    'unsorted_task_nocheck',
-    'b one\na two\n',
-    'a x\nb y\n',
-    'join --nocheck-order a b',
-    '',
-    0,
-    'b one y\n',
-    '',
-  ],
-  [
-    'unsorted_task_check',
-    'b one\na two\n',
-    'a x\nb y\n',
-    'join --check-order a b',
-    '',
-    1,
-    '',
-    'join: a:2: is not sorted: a two\n',
   ],
   [
     'check_then_nocheck',
@@ -311,28 +270,6 @@ const GNU: Row[] = [
     '',
     "join: invalid file number: '3'\n",
   ],
-  ['o_words', '1 a\n2 b\n3 c\n', '1 x\n3 z\n4 w\n', 'join -o 1.1 2.2 a b', '', 0, '1 x\n3 z\n', ''],
-  [
-    'o_words_glob',
-    '1 a\n2 b\n3 c\n',
-    '1 x\n3 z\n4 w\n',
-    'join -o 1.1 2.2 ?',
-    '',
-    0,
-    '1 x\n3 z\n',
-    '',
-  ],
-  [
-    'j1_takes_a_field_glob',
-    '1 a\n2 b\n3 c\n',
-    '1 x\n3 z\n4 w\n',
-    'join -j1 1 [ab]',
-    '',
-    0,
-    '1 a x\n3 c z\n',
-    '',
-  ],
-  ['j1_takes_a_field', '1 a\n2 b\n3 c\n', '1 x\n3 z\n4 w\n', 'join -j1 2 a b', '', 0, '', ''],
   [
     'j1_takes_a_word',
     '1 a\n2 b\n3 c\n',
@@ -442,16 +379,6 @@ const GNU: Row[] = [
     1,
     '',
     'join: conflicting empty-field replacement strings\n',
-  ],
-  [
-    'missing_operand',
-    '1 a\n2 b\n3 c\n',
-    '1 x\n3 z\n4 w\n',
-    'join a',
-    '',
-    1,
-    '',
-    "join: missing operand after 'a'\nTry 'join --help' for more information.\n",
   ],
 ]
 

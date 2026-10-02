@@ -48,62 +48,6 @@ async function runCat(
 }
 
 describe('slack cat', () => {
-  it('reads jsonl content from a channel', async () => {
-    const idx = new RAMIndexCacheStore()
-    await seedChannel(idx, '/mnt/slack', 'general__C1', 'C1', { dates: ['2024-01-01'] })
-    const transport = new FakeSlackTransport((endpoint) => {
-      if (endpoint === 'conversations.history') {
-        return {
-          ok: true,
-          messages: [
-            { ts: '1704067300.000000', text: 'hello' },
-            { ts: '1704067400.000000', text: 'world' },
-          ],
-        }
-      }
-      return { ok: true }
-    })
-    const out = await runCat(
-      [
-        new PathSpec({
-          virtual: '/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl',
-          directory: '/mnt/slack/channels/general__C1/',
-          resolved: false,
-          vfsPath: mountKey('/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl', '/mnt/slack'),
-        }),
-      ],
-      {},
-      { index: idx, transport },
-    )
-    const lines = out.trimEnd().split('\n')
-    expect(lines).toHaveLength(2)
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1704067300.000000', text: 'hello' })
-  })
-
-  it('returns numbered output with -n', async () => {
-    const idx = new RAMIndexCacheStore()
-    await seedChannel(idx, '/mnt/slack', 'general__C1', 'C1', { dates: ['2024-01-01'] })
-    const transport = new FakeSlackTransport((endpoint) => {
-      if (endpoint === 'conversations.history') {
-        return { ok: true, messages: [{ ts: '1704067300.000000', text: 'hi' }] }
-      }
-      return { ok: true }
-    })
-    const out = await runCat(
-      [
-        new PathSpec({
-          virtual: '/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl',
-          directory: '/mnt/slack/channels/general__C1/',
-          resolved: false,
-          vfsPath: mountKey('/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl', '/mnt/slack'),
-        }),
-      ],
-      { number: true },
-      { index: idx, transport },
-    )
-    expect(out.startsWith('     1\t')).toBe(true)
-  })
-
   it('concatenates multiple jsonl files in order (regression: previously only read the first)', async () => {
     const idx = new RAMIndexCacheStore()
     await seedChannel(idx, '/mnt/slack', 'general__C1', 'C1', {

@@ -715,6 +715,339 @@
         "f",
         "d"
       ]
+    },
+    {
+      "id": "cut_f_quotes_a_two_byte_char_as_octal",
+      "seq": 14100201,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | cut -f '2-3é'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\303\\251'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "cut_b_quotes_a_two_byte_char_as_octal",
+      "seq": 14100202,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ab\\n' | cut -b '1,é'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid byte/character position '\\303\\251'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "cut_c_quotes_a_two_byte_char_as_octal",
+      "seq": 14100203,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ab\\n' | cut -c 'xé'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid byte/character position 'x\\303\\251'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "cut_f_quotes_an_emoji_as_four_octal_escapes",
+      "seq": 14100204,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | cut -f '😀'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\360\\237\\230\\200'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "cut_f_escapes_a_backslash",
+      "seq": 14100205,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | cut -f '1,2\\x'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\\\x'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "cut_f_escapes_a_single_quote",
+      "seq": 14100206,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | cut -f \"1,2'x\"",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\'x'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "cut_f_escapes_a_control_byte_in_octal",
+      "seq": 14100207,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | cut -f $'1,2\\001x'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\001x'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "cut_f_a_newline_is_an_invalid_field_value",
+      "seq": 14100208,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\tc\\n' | cut -f $'1\\n2'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\n2'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "cut_f_a_newline_after_a_list_is_refused",
+      "seq": 14100209,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\tc\\n' | cut -f $'1,2\\n'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cut: invalid field value '\\n'\nTry 'cut --help' for more information.\n"
+      },
+      "flags": [
+        "f"
+      ]
     }
   ]
 }

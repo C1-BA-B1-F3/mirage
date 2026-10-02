@@ -267,6 +267,39 @@
         "stdout": "1:hello\n2:world\n3:foo\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "rg_m_zero_walks_nothing",
+      "seq": 14102301,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "mkdir -p /data/cfrgm/sub/deep; printf 'nested\\ncontent\\n' > /data/cfrgm/sub/nested.txt; printf 'deep\\n' > /data/cfrgm/sub/deep/deeper.txt; rg -m 0 nested /data/cfrgm/sub; echo rc=$?; rm -rf /data/cfrgm",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "m"
+      ]
     }
   ]
 }

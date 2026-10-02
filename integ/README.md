@@ -8,7 +8,9 @@ implementations cannot drift apart.
 
 - `runners/`: the battery. Every case is a shell line executed in a mirage
   workspace against a target's mounts; exit code, stdout and stderr are
-  compared across hosts and against pinned goldens.
+  compared exactly across hosts and against pinned goldens. A stream that
+  is not UTF-8 fails the case, so a case that prints raw bytes pins them
+  through `od -An -tx1`.
 - `targets.json`: the targets, their mounts, and the env vars each service
   needs.
 - `server/`: the fake services. The kit fakes (github, slack, box, dropbox,

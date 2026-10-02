@@ -68,7 +68,7 @@ def diff_row(a: dict, b: dict) -> list[str]:
         diffs.append(f"exit py={a['exit']} ts={b['exit']}")
     if a["stdout"] != b["stdout"]:
         diffs.append(f"stdout py={a['stdout']!r} ts={b['stdout']!r}")
-    if a["stderr"].rstrip("\n") != b["stderr"].rstrip("\n"):
+    if a["stderr"] != b["stderr"]:
         diffs.append(f"stderr py={a['stderr']!r} ts={b['stderr']!r}")
     if a["check"] != b["check"]:
         diffs.append(f"check py={a['check']!r} ts={b['check']!r}")

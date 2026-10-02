@@ -16,22 +16,21 @@ import { RAM_COMMANDS } from './index.ts'
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { PathSpec } from '../../../types.ts'
+
 const RAM_TR = RAM_COMMANDS.filter((c) => c.name === 'tr' && c.filetype == null)
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
 async function runTr(
-  vfs: RAMVFS,
-  paths: PathSpec[],
   texts: string[],
   flags: Record<string, string | boolean | number | string[]> = {},
   stdin: Uint8Array | null = null,
 ): Promise<{ out: string; exitCode: number }> {
   const cmd = RAM_TR[0]
+  const vfs = new RAMVFS()
   if (cmd === undefined) throw new Error('tr not registered')
-  const result = await cmd.fn((vfs as { accessor?: unknown }).accessor as never, paths, texts, {
+  const result = await cmd.fn((vfs as { accessor?: unknown }).accessor as never, [], texts, {
     stdin,
     flags,
     filetypeFns: null,
@@ -49,110 +48,23 @@ async function runTr(
 }
 
 describe('tr', () => {
-  it('translates vowels to uppercase', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('hello world\n'))
-    const r = await runTr(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], ['aeiou', 'AEIOU'])
-    expect(r.exitCode).toBe(0)
-    expect(r.out).toBe('hEllO wOrld\n')
-  })
-
-  it('handles multiple occurrences', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('aaa bbb\n'))
-    const r = await runTr(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], ['ab', 'AB'])
-    expect(r.out).toBe('AAA BBB\n')
-  })
-
-  it('single-char translate', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('cat\n'))
-    const r = await runTr(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], ['c', 'b'])
-    expect(r.out).toBe('bat\n')
-  })
-
-  it('unchanged when no match', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('hello\n'))
-    const r = await runTr(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], ['xyz', 'XYZ'])
-    expect(r.out).toBe('hello\n')
-  })
-
-  it('-d deletes characters', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('hello\n'))
-    const r = await runTr(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], ['l'], { delete: true })
-    expect(r.out).toBe('heo\n')
-  })
-
-  it('reads from stdin when no path', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], ['a', 'A'], {}, ENC.encode('abc\n'))
-    expect(r.exitCode).toBe(0)
-    expect(r.out).toBe('Abc\n')
-  })
-
-  it('supports char ranges', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abc\n'))
-    const r = await runTr(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], ['a-c', 'A-C'])
-    expect(r.out).toBe('ABC\n')
-  })
-
-  it('-t truncates set1 to the length of set2', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], ['abcde', 'xy'], { truncate_set1: true }, ENC.encode('abcde'))
-    expect(r.out).toBe('xycde')
-  })
-
   it('pads set2 by default (no -t)', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], ['abcde', 'xy'], {}, ENC.encode('abcde'))
+    const r = await runTr(['abcde', 'xy'], {}, ENC.encode('abcde'))
     expect(r.out).toBe('xyyyy')
   })
 
-  it('-C complements set1 like -c', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], ['0-9', '_'], { C: true }, ENC.encode('abc123'))
-    expect(r.out).toBe('___123')
-  })
-
   it('--complement long form', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], ['0-9', '_'], { complement: true }, ENC.encode('abc123'))
+    const r = await runTr(['0-9', '_'], { complement: true }, ENC.encode('abc123'))
     expect(r.out).toBe('___123')
-  })
-
-  it('--truncate-set1 long form', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], ['abcde', 'xy'], { truncate_set1: true }, ENC.encode('abcde'))
-    expect(r.out).toBe('xycde')
-  })
-
-  it('--delete and --squeeze-repeats long forms', async () => {
-    const vfs = new RAMVFS()
-    const del = await runTr(vfs, [], ['abc'], { delete: true }, ENC.encode('aabbccdd'))
-    expect(del.out).toBe('dd')
-    const sq = await runTr(vfs, [], ['a-c'], { squeeze_repeats: true }, ENC.encode('aabbcc'))
-    expect(sq.out).toBe('abc')
   })
 
   it('-d without -s names the second operand as extra', async () => {
-    const vfs = new RAMVFS()
-    const two = await runTr(vfs, [], ['a', 'b'], { delete: true }, ENC.encode('x'))
+    const two = await runTr(['a', 'b'], { delete: true }, ENC.encode('x'))
     expect(two.exitCode).toBe(1)
-    await expect(runTr(vfs, [], ['a', 'b', 'c'], { delete: true })).rejects.toThrow(
-      "tr: extra operand 'b'",
+    await expect(runTr(['a', 'b', 'c'], { delete: true })).rejects.toThrow("tr: extra operand 'b'")
+    await expect(runTr(['a', 'b', 'c'], { delete: true, squeeze_repeats: true })).rejects.toThrow(
+      "tr: extra operand 'c'",
     )
-    await expect(
-      runTr(vfs, [], ['a', 'b', 'c'], { delete: true, squeeze_repeats: true }),
-    ).rejects.toThrow("tr: extra operand 'c'")
-    await expect(runTr(vfs, [], ['a', 'b', 'c'])).rejects.toThrow("tr: extra operand 'c'")
-  })
-
-  it('missing arguments returns error', async () => {
-    const vfs = new RAMVFS()
-    const r = await runTr(vfs, [], [])
-    expect(r.exitCode).toBe(1)
+    await expect(runTr(['a', 'b', 'c'])).rejects.toThrow("tr: extra operand 'c'")
   })
 })

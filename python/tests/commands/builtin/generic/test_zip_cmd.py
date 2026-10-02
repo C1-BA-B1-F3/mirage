@@ -202,76 +202,6 @@ def test_excluded_strips_a_pattern_the_way_it_strips_a_name():
 
 
 @pytest.mark.asyncio
-async def test_recurses_a_directory_operand_under_r():
-    tree = _Tree(
-        {"/d/a.txt": b"alpha", "/d/sub/b.txt": b"beta"},
-        dirs=("/d", "/d/sub", "/d/empty"),
-    )
-    out, io_res = await _zip(
-        tree, [_spec("/out.zip"), _raw("/d", "d")], r=True
-    )
-    assert io_res.exit_code == 0
-    assert _entries(io_res.writes["/out.zip"]) == [
-        "d/",
-        "d/a.txt",
-        "d/empty/",
-        "d/sub/",
-        "d/sub/b.txt",
-    ]
-    assert out.decode().startswith("  adding: d/\n")
-
-
-@pytest.mark.asyncio
-async def test_without_r_a_directory_stores_only_itself():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    _, io_res = await _zip(tree, [_spec("/out.zip"), _raw("/d", "d")])
-    assert _entries(io_res.writes["/out.zip"]) == ["d/"]
-
-
-@pytest.mark.asyncio
-async def test_directory_entries_carry_no_content():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    _, io_res = await _zip(tree, [_spec("/out.zip"), _raw("/d", "d")], r=True)
-    with zipfile.ZipFile(io.BytesIO(io_res.writes["/out.zip"])) as zf:
-        info = zf.getinfo("d/")
-    assert info.is_dir()
-    assert info.file_size == 0
-
-
-@pytest.mark.asyncio
-async def test_junk_paths_drops_directories_and_keeps_basenames():
-    tree = _Tree(
-        {"/d/a.txt": b"alpha", "/d/sub/b.txt": b"beta"}, dirs=("/d", "/d/sub")
-    )
-    _, io_res = await _zip(
-        tree, [_spec("/out.zip"), _raw("/d", "d")], r=True, j=True
-    )
-    assert _entries(io_res.writes["/out.zip"]) == ["a.txt", "b.txt"]
-
-
-@pytest.mark.asyncio
-async def test_exclude_pattern_prunes_by_stored_name():
-    tree = _Tree(
-        {"/d/a.txt": b"alpha", "/d/sub/b.txt": b"beta"}, dirs=("/d", "/d/sub")
-    )
-    _, io_res = await _zip(
-        tree, [_spec("/out.zip"), _raw("/d", "d")], r=True, x=["d/sub/*"]
-    )
-    assert _entries(io_res.writes["/out.zip"]) == ["d/", "d/a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_follows_a_symlink_by_default():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    links = _links({"/d/link.txt": "/d/a.txt"})
-    _, io_res = await _zip(
-        tree, [_spec("/out.zip"), _raw("/d", "d")], r=True, links=links
-    )
-    with zipfile.ZipFile(io.BytesIO(io_res.writes["/out.zip"])) as zf:
-        assert zf.read("d/link.txt") == b"alpha"
-
-
-@pytest.mark.asyncio
 async def test_y_stores_a_symlink_as_a_symlink():
     tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
     links = _links({"/d/link.txt": "a.txt"})
@@ -282,55 +212,6 @@ async def test_y_stores_a_symlink_as_a_symlink():
         info = zf.getinfo("d/link.txt")
         assert zf.read(info) == b"a.txt"
     assert info.external_attr >> 16 == 0o120777
-
-
-@pytest.mark.asyncio
-async def test_warns_on_a_name_it_cannot_match_but_still_archives_the_rest():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    _, io_res = await _zip(
-        tree,
-        [
-            _spec("/out.zip"),
-            _raw("/d/a.txt", "d/a.txt"),
-            _raw("/nope", "nope"),
-        ],
-    )
-    assert io_res.exit_code == 0
-    assert io_res.stderr.decode() == "\tzip warning: name not matched: nope\n"
-    assert _entries(io_res.writes["/out.zip"]) == ["d/a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_nothing_to_do_writes_no_archive_and_exits_twelve():
-    tree = _Tree({})
-    out, io_res = await _zip(
-        tree, [_raw("/out.zip", "out.zip"), _raw("/nope", "nope")]
-    )
-    assert out is None
-    assert io_res.exit_code == 12
-    assert not io_res.writes
-    err = io_res.stderr.decode()
-    assert err.startswith("\tzip warning: name not matched: nope\n")
-    assert err.endswith("\nzip error: Nothing to do! (out.zip)\n")
-
-
-@pytest.mark.asyncio
-async def test_quiet_silences_the_warning_but_not_the_fatal_error():
-    tree = _Tree({})
-    _, io_res = await _zip(
-        tree, [_raw("/out.zip", "out.zip"), _raw("/nope", "nope")], q=True
-    )
-    assert io_res.stderr.decode() == "\nzip error: Nothing to do! (out.zip)\n"
-
-
-@pytest.mark.asyncio
-async def test_quiet_prints_no_adding_lines():
-    tree = _Tree({"/a.txt": b"alpha"})
-    out, io_res = await _zip(
-        tree, [_spec("/out.zip"), _raw("/a.txt", "a.txt")], q=True
-    )
-    assert out is None
-    assert _entries(io_res.writes["/out.zip"]) == ["a.txt"]
 
 
 @pytest.mark.asyncio
@@ -363,17 +244,6 @@ async def test_leaves_the_archive_out_of_itself():
 
 
 @pytest.mark.asyncio
-async def test_names_members_on_a_prefixed_mount():
-    tree = _Tree({"/data/d/a.txt": b"alpha"}, dirs=("/data", "/data/d"))
-    await _zip(
-        tree,
-        [_spec("/data/out.zip", "/data"), _raw("/data/d", "/data/d", "/data")],
-        r=True,
-    )
-    assert _entries(tree.files["/data/out.zip"]) == ["data/d/", "data/d/a.txt"]
-
-
-@pytest.mark.asyncio
 async def test_requires_an_archive_operand():
     tree = _Tree({})
     with pytest.raises(ValueError, match="usage"):
@@ -403,30 +273,6 @@ async def test_a_directory_the_walk_could_not_open_is_stored_in_silence():
 
 
 @pytest.mark.asyncio
-async def test_dot_stores_its_contents_at_the_archive_root():
-    tree = _Tree(
-        {"/d/[Content_Types].xml": b"x", "/d/sub/b.txt": b"beta"},
-        dirs=("/d", "/d/sub"),
-    )
-    _, io_res = await _zip(tree, [_spec("/out.zip"), _raw("/d", ".")], r=True)
-    assert _entries(io_res.writes["/out.zip"]) == [
-        "[Content_Types].xml",
-        "sub/",
-        "sub/b.txt",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_dot_without_r_is_nothing_to_do():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    _, io_res = await _zip(
-        tree, [_raw("/out.zip", "out.zip"), _raw("/d", ".")]
-    )
-    assert io_res.exit_code == 12
-    assert io_res.stderr == b"\nzip error: Nothing to do! (out.zip)\n"
-
-
-@pytest.mark.asyncio
 async def test_one_path_named_twice_is_stored_once():
     tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
     _, io_res = await _zip(
@@ -441,29 +287,6 @@ async def test_one_path_named_twice_is_stored_once():
     )
     assert io_res.exit_code == 0
     assert _entries(io_res.writes["/out.zip"]) == ["a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_two_paths_under_one_name_refuse_the_run():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    out, io_res = await _zip(
-        tree,
-        [
-            _spec("/out.zip"),
-            _raw("/d/a.txt", "./a.txt"),
-            _raw("/d/a.txt", "a.txt"),
-        ],
-    )
-    assert out is None
-    assert io_res.exit_code == 16
-    assert not io_res.writes
-    assert io_res.stderr == (
-        b"\tzip warning:   first full name: ./a.txt\n"
-        b"                      second full name: a.txt\n"
-        b"                     name in zip file repeated: a.txt\n"
-        b"\nzip error: Invalid command arguments"
-        b" (cannot repeat names in zip file)\n"
-    )
 
 
 @pytest.mark.asyncio

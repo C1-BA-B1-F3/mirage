@@ -313,7 +313,11 @@ export async function runTarget(
       })
     }
     if (report !== null) {
-      report.record(target.id, c.id, compare(c, run.exitCode, run.out, run.stderr, 0))
+      report.record(
+        target.id,
+        c.id,
+        compare(c, run.exitCode, run.out, run.stderr, 0, null, run.notes),
+      )
     }
   }
 }

@@ -23,7 +23,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -empty",
       "expect": {

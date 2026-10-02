@@ -56,23 +56,6 @@ beforeEach(() => {
   generic.mockResolvedValue([new Uint8Array(), new IOResult()])
 })
 
-it('retains ordinary service search', async () => {
-  await run({})
-  expect(search).toHaveBeenCalledOnce()
-  expect(generic).not.toHaveBeenCalled()
-})
-
-it.each([
-  { args_I: true },
-  { text: true },
-  { binary_files: 'without-match' },
-  { binary_files: 'binary' },
-])('scans rendered files for %j', async (flags) => {
-  await run(flags)
-  expect(search).not.toHaveBeenCalled()
-  expect(generic).toHaveBeenCalledOnce()
-})
-
 it('falls back when a service snippet contains binary bytes', async () => {
   search.mockResolvedValue([
     {

@@ -27,7 +27,7 @@ import type { ReadSpec } from '@struktoai/mirage-node'
 // integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
 const CASE_DIRS = ['unix', 'bash', 'crossmount', 'vfs', 'cli', 'session', 'console', 'secrets']
 const ENC = new TextEncoder()
-const DEC = new TextDecoder()
+const DEC = new TextDecoder('utf-8', { ignoreBOM: true })
 
 export interface Mount {
   path: string
@@ -507,9 +507,10 @@ export async function runScenario(
   mutate: (path: string, content: Uint8Array) => Promise<void>,
   mutateLine: (command: string) => Promise<void>,
   steps: ScenarioStep[],
-): Promise<{ exitCode: number; out: string; err: string }> {
+): Promise<{ exitCode: number; out: string; err: string; notes: string[] }> {
   const outputs: string[] = []
   const errors: string[] = []
+  const notes: string[] = []
   let exitCode = 0
   for (const step of steps) {
     if ('mutate' in step) {
@@ -521,9 +522,10 @@ export async function runScenario(
     const result = await ws.shell(step.command)
     outputs.push(DEC.decode(result.stdout))
     errors.push(DEC.decode(result.stderr))
+    notes.push(...undecodable({ stdout: result.stdout, stderr: result.stderr }))
     exitCode = result.exitCode
   }
-  return { exitCode, out: outputs.join(''), err: errors.join('') }
+  return { exitCode, out: outputs.join(''), err: errors.join(''), notes }
 }
 
 /** The two workspaces a consistency scenario runs across, and their teardown. */
@@ -556,12 +558,13 @@ export async function runConsistencyCase(
   opener: () => Promise<ScenarioOpen | null>,
   c: Case,
   target: Target,
-): Promise<{ exitCode: number; out: string; stderr: string }> {
+): Promise<{ exitCode: number; out: string; stderr: string; notes: string[] }> {
   const opened = await opener()
   if (opened === null) {
     return {
       exitCode: NO_SHADOW_EXIT,
       out: '',
+      notes: [],
       stderr: `[${target.id}] ${c.id}: ${target.mounts[0]?.vfs ?? 'unknown'} adapter has no shadow workspace\n`,
     }
   }
@@ -570,13 +573,13 @@ export async function runConsistencyCase(
     // every workspace a case can run against, or a consistency scenario would
     // silently run under a different one.
     opened.ws.env = { ...opened.ws.env, ...(target.env ?? {}) }
-    const { exitCode, out, err } = await runScenario(
+    const { exitCode, out, err, notes } = await runScenario(
       opened.ws,
       opened.mutate,
       opened.mutateLine,
       c.scenario ?? [],
     )
-    return { exitCode, out, stderr: err }
+    return { exitCode, out, stderr: err, notes }
   } finally {
     await opened.cleanup()
   }
@@ -802,6 +805,21 @@ export function explainNotes(
   return notes
 }
 
+/**
+ * Name each stream whose bytes are not UTF-8. The battery compares a
+ * replacing decode, which reads a raw byte as U+FFFD, so a host that printed
+ * the byte and one that printed U+FFFD would pass alike. A case whose output
+ * is not text pins its bytes through `od -An -tx1` instead.
+ */
+function undecodable(streams: Record<string, Uint8Array>): string[] {
+  return Object.entries(streams)
+    .filter(([, raw]) => {
+      const back = ENC.encode(DEC.decode(raw))
+      return back.length !== raw.length || back.some((b, i) => b !== raw[i])
+    })
+    .map(([name]) => `${name}: not UTF-8; pin the bytes with od -An -tx1`)
+}
+
 export async function runCase(
   ws: ExecWorkspace,
   c: Case,
@@ -857,7 +875,10 @@ export async function runCase(
     err,
     elapsed,
     checkOut,
-    notes: checks ? explainNotes(predicted, recorded, result.exitCode, out, err, reasons) : [],
+    notes: [
+      ...undecodable({ stdout: result.stdout, stderr: result.stderr }),
+      ...(checks ? explainNotes(predicted, recorded, result.exitCode, out, err, reasons) : []),
+    ],
   }
 }
 
@@ -874,7 +895,7 @@ export function compare(
   if (exitCode !== c.expect.exit) diffs.push(`exit: expected ${c.expect.exit}, got ${exitCode}`)
   if (out !== c.expect.stdout)
     diffs.push(`stdout: expected ${JSON.stringify(c.expect.stdout)}, got ${JSON.stringify(out)}`)
-  if (err.replace(/\n+$/, '') !== c.expect.stderr.replace(/\n+$/, ''))
+  if (err !== c.expect.stderr)
     diffs.push(`stderr: expected ${JSON.stringify(c.expect.stderr)}, got ${JSON.stringify(err)}`)
   if (c.check !== undefined && checkOut !== c.expect.check)
     diffs.push(`check: expected ${JSON.stringify(c.expect.check)}, got ${JSON.stringify(checkOut)}`)

@@ -1076,7 +1076,10 @@
         "nextcloud",
         "box",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "q1a=(w x y z); printf \"<%s>\" \"${q1a[@]:1:2}\"",
       "expect": {
@@ -1107,7 +1110,10 @@
         "nextcloud",
         "box",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "q2a=(w x y z); set -- \"${q2a[@]:1:2}\"; echo \"$#\"",
       "expect": {
@@ -1138,7 +1144,10 @@
         "nextcloud",
         "box",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "q3a=(w x y z); printf \"<%s>\" \"p${q3a[@]:1:2}s\"",
       "expect": {
@@ -1169,7 +1178,10 @@
         "nextcloud",
         "box",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "q4a=(cat car cow); printf \"<%s>\" \"${q4a[@]/c/K}\"",
       "expect": {
@@ -1200,7 +1212,10 @@
         "nextcloud",
         "box",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "q5a=(w x y z); printf \"<%s>\" \"${!q5a[@]}\"",
       "expect": {
@@ -1231,7 +1246,10 @@
         "nextcloud",
         "box",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "q6a=(w x y z); printf \"<%s>\" \"${q6a[*]:1:2}\"",
       "expect": {

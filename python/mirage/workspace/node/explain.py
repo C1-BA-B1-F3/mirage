@@ -45,6 +45,7 @@ from mirage.shell.types import NodeType
 from mirage.types import PathSpec
 from mirage.utils.path import resolve_path
 from mirage.workspace.abort import MirageAbortError
+from mirage.workspace.expand.classify.path import classify_bare_path
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.admission import (
@@ -224,28 +225,36 @@ class Judged:
 
 
 def _unread_paths(
-    words: Sequence[Word], cwd: str, lost: bool
+    words: Sequence[Word],
+    kinds: Sequence[str | PathSpec],
+    cwd: str,
+    lost: bool,
 ) -> frozenset[str]:
     """The paths a command's words may name that the pass cannot vouch
     for: what a word only the runtime expands names, and, once a ``cd``
     lost the cwd, the cwd and what every relative word names. Judged as
     typed in the cwd the pass last knew, a glob in a rule matched them
     and refused lines that touch only allowed files. A path some word
-    states outright stays read: ``rm -rf /data/old`` names
-    ``/data/old`` even when that is the cwd a ``cd`` lost.
+    names outright as a path stays read: ``rm -rf /data/old`` names
+    ``/data/old`` even when that is the cwd a ``cd`` lost, while the
+    pattern in ``grep -r -e /data/old`` names no path at all.
 
     Args:
         words (Sequence[Word]): the command's words after its name, and
             its redirect targets.
+        kinds (Sequence[str | PathSpec]): the same words classified, a
+            path as a PathSpec.
         cwd (str): the cwd the pass last knew.
         lost (bool): whether a ``cd`` the walk could not follow ran
             before the command.
     """
     unread = {cwd} if lost else set()
     read: set[str] = set()
-    for w in words:
-        stale = w.text is None or (lost and not w.value.startswith("/"))
-        (unread if stale else read).add(resolve_path(w.value, cwd))
+    for w, kind in zip(words, kinds, strict=True):
+        if w.text is None or (lost and not w.value.startswith("/")):
+            unread.add(resolve_path(w.value, cwd))
+        elif isinstance(kind, PathSpec):
+            read.add(kind.virtual)
     return frozenset(unread - read)
 
 
@@ -315,7 +324,18 @@ async def _judge_words(
     name = head.value
     args = [w.value for w in words[1:]]
     classified = classified_words(name, args, session, registry)
-    unread = _unread_paths([*words[1:], *redirect_words], session.cwd, lost)
+    unread = _unread_paths(
+        [*words[1:], *redirect_words],
+        [
+            *classified[1:],
+            *(
+                classify_bare_path(w.value, registry, session.cwd)
+                for w in redirect_words
+            ),
+        ],
+        session.cwd,
+        lost,
+    )
     gated = await gate(
         name,
         args,

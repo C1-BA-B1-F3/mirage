@@ -701,13 +701,22 @@ describe('prejudge', () => {
     // Read as typed in the cwd the pass last knew, `$F` and a relative
     // word after `cd "$d"` matched the rule's glob, refusing whole lines
     // that remove only an allowed file, and `.` read as a mount root. A
-    // path a word names outright stays read though it is the lost cwd.
+    // path a word names outright stays read though it is the lost cwd;
+    // a grep pattern spelling that cwd names no path.
+    const sealed = parseSessionProfile({
+      commands: { deny: [{ reason: 'sealed', commands: { grep: ['/data/prod'] } }] },
+    })
     const w = new Workspace(
       { '/data': new RAMVFS() },
-      { mode: MountMode.EXEC, shellParser: await getTestParser(), profiles: { r: PROFILE } },
+      {
+        mode: MountMode.EXEC,
+        shellParser: await getTestParser(),
+        profiles: { r: PROFILE, g: sealed },
+      },
     )
     open.push(w)
     w.createSession('s', { profile: 'r' })
+    w.createSession('g', { profile: 'g' })
     w.createSession('t')
     await w.shell('mkdir /data/prod; touch /data/x /data/w', { sessionId: 't' })
     for (const [session, line, code] of [
@@ -715,6 +724,11 @@ describe('prejudge', () => {
       ['s', 'cd /data/prod; d=/data; cd "$d" && rm w; echo ok', 0],
       ['s', 'd=/data; cd "$d" && rm /data/prod/y; echo ok', 1],
       ['s', 'cd /data/prod; mkdir v; cd v; d=/data; cd "$d" && rm -r /data/prod/v; echo ok', 1],
+      [
+        'g',
+        'mkdir -p /data/q; cd /data/prod; d=/data/q; cd "$d" && grep -r -e /data/prod; echo ok',
+        0,
+      ],
       ['t', 'cd /data; d=prod; cd "$d" && tar -cf /data/t.tar . && echo ok', 0],
     ] as const) {
       const said = await w.explain(line, session)

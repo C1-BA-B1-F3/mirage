@@ -35,9 +35,10 @@ import {
 } from '../../shell/helpers.ts'
 import { opaqueReads, referencedNames } from '../../shell/parse/index.ts'
 import { NodeType, type TSNodeLike } from '../../shell/types.ts'
-import type { PathSpec } from '../../types.ts'
+import { PathSpec } from '../../types.ts'
 import { resolvePath } from '../../utils/path.ts'
 import { makeAbortError } from '../abort.ts'
+import { classifyBarePath } from '../expand/classify/path.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
 import type { SessionState } from '../session/session.ts'
@@ -130,18 +131,26 @@ type Walk = Generator<Walked, [SessionState, boolean]>
  * what a word only the runtime expands names, and, once a `cd` lost the
  * cwd, the cwd and what every relative word names. Judged as typed in
  * the cwd the pass last knew, a glob in a rule matched them and refused
- * lines that touch only allowed files. A path some word states outright
- * stays read: `rm -rf /data/old` names `/data/old` even when that is the
- * cwd a `cd` lost.
+ * lines that touch only allowed files. A path some word names outright as
+ * a path stays read: `rm -rf /data/old` names `/data/old` even when that
+ * is the cwd a `cd` lost, while the pattern in `grep -r -e /data/old`
+ * names no path at all. `kinds` holds the same words classified, a path
+ * as a PathSpec.
  */
-function unreadPaths(words: readonly Word[], cwd: string, lost: boolean): Set<string> {
+function unreadPaths(
+  words: readonly Word[],
+  kinds: readonly (string | PathSpec)[],
+  cwd: string,
+  lost: boolean,
+): Set<string> {
   const unread = new Set(lost ? [cwd] : [])
   const read = new Set<string>()
-  for (const w of words) {
+  words.forEach((w, i) => {
     const value = wordValue(w)
-    const stale = w.text === null || (lost && !value.startsWith('/'))
-    ;(stale ? unread : read).add(resolvePath(value, cwd))
-  }
+    const kind = kinds[i]
+    if (w.text === null || (lost && !value.startsWith('/'))) unread.add(resolvePath(value, cwd))
+    else if (kind instanceof PathSpec) read.add(kind.virtual)
+  })
   for (const path of read) unread.delete(path)
   return unread
 }
@@ -289,7 +298,15 @@ async function judgeWords(
   const name = wordValue(head)
   const args = words.slice(1).map(wordValue)
   const classified = classifiedWords(name, args, session, registry)
-  const unread = unreadPaths([...words.slice(1), ...redirectWords], session.cwd, lost)
+  const unread = unreadPaths(
+    [...words.slice(1), ...redirectWords],
+    [
+      ...classified.slice(1),
+      ...redirectWords.map((w) => classifyBarePath(wordValue(w), registry, session.cwd)),
+    ],
+    session.cwd,
+    lost,
+  )
   const gated = await gate(
     name,
     args,

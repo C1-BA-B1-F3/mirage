@@ -88,3 +88,16 @@ def test_an_open_lands_its_modes_effect_before_any_byte_moves(
         with pytest.raises(refusal):
             apply_open(surface, F, parse_mode(mode))
     assert surface.effects == effect
+
+
+class _NoTruncate(World):
+    def truncate(self, path):
+        raise NotImplementedError("truncate")
+
+
+def test_an_open_on_a_mount_with_no_truncate_empties_through_create():
+    # hf buckets and databricks volumes register create but no truncate;
+    # an empty create is the same effect, so the open still lands it.
+    surface = _NoTruncate(files=[F])
+    assert apply_open(surface, F, parse_mode("w")) is None
+    assert surface.effects == [("create", F)]

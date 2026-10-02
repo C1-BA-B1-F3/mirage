@@ -33,6 +33,7 @@ export { RedisSessionStore, type RedisSessionStoreOptions } from './workspace/se
 export {
   DEFAULT_STATE_ROOT,
   DiskWorkspaceStateStore,
+  DOT_IDS,
   type DiskWorkspaceStateStoreOptions,
 } from './workspace/store/disk.ts'
 export {

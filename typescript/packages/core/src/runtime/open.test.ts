@@ -88,4 +88,14 @@ describe('applyOpen', () => {
       expect(surface.effects).toEqual(effect)
     },
   )
+
+  it('empties through create on a mount with no truncate', async () => {
+    // hf buckets and databricks volumes register create but no truncate;
+    // an empty create is the same effect, so the open still lands it.
+    const surface = world({ files: [F] })
+    surface.truncate = (): Promise<void> =>
+      Promise.reject(Object.assign(new Error('truncate'), { code: 'ENOTSUP' }))
+    expect(await applyOpen(surface, F, parseMode('w'))).toBeNull()
+    expect(surface.effects).toEqual([`create ${F}`])
+  })
 })

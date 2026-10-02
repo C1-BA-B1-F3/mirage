@@ -326,6 +326,10 @@ class WasiFs:
         handle = FileHandle.opened(
             path, data, writable=mode.writable, append=mode.append
         )
+        # A file the open created or emptied has no row from before it,
+        # so fd_filestat_get answers from the row the open left behind.
+        if row is None:
+            row = self._fs.stat_or_none(path)
         fd = self._fds.add(
             FdEntry(kind="file", handle=handle, path=path, stat=row)
         )

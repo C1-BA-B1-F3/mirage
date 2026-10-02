@@ -185,8 +185,20 @@ async def close_async(
             for mount in ws._registry.mounts()
         }
         await asyncio.gather(*(store.close() for store in stores.values()))
+        dropped: Exception | None = None
         if drop_state:
-            await ws._state_store.drop(ws.workspace_id)
+            # The kernel mounts still serve requests until the sync parts
+            # unmount them, and a request may write the very state being
+            # deleted, so they go first. A failed drop must not skip the
+            # rest of teardown: a mount left up keeps the process alive.
+            ws._kernel_mounts.close()
+            ws._state_dropped = True
+            try:
+                for plane in ws._planes:
+                    await plane.clear()
+                await ws._state_store.drop(ws.workspace_id)
+            except Exception as exc:
+                dropped = exc
         if ws._owns_state_store:
             await ws._state_store.close()
         close_sync_parts(ws)
@@ -200,3 +212,5 @@ async def close_async(
         finally:
             await ws._cache.close()
         ws._async_closed = True
+        if dropped is not None:
+            raise dropped

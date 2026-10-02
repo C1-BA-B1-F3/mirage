@@ -28,6 +28,7 @@ export interface GitRepo {
 
 export interface VersionBackend {
   openRepo(workspaceId: string): Promise<GitRepo>
+  hasRepo(workspaceId: string): boolean
   dropRepo(workspaceId: string): Promise<void>
 }
 
@@ -53,8 +54,26 @@ export class LocalBackend implements VersionBackend {
     }
     return { fs, gitdir }
   }
+  /**
+   * Whether a workspace has committed anything, without creating. An id
+   * that is not one safe path segment can never have had a repo, so it
+   * has none rather than an error.
+   */
+  hasRepo(workspaceId: string): boolean {
+    let gitdir: string
+    try {
+      gitdir = this.gitdirOf(workspaceId)
+    } catch (err) {
+      if (err instanceof PathOutsideRootError) return false
+      throw err
+    }
+    return existsSync(join(gitdir, 'objects'))
+  }
+
   /** Delete one workspace's version repo, when it has one. */
   async dropRepo(workspaceId: string): Promise<void> {
-    await rm(this.gitdirOf(workspaceId), { recursive: true, force: true })
+    if (this.hasRepo(workspaceId)) {
+      await rm(this.gitdirOf(workspaceId), { recursive: true, force: true })
+    }
   }
 }

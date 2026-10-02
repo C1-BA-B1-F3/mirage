@@ -16,6 +16,7 @@ import errno
 import os
 from typing import Protocol
 
+from mirage.errors import FsCondition, classify
 from mirage.runtime.handles.mode import OpenMode
 from mirage.runtime.types import VFSEntry, VFSStat
 
@@ -90,7 +91,15 @@ def apply_open(
         surface.create(path)
         return None
     if mode.truncate:
-        surface.truncate(path)
+        try:
+            surface.truncate(path)
+        except Exception as exc:
+            if classify(exc) is not FsCondition.ENOTSUP:
+                raise
+            # A mount with no truncate (hf buckets, databricks volumes)
+            # still empties the file through an empty create, which is
+            # the effect the open asked for.
+            surface.create(path)
         return None
     return row
 

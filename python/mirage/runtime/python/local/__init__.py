@@ -12,8 +12,26 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.runtime.python.local.runtime import LocalRuntime
+import importlib
+from typing import TYPE_CHECKING, Any
 
-__all__ = [
-    "LocalRuntime",
-]
+if TYPE_CHECKING:
+    from mirage.runtime.python.local.runtime import LocalRuntime
+
+_EXPORTS: dict[str, tuple[str, ...]] = {
+    "mirage.runtime.python.local.runtime": ("LocalRuntime",),
+}
+_MODULE_OF = {
+    name: module for module, names in _EXPORTS.items() for name in names
+}
+
+__all__ = ["LocalRuntime"]
+
+
+def __getattr__(name: str) -> Any:
+    module = _MODULE_OF.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value

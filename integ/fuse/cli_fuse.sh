@@ -19,6 +19,9 @@ fail=0
 points() { jq -r '.fuse_mountpoints // .fuseMountpoints'; }
 
 # Run the full CLI battery against one CLI; emit one "key=value" line per probe.
+# Every touch of a kernel mountpoint below is bounded: a wedged mount
+# fails its probe line and the report (daemon.log included) still prints,
+# where an unbounded read hung the job until the runner cancelled it.
 probe() {
   local cli="$1" lang="$2"
   local dmnt="/tmp/cli-fuse-$lang-data"
@@ -112,7 +115,7 @@ YML
   # The daemon mounts asynchronously; wait for both files to appear via the OS.
   local i
   for i in $(seq 1 50); do
-    [ -f "$dmnt/a.txt" ] && [ -f "$lmnt/b.txt" ] && break
+    timeout 2 test -f "$dmnt/a.txt" && timeout 2 test -f "$lmnt/b.txt" && break
     sleep 0.2
   done
 
@@ -126,14 +129,14 @@ YML
   # the kernel the same way as the pinned mounts.
   $cli execute -w cf -c 'echo gamma > /auto/c.txt' </dev/null >/dev/null
   for i in $(seq 1 50); do
-    [ -n "$auto_mp" ] && [ -f "$auto_mp/c.txt" ] && break
+    [ -n "$auto_mp" ] && timeout 2 test -f "$auto_mp/c.txt" && break
     sleep 0.2
   done
 
-  echo "data_cat=$(cat "$dmnt/a.txt" 2>/dev/null)"
-  echo "logs_cat=$(cat "$lmnt/b.txt" 2>/dev/null)"
-  echo "auto_cat=$(cat "$auto_mp/c.txt" 2>/dev/null)"
-  echo "logs_size=$(wc -c < "$lmnt/b.txt" 2>/dev/null | tr -d ' ')"
+  echo "data_cat=$(timeout 10 cat "$dmnt/a.txt" 2>/dev/null)"
+  echo "logs_cat=$(timeout 10 cat "$lmnt/b.txt" 2>/dev/null)"
+  echo "auto_cat=$(timeout 10 cat "$auto_mp/c.txt" 2>/dev/null)"
+  echo "logs_size=$(timeout 10 cat "$lmnt/b.txt" 2>/dev/null | wc -c | tr -d ' ')"
   echo "mount_keys=$(printf '%s' "$detail" | points | jq -r 'keys | sort | join(",")')"
   echo "data_pinned=$([ "$data_mp" == "$dmnt" ] && echo yes || echo no)"
   echo "logs_pinned=$([ "$logs_mp" == "$lmnt" ] && echo yes || echo no)"
@@ -145,12 +148,12 @@ YML
   # temp directory. Wait for the generated dir to disappear, then assert.
   $cli workspace delete cf >/dev/null 2>&1 </dev/null || true
   for i in $(seq 1 25); do
-    [ -n "$auto_mp" ] && [ ! -d "$auto_mp" ] && break
+    [ -n "$auto_mp" ] && timeout 2 test ! -d "$auto_mp" && break
     sleep 0.2
   done
-  echo "data_dir_survives=$([ -d "$dmnt" ] && echo yes || echo no)"
-  echo "logs_dir_survives=$([ -d "$lmnt" ] && echo yes || echo no)"
-  echo "gen_dir_removed=$([ -n "$auto_mp" ] && [ ! -d "$auto_mp" ] && echo yes || echo no)"
+  echo "data_dir_survives=$(timeout 2 test -d "$dmnt" && echo yes || echo no)"
+  echo "logs_dir_survives=$(timeout 2 test -d "$lmnt" && echo yes || echo no)"
+  echo "gen_dir_removed=$([ -n "$auto_mp" ] && timeout 2 test ! -d "$auto_mp" && echo yes || echo no)"
 
   # Reuse a pinned mountpoint across re-create: the caller-owned $dmnt directory
   # survived the cf delete above, so a NEW workspace pinned to the SAME path must
@@ -168,10 +171,10 @@ YML
   $cli workspace create "$reuse_yaml" --id cf2 >/dev/null </dev/null
   $cli execute -w cf2 -c 'echo reused > /data/r.txt' </dev/null >/dev/null
   for i in $(seq 1 50); do
-    [ -f "$dmnt/r.txt" ] && break
+    timeout 2 test -f "$dmnt/r.txt" && break
     sleep 0.2
   done
-  echo "reuse_after_recreate=$(cat "$dmnt/r.txt" 2>/dev/null)"
+  echo "reuse_after_recreate=$(timeout 10 cat "$dmnt/r.txt" 2>/dev/null)"
   $cli workspace delete cf2 >/dev/null 2>&1 </dev/null || true
 
   $cli daemon stop >/dev/null 2>&1 </dev/null || true

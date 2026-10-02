@@ -114,6 +114,11 @@ async def test_delete_drops_the_workspace_state(tmp_path):
         assert (await client.delete("/v1/workspaces/again")).status_code == 200
         assert not (state / "workspaces" / "again").exists()
         assert not (versions / "again").exists()
+        # Reading the versions of a deleted workspace finds none, and
+        # does not recreate the repo its delete removed.
+        r = await client.get("/v1/workspaces/again/versions")
+        assert r.status_code == 200 and r.json() == []
+        assert not (versions / "again").exists()
         assert (
             await client.post("/v1/workspaces", json=body)
         ).status_code == 201
@@ -127,6 +132,58 @@ async def test_delete_drops_the_workspace_state(tmp_path):
         assert "no-link" in out
         assert "secret-token" not in out
         await client.delete("/v1/workspaces/again")
+
+
+@pytest.mark.asyncio
+async def test_a_dot_id_is_refused_before_it_can_name_the_state_root(
+    tmp_path,
+):
+    # Deleting a workspace removes its state directory whole, and the
+    # dot names would make that the root or the workspaces directory.
+    app = build_app(
+        idle_grace_seconds=10.0,
+        exit_event=asyncio.Event(),
+        state_root=tmp_path,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        for wid in ("..", "."):
+            body = {**_minimal_config(), "id": wid}
+            r = await client.post("/v1/workspaces", json=body)
+            assert r.status_code == 400, r.text
+            r = await client.post(
+                "/v1/workspaces/load", json={"path": "missing.tar", "id": wid}
+            )
+            assert "invalid workspace id" in r.json()["detail"], r.text
+
+
+@pytest.mark.asyncio
+async def test_a_failed_delete_answers_500_and_releases_the_id(
+    tmp_path, monkeypatch
+):
+    app = build_app(
+        idle_grace_seconds=10.0,
+        exit_event=asyncio.Event(),
+        state_root=tmp_path,
+    )
+    body = {**_minimal_config(), "id": "doomed"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        assert (
+            await client.post("/v1/workspaces", json=body)
+        ).status_code == 201
+        ws = app.state.registry.get("doomed").runner.ws
+
+        async def refuse(workspace_id):
+            raise RuntimeError("store on fire")
+
+        monkeypatch.setattr(ws.state_store, "drop", refuse)
+        r = await client.delete("/v1/workspaces/doomed")
+        assert r.status_code == 500
+        assert "store on fire" in r.json()["detail"]
+        assert "doomed" not in app.state.registry
 
 
 @pytest.mark.asyncio

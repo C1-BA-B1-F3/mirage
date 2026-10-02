@@ -18,11 +18,17 @@ from typing import Protocol
 
 from dulwich.repo import Repo
 
-from mirage.server.paths import resolve_within_root, validate_path_segment
+from mirage.server.paths import (
+    PathOutsideRootError,
+    resolve_within_root,
+    validate_path_segment,
+)
 
 
 class VersionBackend(Protocol):
     def open_repo(self, workspace_id: str) -> Repo: ...
+
+    def has_repo(self, workspace_id: str) -> bool: ...
 
     def drop_repo(self, workspace_id: str) -> None: ...
 
@@ -43,12 +49,26 @@ class LocalBackend:
         path.mkdir(parents=True, exist_ok=True)
         return Repo.init_bare(str(path))
 
+    def has_repo(self, workspace_id: str) -> bool:
+        """Whether a workspace has committed anything, without creating.
+
+        An id that is not one safe path segment can never have had a
+        repo, so it has none rather than an error.
+
+        Args:
+            workspace_id (str): the workspace asked about.
+        """
+        try:
+            path = self._path(workspace_id)
+        except PathOutsideRootError:
+            return False
+        return (path / "objects").is_dir()
+
     def drop_repo(self, workspace_id: str) -> None:
         """Delete one workspace's version repo, when it has one.
 
         Args:
             workspace_id (str): the workspace being deleted.
         """
-        path = self._path(workspace_id)
-        if path.is_dir():
-            shutil.rmtree(path)
+        if self.has_repo(workspace_id):
+            shutil.rmtree(self._path(workspace_id))

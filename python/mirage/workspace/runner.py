@@ -119,10 +119,20 @@ class WorkspaceRunner:
         """
         if not self._thread.is_alive():
             return
+        failure: Exception | None = None
         try:
             await self.call(self.ws.delete() if delete else self.ws.close())
-        except Exception:
-            logger.exception("workspace close raised during runner shutdown")
+        except Exception as exc:
+            if delete:
+                failure = exc
+            else:
+                logger.exception(
+                    "workspace close raised during runner shutdown"
+                )
         self.loop.call_soon_threadsafe(self.loop.stop)
         await asyncio.to_thread(self._thread.join)
         self.loop.close()
+        if failure is not None:
+            # A delete that failed left state behind, which the caller
+            # has to hear about; a close that failed is shutdown noise.
+            raise failure

@@ -37,6 +37,10 @@ function expandHome(p: string): string {
 }
 
 // Match Python's urllib quote(safe="") for the workspace path segment.
+// The workspace ids that would name the state root or its `workspaces`
+// directory rather than one workspace's own.
+export const DOT_IDS: ReadonlySet<string> = new Set(['', '.', '..'])
+
 function quoteSegment(name: string): string {
   return encodeURIComponent(name).replace(
     /[!'()*]/g,
@@ -81,6 +85,10 @@ export class DiskWorkspaceStateStore extends WorkspaceStateStore {
   }
 
   private wsRoot(workspaceId: string): string {
+    // The id is one path segment, quoted so a separator cannot leave it;
+    // the dot names are the escapes quoting keeps, and deleting a
+    // workspace removes this directory whole, so they are refused.
+    if (DOT_IDS.has(workspaceId)) throw new Error(`invalid workspace id: ${workspaceId}`)
     return path.join(this.root, 'workspaces', quoteSegment(workspaceId))
   }
 

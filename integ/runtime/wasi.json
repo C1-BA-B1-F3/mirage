@@ -887,6 +887,13 @@
             "exit": 1,
             "stderr_contains": "invalid mode: 'rr'"
           }
+        },
+        {
+          "command": "python3 -c \"import os; f = open('/data/seed.txt', 'w'); print(os.fstat(f.fileno()).st_mtime > 0)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True\n"
+          }
         }
       ]
     },

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { classify } from '../errors/index.ts'
 import { eexist, eisdir, enoent } from '../utils/errors.ts'
 import type { OpenMode } from './handles/mode.ts'
 import type { VFSEntry, VFSStat } from './vfs.ts'
@@ -70,7 +71,15 @@ export async function applyOpen(
     return null
   }
   if (mode.truncate) {
-    await surface.truncate(path)
+    try {
+      await surface.truncate(path)
+    } catch (err) {
+      if (classify(err) !== 'ENOTSUP') throw err
+      // A mount with no truncate (hf buckets, databricks volumes) still
+      // empties the file through an empty create, which is the effect the
+      // open asked for.
+      await surface.create(path)
+    }
     return null
   }
   return row

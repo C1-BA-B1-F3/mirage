@@ -32,6 +32,8 @@ export interface CloseDeps {
   /** Delete the workspace's state from its store before the store closes. */
   dropState: boolean
   workspaceId: string
+  /** The stores the workspace's state lives in, however they were wired. */
+  planes: { clear(): Promise<void> }[]
 }
 
 /**
@@ -101,7 +103,16 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
     // Per-plane stores from the provider close through it below; a
     // caller-passed provider (or direct store override) may be shared
     // with sibling workspaces, so only its owner closes it.
-    if (deps.dropState) await deps.stateStore.drop(deps.workspaceId)
+    if (deps.dropState) {
+      // A failed drop must not skip the rest of teardown; it is raised
+      // with the other failures once everything is released.
+      try {
+        for (const plane of deps.planes) await plane.clear()
+        await deps.stateStore.drop(deps.workspaceId)
+      } catch (err) {
+        failures.push(err)
+      }
+    }
     if (deps.ownsStateStore) {
       await deps.stateStore.close()
     }

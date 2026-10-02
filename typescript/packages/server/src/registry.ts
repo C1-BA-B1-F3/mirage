@@ -75,14 +75,21 @@ export class WorkspaceRegistry {
    * Delete `id`: stop its runner and drop its state. The workspace's
    * links, history, sessions and metadata leave its state store with it,
    * so a workspace created later under the same id starts empty.
-   * `closeAll` (daemon shutdown) keeps them.
+   * `closeAll` (daemon shutdown) keeps them. The id stays registered
+   * until the deletion is done, so a create under it is refused rather
+   * than registering a workspace whose state this deletion would then
+   * remove; `cleanup` runs inside that window.
    */
-  async remove(id: string): Promise<WorkspaceEntry> {
+  async remove(id: string, cleanup?: () => Promise<void>): Promise<WorkspaceEntry> {
     const entry = this.entries.get(id)
     if (entry === undefined) throw new Error(`workspace not found: ${id}`)
-    this.entries.delete(id)
-    await entry.runner.stop({ delete: true })
-    if (this.entries.size === 0) this.startIdleTimer()
+    try {
+      await entry.runner.stop({ delete: true })
+      if (cleanup !== undefined) await cleanup()
+    } finally {
+      this.entries.delete(id)
+      if (this.entries.size === 0) this.startIdleTimer()
+    }
     return entry
   }
 

@@ -29,6 +29,11 @@ from mirage.workspace.store.base import WorkspaceFields, WorkspaceStateStore
 DEFAULT_STATE_ROOT = "~/.mirage/state"
 
 
+# The workspace ids that would name the state root or its `workspaces`
+# directory rather than one workspace's own.
+DOT_IDS = frozenset({"", ".", ".."})
+
+
 class DiskWorkspaceStateStore(WorkspaceStateStore):
     """WorkspaceStateStore backed by a directory tree.
 
@@ -66,6 +71,11 @@ class DiskWorkspaceStateStore(WorkspaceStateStore):
         self._sessions: dict[str, DiskSessionStore] = {}
 
     def _ws_root(self, workspace_id: str) -> str:
+        # The id is one path segment, quoted so a separator cannot leave
+        # it; the dot names are the escapes quoting keeps, and deleting a
+        # workspace removes this directory whole, so they are refused.
+        if workspace_id in DOT_IDS:
+            raise ValueError(f"invalid workspace id: {workspace_id!r}")
         return os.path.join(
             self._root, "workspaces", quote(workspace_id, safe="")
         )

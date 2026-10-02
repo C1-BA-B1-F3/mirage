@@ -155,4 +155,12 @@ export class Workspace extends CoreWorkspace {
     await this.kernelMounts.close()
     await super.close()
   }
+
+  // The kernel mounts come down first here too: the core teardown never
+  // reaches them, and a mount left up serves a workspace already closed.
+  override async delete(): Promise<void> {
+    await this.fuseReady().catch(() => undefined)
+    await this.kernelMounts.close()
+    await super.delete()
+  }
 }

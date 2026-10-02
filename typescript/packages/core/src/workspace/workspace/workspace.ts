@@ -167,6 +167,11 @@ export class Workspace {
   private readonly lineLock = new KeyLock()
   private readonly closers: (() => Promise<void>)[] = []
   private closing: Promise<void> | null = null
+  private stateDropped = false
+  // The stores this workspace's state lives in, whether the state store
+  // built them or the caller passed one in directly: delete clears these,
+  // not only what the state store would hand out.
+  private readonly planes: { clear(): Promise<void> }[]
 
   /**
    * Whether no new work should be accepted.
@@ -353,6 +358,7 @@ export class Workspace {
       this.registry.clis.install(cliName, cliSpec, cliConfig)
     }
     this.observer = new Observer(stores.observe)
+    this.planes = [stores.namespace, stores.observe, stores.sessions]
     // Explicit at the construction site: the history view does not cache
     // reads, so its policy can only ever be bounded.
     this.registry.mount(
@@ -1684,14 +1690,18 @@ export class Workspace {
    *
    * Links, history, sessions and the metadata record all go, so a
    * workspace created later under this id starts empty. `close` keeps
-   * them, which is how a daemon's workspace survives a restart.
+   * them, which is how a daemon's workspace survives a restart. Throws
+   * when the workspace was closed first: that closed the stores its
+   * state lives in, so nothing was deleted.
    */
   async delete(): Promise<void> {
     this.closing ??= this.runClose(true)
     await this.closing
+    if (!this.stateDropped) throw new Error('workspace was closed before delete; its state is kept')
   }
 
   private async runClose(dropState: boolean): Promise<void> {
+    this.stateDropped = dropState
     await this.sessionManager.settle()
     await this.scriptPolicy.close()
     try {
@@ -1706,6 +1716,7 @@ export class Workspace {
         sharedMounts: this.sharedMounts,
         dropState,
         workspaceId: this.workspaceId,
+        planes: this.planes,
       })
     } finally {
       // Teardown has run either way, and `closing` is memoized, so it will

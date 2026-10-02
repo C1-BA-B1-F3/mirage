@@ -46,6 +46,7 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.shared import expand_operands
 from mirage.workspace.executor.command.run import drop_mount_caches
+from mirage.workspace.mount.namespace import RAMNamespaceStore
 from mirage.workspace.mount.spec import Mount
 from mirage.workspace.snapshot import to_state_dict
 from mirage.workspace.types import ExecutionNode
@@ -1128,3 +1129,32 @@ async def test_restored_workspace_leaves_borrowed_mounts_open(
     finally:
         await replica.close()
         await ws.close()
+
+
+def test_delete_clears_a_namespace_store_passed_in_directly():
+    # A store handed in directly is where this workspace's links live,
+    # so delete clears it too, not only the planes the state store owns.
+    async def go():
+        namespace = RAMNamespaceStore()
+        ws = Workspace(
+            {"/data/": RAMVFS()},
+            mode=MountMode.WRITE,
+            namespace_store=namespace,
+        )
+        await namespace.set("/data/l", {"mode": 0o600})
+        await ws.delete()
+        return await namespace.load()
+
+    assert asyncio.run(go()) == {}
+
+
+def test_delete_after_close_refuses_rather_than_keep_the_state_quietly():
+    # close() closed the stores the state lives in, so a later delete
+    # has nothing it can drop; it says so instead of answering success.
+    async def go():
+        ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+        await ws.close()
+        await ws.delete()
+
+    with pytest.raises(RuntimeError, match="closed before delete"):
+        asyncio.run(go())

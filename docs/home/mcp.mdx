@@ -1,0 +1,67 @@
+---
+title: MCP
+description: Serve a workspace's tools to any MCP client over stdio, the daemon's HTTP API, or SSH.
+icon: plug
+---
+
+## What It Does
+
+Mirage serves six tools to any [MCP](https://modelcontextprotocol.io) client: `execute_command`, `read`, `write`, `edit`, `ls` and `grep`. Every call runs in a mirage session, so commands go through the shell, file calls go through the workspace's mounts, and the session's profile and policies apply. `edit` refuses to overwrite a file that changed since the agent last read it.
+
+There are three ways to reach them:
+
+| Door | Reach | Session |
+| --- | --- | --- |
+| `mirage mcp` | stdio, one workspace built from a config file | the workspace's default session |
+| `/v1/workspaces/{id}/mcp` | the daemon's HTTP API, streamable HTTP | the default session, or the one the URL names |
+| `ssh -s <id>@host mcp` | the daemon's [SSH door](/home/ssh) | a fresh session under the login key's profile |
+
+## stdio
+
+`mirage mcp` builds the workspace from a config file and serves it on stdin and stdout until the client disconnects. It looks for `workspace.yaml` walking up from the working directory; `MIRAGE_MCP_CONFIG` or a path argument picks another.
+
+```json
+{
+  "mcpServers": {
+    "mirage": { "command": "mirage", "args": ["mcp", "/abs/path/workspace.yaml"] }
+  }
+}
+```
+
+`--no-stale-write-protection` lets `edit` and `write` proceed when a file changed since it was read.
+
+## HTTP
+
+The daemon serves every workspace at `/v1/workspaces/{id}/mcp`, behind the same host check and [auth](/home/auth) as the rest of its API. The endpoint is stateless: each request runs in the workspace's default session, so a `cd` in one call holds for the next, and a session created with `POST /v1/workspaces/{id}/sessions` is named in the URL to give an agent its own cwd and environment:
+
+```json
+{
+  "mcpServers": {
+    "mirage": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/v1/workspaces/demo/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+The Python daemon names the session with `?session_id=agent`, the TypeScript daemon with `?sessionId=agent`, the casing each daemon's API uses throughout. An unknown workspace or session answers 404.
+
+## SSH
+
+With the daemon's [SSH door](/home/ssh) on, the `mcp` subsystem serves the workspace the login names over MCP's stdio framing, so any client that launches a command can use it:
+
+```json
+{
+  "mcpServers": {
+    "mirage": { "command": "ssh", "args": ["-T", "mirage-demo", "-s", "mcp"] }
+  }
+}
+```
+
+Each channel is a fresh session under the login key's profile ([Bind a key to a profile](/home/ssh#bind-a-key-to-a-profile)), with the environment an `ssh` login gets, and it closes when the channel ends. A key whose profile seals a path gets the same refusal from `read` as from `cat`.
+
+## Errors
+
+A tool the server does not serve is a protocol error (`-32602 Tool <name> not found`). Arguments outside a tool's input schema, and a failing call, come back as the tool's answer with `isError` set, so the agent reads them and can retry.

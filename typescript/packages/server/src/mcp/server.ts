@@ -25,18 +25,27 @@ import {
   READ_DESCRIPTION,
   WRITE_DESCRIPTION,
 } from '@struktoai/mirage-agents/tool_descriptions'
-import { MirageToolOperations, type MirageToolOperationsOptions } from '@struktoai/mirage-agents/tool_operations'
+import {
+  MirageToolOperations,
+  type MirageToolOperationsOptions,
+} from '@struktoai/mirage-agents/tool_operations'
 
 export interface MirageMcpServerOptions extends MirageToolOperationsOptions {
   name?: string
   version?: string
+  /**
+   * The tool table to serve, built from the workspace and these options
+   * when absent. The HTTP door builds a server per request around one
+   * table, so the read a request stamps guards the next request's edit.
+   */
+  operations?: MirageToolOperations
 }
 
 export function createMirageMcpServer(
   workspace: Workspace,
   options: MirageMcpServerOptions = {},
 ): McpServer {
-  const operations = new MirageToolOperations(workspace, options)
+  const operations = options.operations ?? new MirageToolOperations(workspace, options)
   const server = new McpServer({
     name: options.name ?? 'mirage',
     version: options.version ?? VERSION,

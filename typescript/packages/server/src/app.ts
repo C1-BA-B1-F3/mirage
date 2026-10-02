@@ -20,6 +20,7 @@ import { JobTable } from './jobs.ts'
 import type { AuthConfig } from './auth/index.ts'
 import { registerAuth, resolveAuthConfig } from './auth/index.ts'
 import { isHostAllowed, resolveAllowedHosts } from './host_validation.ts'
+import { registerMcpRoutes } from './mcp/http.ts'
 import { registerAsksRoutes } from './routers/asks.ts'
 import { registerExecuteRoutes } from './routers/execute.ts'
 import { registerHealthRoutes } from './routers/health.ts'
@@ -109,6 +110,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   registerAsksRoutes(app, { registry })
   registerExecuteRoutes(app, { registry, jobs })
   registerJobsRoutes(app, { jobs })
+  const mcp = registerMcpRoutes(app, registry)
   const ssh: SSHDoor = {
     config: options.sshConfig !== undefined ? options.sshConfig : resolveSSHConfig(),
     listener: null,
@@ -127,10 +129,11 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.addHook('onClose', async () => {
     if (ssh.listener !== null) await ssh.listener.close()
     try {
+      await mcp.close()
       await jobs.close()
     } finally {
       await registry.closeAll()
     }
   })
-  return Object.assign(app, { registry, jobs, versionBackend, pidFile, ssh })
+  return Object.assign(app, { registry, jobs, versionBackend, pidFile, ssh, mcp })
 }

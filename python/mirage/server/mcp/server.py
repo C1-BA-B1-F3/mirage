@@ -44,6 +44,7 @@ from mirage.agents.tool_operations import (
     MirageToolOperations,
     ToolResult,
 )
+from mirage.workspace.runner import WorkspaceRunner
 from mirage.workspace.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,11 @@ class MirageMcpServer:
             file that changed since it read it.
         name (str): Server name advertised to the client.
         version (str): Server version advertised to the client.
+        session_id (str | None): The session the tools act as; None is
+            the workspace's default session.
+        runner (WorkspaceRunner | None): The loop the workspace lives on,
+            when it is not the caller's: the daemon serves MCP from its
+            own loop and runs each tool call on the workspace's.
     """
 
     def __init__(
@@ -153,8 +159,13 @@ class MirageMcpServer:
         stale_write_protection: bool = True,
         name: str = "mirage",
         version: str = __version__,
+        session_id: str | None = None,
+        runner: WorkspaceRunner | None = None,
     ) -> None:
-        self._ops = MirageToolOperations(workspace, stale_write_protection)
+        self._ops = MirageToolOperations(
+            workspace, stale_write_protection, session_id
+        )
+        self._runner = runner
         # The SDK's parameter is the lifespan result. No lifespan is
         # passed, so the default one runs and yields an empty dict.
         self.server: Server[dict[str, Any]] = Server(
@@ -220,7 +231,9 @@ class MirageMcpServer:
                 )
             )
         try:
-            return await self._run(params.name, arguments)
+            if self._runner is None:
+                return await self._run(params.name, arguments)
+            return await self._runner.call(self._run(params.name, arguments))
         except Exception as exc:
             logger.debug("mcp tool %s failed", params.name, exc_info=True)
             return _to_mcp(ToolResult(str(exc), True))

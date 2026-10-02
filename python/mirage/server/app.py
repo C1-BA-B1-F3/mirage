@@ -39,6 +39,7 @@ from mirage.server.host_validation import (
     resolve_allowed_hosts,
 )
 from mirage.server.jobs import JobTable
+from mirage.server.mcp.http import register_mcp_routes
 from mirage.server.paths import (
     mirage_home,
     pid_file_path,
@@ -137,6 +138,7 @@ async def _lifespan(app: FastAPI):
             ssh.close()
             await ssh.wait_closed()
         try:
+            await app.state.mcp.close()
             await app.state.jobs.close()
         finally:
             await app.state.registry.close_all()
@@ -230,4 +232,5 @@ def build_app(
     app.include_router(execute.router)
     app.include_router(jobs.router)
     app.include_router(health.router)
+    app.state.mcp = register_mcp_routes(app, app.state.registry)
     return app

@@ -12,8 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runWithSession } from '@struktoai/mirage-core/context/session_context'
 import { gnuDirname } from '@struktoai/mirage-core/utils/path'
-import type { ExecuteResult, Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
+import type {
+  ExecuteOptions,
+  ExecuteResult,
+  Workspace,
+} from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { FileVersionTracker, StaleMirageFileError } from './file_version.ts'
 import { decode, ioToStr, replaceText } from './io_text.ts'
 
@@ -25,6 +30,11 @@ export interface ToolResult {
 
 export interface MirageToolOperationsOptions {
   staleWriteProtection?: boolean
+  /**
+   * The session the tools act as, with its cwd, environment and mount
+   * grants; the workspace's default session when absent.
+   */
+  sessionId?: string
 }
 
 function textResult(text: string): ToolResult {
@@ -63,43 +73,56 @@ function errorMessage(error: unknown): string {
 
 export class MirageToolOperations {
   private readonly versions: FileVersionTracker
+  private readonly sessionId: string | undefined
+  private readonly shellOptions: ExecuteOptions
 
   constructor(
     private readonly ws: Workspace,
     options: MirageToolOperationsOptions = {},
   ) {
     this.versions = new FileVersionTracker(ws, options.staleWriteProtection ?? true)
+    this.sessionId = options.sessionId
+    this.shellOptions = options.sessionId === undefined ? {} : { sessionId: options.sessionId }
+  }
+
+  private asSession<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.sessionId === undefined) return fn()
+    return runWithSession(this.ws.getSession(this.sessionId), fn)
   }
 
   async execute(command: string): Promise<ToolResult> {
-    return ioResult(await this.ws.shell(command))
+    return ioResult(await this.ws.shell(command, this.shellOptions))
   }
 
   async read(path: string, offset = 0, limit = 2000): Promise<ToolResult> {
-    let data: Uint8Array
-    try {
-      data = await this.versions.read(path)
-    } catch (err) {
-      if (!(await this.ws.vfs.exists(path))) {
-        return errorResult(`Error: file '${path}' not found`)
+    return this.asSession(async () => {
+      let data: Uint8Array
+      try {
+        data = await this.versions.read(path)
+      } catch (err) {
+        if (!(await this.ws.vfs.exists(path))) {
+          return errorResult(`Error: file '${path}' not found`)
+        }
+        return errorResult(`Error: ${errorMessage(err)}`)
       }
-      return errorResult(`Error: ${errorMessage(err)}`)
-    }
-    const text = decode(data)
-    const raw = text.length === 0 ? [] : text.split(/(?<=\n)/)
-    const lines = raw.length > 0 && raw[raw.length - 1] === '' ? raw.slice(0, -1) : raw
-    const sliced = lines.slice(offset, offset + limit)
-    const numbered = sliced.map((line, i) => `${String(i + offset + 1).padStart(6)}\t${line}`)
-    return textResult(numbered.join(''))
+      const text = decode(data)
+      const raw = text.length === 0 ? [] : text.split(/(?<=\n)/)
+      const lines = raw.length > 0 && raw[raw.length - 1] === '' ? raw.slice(0, -1) : raw
+      const sliced = lines.slice(offset, offset + limit)
+      const numbered = sliced.map((line, i) => `${String(i + offset + 1).padStart(6)}\t${line}`)
+      return textResult(numbered.join(''))
+    })
   }
 
   async write(path: string, content: string): Promise<ToolResult> {
-    if (await this.ws.vfs.exists(path)) {
-      return errorResult(`Error: file '${path}' already exists`)
-    }
-    await ensureParents(this.ws, path)
-    await this.versions.write(path, content)
-    return textResult(`Written: ${path}`)
+    return this.asSession(async () => {
+      if (await this.ws.vfs.exists(path)) {
+        return errorResult(`Error: file '${path}' already exists`)
+      }
+      await ensureParents(this.ws, path)
+      await this.versions.write(path, content)
+      return textResult(`Written: ${path}`)
+    })
   }
 
   async edit(
@@ -108,38 +131,43 @@ export class MirageToolOperations {
     newString: string,
     replaceAll = false,
   ): Promise<ToolResult> {
-    let content: string
-    try {
-      content = (await this.versions.readForEdit(path)).toString('utf8')
-    } catch (err) {
-      if (err instanceof StaleMirageFileError) return errorResult(`Error: ${err.message}`)
-      if (!(await this.ws.vfs.exists(path))) {
-        return errorResult(`Error: file '${path}' not found`)
+    return this.asSession(async () => {
+      let content: string
+      try {
+        content = (await this.versions.readForEdit(path)).toString('utf8')
+      } catch (err) {
+        if (err instanceof StaleMirageFileError) return errorResult(`Error: ${err.message}`)
+        if (!(await this.ws.vfs.exists(path))) {
+          return errorResult(`Error: file '${path}' not found`)
+        }
+        return errorResult(`Error: ${errorMessage(err)}`)
       }
-      return errorResult(`Error: ${errorMessage(err)}`)
-    }
-    const [newContent, count] = replaceText(content, oldString, newString, replaceAll)
-    if (count === 0) {
-      return errorResult(`Error: string not found in file: '${oldString}'`)
-    }
-    if (count > 1 && !replaceAll) {
-      return errorResult(`Error: string appears ${String(count)} times. Pass replace_all=true`)
-    }
-    try {
-      await this.versions.writeEdit(path, newContent)
-    } catch (err) {
-      return errorResult(`Error: ${errorMessage(err)}`)
-    }
-    const occurrences = replaceAll ? count : 1
-    return textResult(`Edited: ${path} (${String(occurrences)} occurrence(s))`)
+      const [newContent, count] = replaceText(content, oldString, newString, replaceAll)
+      if (count === 0) {
+        return errorResult(`Error: string not found in file: '${oldString}'`)
+      }
+      if (count > 1 && !replaceAll) {
+        return errorResult(`Error: string appears ${String(count)} times. Pass replace_all=true`)
+      }
+      try {
+        await this.versions.writeEdit(path, newContent)
+      } catch (err) {
+        return errorResult(`Error: ${errorMessage(err)}`)
+      }
+      const occurrences = replaceAll ? count : 1
+      return textResult(`Edited: ${path} (${String(occurrences)} occurrence(s))`)
+    })
   }
 
   async ls(path: string): Promise<ToolResult> {
-    return ioResult(await this.ws.shell(`ls ${shQuote(path)}`))
+    return ioResult(await this.ws.shell(`ls ${shQuote(path)}`, this.shellOptions))
   }
 
   async grep(pattern: string, path: string): Promise<ToolResult> {
-    const io = await this.ws.shell(`grep -rn ${shQuote(pattern)} ${shQuote(path)}`)
+    const io = await this.ws.shell(
+      `grep -rn ${shQuote(pattern)} ${shQuote(path)}`,
+      this.shellOptions,
+    )
     // grep exits 1 for "no match", which is a normal empty answer, and
     // >1 for a real failure (bad regex, unreadable path). Only the
     // second is a tool error; reporting the first as one would tell the

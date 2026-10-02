@@ -19,7 +19,8 @@ import type { AuthContext, Connection, ParsedKey, PseudoTtyInfo, ServerChannel }
 import type { WorkspaceRegistry } from '../registry.ts'
 import { serveCodex } from './codex.ts'
 import type { SSHConfig } from './config.ts'
-import { CODEX_SUBSYSTEM, PROFILE_OPTION } from './constants.ts'
+import { CODEX_SUBSYSTEM, MCP_SUBSYSTEM, PROFILE_OPTION } from './constants.ts'
+import { serveMcp } from './mcp.ts'
 import { SSHConfigError } from './errors.ts'
 import { loadHostKey } from './keys.ts'
 import {
@@ -241,7 +242,7 @@ function serveConnection(
       })
       session.on('subsystem', (acceptSubsystem, _reject, info) => {
         const channel = acceptSubsystem()
-        if (info.name !== CODEX_SUBSYSTEM) {
+        if (info.name !== CODEX_SUBSYSTEM && info.name !== MCP_SUBSYSTEM) {
           refuseSubsystem(channel, info.name)
           return
         }
@@ -253,7 +254,8 @@ function serveConnection(
           peer,
           local,
         }
-        void serveCodex(registry, channel, request)
+        if (info.name === MCP_SUBSYSTEM) void serveMcp(registry, channel, request)
+        else void serveCodex(registry, channel, request)
       })
     })
   })
@@ -269,7 +271,8 @@ function serveConnection(
  *
  * `ssh <workspace-id>@host` opens a shell in that workspace, `ssh
  * <workspace-id>@host cmd` runs one line, `sftp`/`scp` reach its files,
- * and the `codex-exec` subsystem serves Codex's tools. Each channel runs as a fresh mirage session under the
+ * the `codex-exec` subsystem serves Codex's tools, and the `mcp` subsystem
+ * serves the workspace's MCP tools. Each channel runs as a fresh mirage session under the
  * workspace's default profile. ssh2 is loaded here, on first use, the way
  * the Python daemon loads asyncssh only once a port is set.
  */

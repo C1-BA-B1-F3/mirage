@@ -80,7 +80,8 @@
               "home/policy-engine",
               "home/route-policy",
               "home/auth",
-              "home/ssh"
+              "home/ssh",
+          "home/mcp"
             ]
           },
           {

@@ -6,7 +6,7 @@ icon: terminal
 
 ## What It Does
 
-The daemon can listen for SSH next to its HTTP API. Any SSH client then reaches a workspace the way it reaches a machine: `ssh` opens a shell or runs a command, `sftp` and `scp` move files, and [Codex](#run-codex-in-a-workspace) runs its tools there. Nothing is installed anywhere and there is no real host behind the door; every command runs in mirage's shell and every file operation goes through the workspace's mounts.
+The daemon can listen for SSH next to its HTTP API. Any SSH client then reaches a workspace the way it reaches a machine: `ssh` opens a shell or runs a command, `sftp` and `scp` move files, [Codex](#run-codex-in-a-workspace) runs its tools there, and any [MCP client](#serve-mcp-over-ssh) reaches the workspace's tools. Nothing is installed anywhere and there is no real host behind the door; every command runs in mirage's shell and every file operation goes through the workspace's mounts.
 
 The SSH username names the workspace:
 
@@ -76,7 +76,7 @@ The Python daemon needs the `ssh` extra (`pip install 'mirage-ai[ssh]'`); the Ty
 - **Bounded input.** A non-terminal shell line may contain up to 1 MiB before its newline. Longer lines close the channel with status 1 and `mirage: shell input line too long`; no prefix is executed. Streaming stdin to a command is not subject to the line limit. Terminal editors ring the bell and ignore additional input at their line limit; Backspace and Ctrl-U still work.
 - **The client's exit status.** `ssh host cmd` exits with the line's status, and a dropped connection cancels the line it was running.
 
-Only public keys are accepted: no passwords, no keyboard-interactive. Nothing is forwarded: no ports, no agent, no X11. A subsystem other than SFTP and `codex-exec` is refused.
+Only public keys are accepted: no passwords, no keyboard-interactive. Nothing is forwarded: no ports, no agent, no X11. A subsystem other than SFTP, `codex-exec` and `mcp` is refused.
 
 ## Bind a key to a profile
 
@@ -146,6 +146,20 @@ differently: the app starts `codex app-server` on the host and runs the
 whole agent there, so it needs a real machine with Codex installed. A Codex
 on that machine with the `environments.toml` above sends its tools to the
 workspace.
+
+## Serve MCP over SSH
+
+The `mcp` subsystem serves the workspace's [MCP tools](/home/mcp) over MCP's stdio framing. An MCP client that launches a command connects through the `~/.ssh/config` entry above:
+
+```json
+{
+  "mcpServers": {
+    "mirage": { "command": "ssh", "args": ["-T", "mirage-demo", "-s", "mcp"] }
+  }
+}
+```
+
+The channel is one session under its key's profile, so a `cd` in one call holds for the next, and the session closes when the client disconnects.
 
 ## Differences Between the Daemons
 

@@ -35,6 +35,7 @@ export const PROFILE_OPTION = 'mirage-profile'
  * message per line, without the `jsonrpc` member.
  */
 export const CODEX_SUBSYSTEM = 'codex-exec'
+export const MCP_SUBSYSTEM = 'mcp'
 export const CODEX_AGENT_ID = 'codex'
 export const CODEX_SHELL_NAME = 'bash'
 export const CODEX_SHELL_PATH = '/bin/bash'

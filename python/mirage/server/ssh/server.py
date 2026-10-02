@@ -22,8 +22,9 @@ from mirage.concurrency.limiter import run_blocking
 from mirage.server.registry import WorkspaceRegistry
 from mirage.server.ssh.codex import serve_codex
 from mirage.server.ssh.config import SSHConfig
-from mirage.server.ssh.constants import CODEX_SUBSYSTEM
+from mirage.server.ssh.constants import CODEX_SUBSYSTEM, MCP_SUBSYSTEM
 from mirage.server.ssh.keys import load_host_key
+from mirage.server.ssh.mcp import serve_mcp
 from mirage.server.ssh.session import handle_process
 from mirage.server.ssh.sftp import MirageSFTPServer
 from mirage.server.ssh.stream import ENCODING, ERRORS, MAX_TERMINAL_LINE
@@ -74,8 +75,8 @@ class MirageSSHServer(asyncssh.SSHServer):
 async def serve_channel(
     registry: WorkspaceRegistry, process: asyncssh.SSHServerProcess[str]
 ) -> None:
-    """Route a session channel: Codex's subsystem to its door, anything
-    else to the shell.
+    """Route a session channel: Codex's subsystem and the mcp subsystem
+    to their doors, anything else to the shell.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.
@@ -83,6 +84,9 @@ async def serve_channel(
     """
     if process.subsystem == CODEX_SUBSYSTEM:
         await serve_codex(registry, process)
+        return
+    if process.subsystem == MCP_SUBSYSTEM:
+        await serve_mcp(registry, process)
         return
     await handle_process(registry, process)
 
@@ -94,10 +98,11 @@ async def start_ssh_server(
 
     ``ssh <workspace-id>@host`` opens a shell in that workspace,
     ``ssh <workspace-id>@host cmd`` runs one line, ``sftp``/``scp``
-    reach its files, and the ``codex-exec`` subsystem serves Codex's
-    tools. Each channel runs as a fresh mirage session under
-    the profile its key is bound to (``mirage-profile`` in the
-    authorized keys), else the workspace's default profile.
+    reach its files, the ``codex-exec`` subsystem serves Codex's
+    tools, and the ``mcp`` subsystem serves the workspace's MCP tools.
+    Each channel runs as a fresh mirage session under the profile its
+    key is bound to (``mirage-profile`` in the authorized keys), else
+    the workspace's default profile.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.

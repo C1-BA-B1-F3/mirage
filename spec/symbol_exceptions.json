@@ -6,6 +6,11 @@
     "_make_pwrite": "Python builds every emitted op through a named `_make_*` closure builder; TypeScript writes the same closure inline in makeGenericOps, as it does for the module's older builders.",
     "_make_emulated_pwrite": "The read/splice/write pwrite for a table without a native one, built by a named `_make_*` builder in Python and inline in makeGenericOps in TypeScript, like emulated append."
    }
+  },
+  "server/ssh/mcp": {
+   "python_only": {
+    "ChannelWriter": "The SDK's stdio transport awaits write and flush on its stdout, and asyncssh writes synchronously and drains, so Python adapts the channel's stdout. TypeScript's StdioServerTransport takes the ssh2 channel, a Node stream, as it is."
+   }
   }
  }
 }

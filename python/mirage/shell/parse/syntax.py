@@ -165,6 +165,45 @@ def _empty_compound(node: TSNodeLike) -> str | None:
     return None
 
 
+# Reserved words that close or continue a compound command; quoted,
+# escaped, after an assignment or a redirect, or named as an alias the
+# shell would expand there, they are plain words.
+_RESERVED_CLOSERS = frozenset(
+    {"do", "done", "elif", "else", "esac", "fi", "in", "then", "}", "]]"}
+)
+
+
+def _stray_reserved_word(
+    node: TSNodeLike, aliases: frozenset[str]
+) -> str | None:
+    """The reserved word a command starts with, where none may stand.
+
+    The grammar reads ``echo hi; fi`` as two commands and would run both;
+    bash 5.2 refuses the line at ``fi``, as it does ``done``, ``then`` and
+    the rest when they stand where a command starts.
+
+    Args:
+        node (TSNodeLike): root node from parse().
+        aliases (frozenset[str]): alias names the shell would expand where
+            a command starts, which bash tries before reserved words.
+    """
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        stack.extend(current.children)
+        if current.type != "command" or not current.children:
+            continue
+        name = current.children[0]
+        text = (name.text or b"").decode(errors="replace")
+        if (
+            name.type == "command_name"
+            and text in _RESERVED_CLOSERS
+            and text not in aliases
+        ):
+            return text
+    return None
+
+
 def _walk_named(node: TSNodeLike) -> Iterator[TSNodeLike]:
     yield node
     for child in node.named_children:
@@ -209,11 +248,15 @@ def _missing_quote(node: TSNodeLike) -> str | None:
     return None
 
 
-def find_syntax_error(node: TSNodeLike) -> str | None:
+def find_syntax_error(
+    node: TSNodeLike, aliases: frozenset[str] = frozenset()
+) -> str | None:
     """Locate structural errors and missing tokens throughout a parsed AST.
 
     Args:
         node (TSNodeLike): root node from parse().
+        aliases (frozenset[str]): alias names the shell would expand where
+            a command starts; a reserved word among them is a command.
 
     Returns:
         str | None: text of the offending region, or None if the AST is clean.
@@ -238,13 +281,16 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
         if unclosed is not None:
             return unclosed
         if source.startswith("$(") and source.endswith(")"):
-            return find_syntax_error(parse(source[2:-1]))
+            return find_syntax_error(parse(source[2:-1]), aliases)
     stray = _stray_case_terminator(node)
     if stray is not None:
         return stray
     empty = _empty_compound(node)
     if empty is not None:
         return empty
+    reserved = _stray_reserved_word(node, aliases)
+    if reserved is not None:
+        return reserved
     if not node.has_error:
         return find_unterminated_quote(node)
     previous = None
@@ -278,7 +324,7 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
             text = child.text
             return text.decode(errors="replace") if text else ""
         if child.type != "ERROR":
-            nested = find_syntax_error(child)
+            nested = find_syntax_error(child, aliases)
             if nested is not None:
                 return nested
         if child.is_named:

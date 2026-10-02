@@ -47,7 +47,11 @@ import type { TSNodeLike } from '../../shell/types.ts'
 import { runExternal } from '../executor/command/external.ts'
 import { handleCommand } from '../executor/command/command.ts'
 import type { ExecuteNodeOpts } from '../executor/jobs.ts'
-import { type AliasMark, aliasCommandText } from '../executor/builtins/alias/index.ts'
+import {
+  type AliasMark,
+  aliasCommandText,
+  expandingAliases,
+} from '../executor/builtins/alias/index.ts'
 import { findSyntaxError, syntaxErrorMessage } from '../../shell/parse/index.ts'
 import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import { guardIO, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
@@ -173,7 +177,7 @@ export async function executeCommand(
     if (rewritten !== null) {
       const line = source.slice(0, (headNode.startIndex ?? 0) - base) + rewritten
       const ast = reparse(line)
-      const offending = findSyntaxError(ast, reparse)
+      const offending = findSyntaxError(ast, reparse, expandingAliases(session))
       if (offending !== null) {
         const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))
         return [

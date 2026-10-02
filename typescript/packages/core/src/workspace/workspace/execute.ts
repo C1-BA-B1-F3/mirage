@@ -68,6 +68,7 @@ import { ExecutionNode } from '../types.ts'
 import { abortable, joinOrAbort } from '../abort.ts'
 import { failureResult, isControlFlowError } from './failure.ts'
 import { ended, isUnwinding } from '../executor/control.ts'
+import { expandingAliases } from '../executor/builtins/alias/index.ts'
 import type { ResolvedSource } from '../../secrets/types.ts'
 import { cliEnvNames, fillEnv, fillNames, guestBound, lineNodes } from './fill.ts'
 import { admitLine, isPending, isPendingRefusal } from '../node/admission.ts'
@@ -360,8 +361,11 @@ async function runPreparedLine(
         // separately.
         const offending =
           argv === undefined
-            ? (findSyntaxError(root, (source) => parser.parse(source)) ??
-              findUnterminatedBacktick(root.text))
+            ? (findSyntaxError(
+                root,
+                (source) => parser.parse(source),
+                expandingAliases(effectiveSession),
+              ) ?? findUnterminatedBacktick(root.text))
             : null
         if (offending !== null)
           return answerLine(

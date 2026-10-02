@@ -69,7 +69,10 @@ from mirage.workspace.executor.builtins import (
     settle_moves,
     strip_link_operands,
 )
-from mirage.workspace.executor.builtins.alias import alias_command_text
+from mirage.workspace.executor.builtins.alias import (
+    alias_command_text,
+    expanding_aliases,
+)
 from mirage.workspace.executor.builtins.table import BUILTINS
 from mirage.workspace.executor.builtins.types import BuiltinCall
 from mirage.workspace.executor.command import handle_command
@@ -168,7 +171,7 @@ async def execute_command(
         if rewritten is not None:
             line = source[: head_node.start_byte - base] + rewritten
             ast = parse(line)
-            offending = find_syntax_error(ast)
+            offending = find_syntax_error(ast, expanding_aliases(session))
             if offending is not None:
                 io = syntax_error_result(offending, ast)
                 bad = io.stderr if isinstance(io.stderr, bytes) else b""

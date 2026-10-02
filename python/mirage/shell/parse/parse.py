@@ -126,6 +126,67 @@ _UNLEXED = frozenset(
 _WORD_START = b" \t\n;&|(){}"
 _DIGITS = re.compile(rb"\d+")
 _LAST_ARM = re.compile(rb"\s*esac(?![^\s;&|()<>])")
+# Tokens the grammar lexes apart from a word in an argument list, where
+# bash reads a word, by the node they stand under. A bare `$` in a command
+# is already kept as a word, and only an error region loses it; the `$`
+# opening `$"..."` is the translation marker, never a word.
+_BARE_WORDS = {
+    "command": frozenset({"==", "=~"}),
+    "ERROR": frozenset({"==", "=~", "$"}),
+}
+_WORD_BREAK = b" \t\n;&|()<>"
+_LIST_TOKENS = frozenset({"&&", "||", "|", "|&", ";", "&", ";;"})
+_TEST_PARTS = frozenset(
+    {
+        "binary_expression",
+        "unary_expression",
+        "negation_expression",
+        "parenthesized_expression",
+        "ERROR",
+    }
+)
+
+
+def _breaks_word(data: bytes, at: int) -> bool:
+    """Whether ``data[at]`` ends a word: the end, a blank or an operator.
+
+    Args:
+        data (bytes): shell source.
+        at (int): byte offset, which may fall outside ``data``.
+    """
+    return at < 0 or at >= len(data) or data[at : at + 1] in _WORD_BREAK
+
+
+def _bracket_is_a_command(data: bytes, node: TSNodeLike) -> bool:
+    """Whether bash reads a ``[ ... ]`` the grammar built as a test as a command.
+
+    ``[`` is a command to bash: its words end at the first list or pipe
+    operator, and the last of them has to be a ``]`` of its own. The
+    grammar folds ``&&``, ``||`` and ``|`` into the expression, closes it
+    at a ``]`` that bash reads inside ``]]`` or ``]x``, and builds one
+    whose ``]`` is missing; bash runs the builtin on each, which refuses
+    with ``[: missing `]'``.
+
+    Args:
+        data (bytes): shell source.
+        node (TSNodeLike): a ``test_command`` node.
+    """
+    children = node.children
+    if not children or children[0].type != "[":
+        return False
+    close = children[-1]
+    if close.type != "]" or close.is_missing:
+        return True
+    if not _breaks_word(data, close.end_byte):
+        return True
+    stack = list(children[1:-1])
+    while stack:
+        part = stack.pop()
+        if not part.is_named and part.type in _LIST_TOKENS:
+            return True
+        if part.type in _TEST_PARTS:
+            stack.extend(part.children)
+    return False
 
 
 def _operator_source(data: bytes, root: TSNodeLike) -> bytes:
@@ -141,9 +202,16 @@ def _operator_source(data: bytes, root: TSNodeLike) -> bytes:
     redirect whose text opens with ``<<<`` is the herestring it was. A
     last case arm's ``;&`` or ``;;&``, which the grammar refuses, ends it
     as ``;;`` does, there being no arm after it, so it is spelled so. An
-    operator inside an error region gets its own token only once the
-    operators before it are respelled, so the pass repeats on its own
-    parse until nothing changes.
+    argument of ``==`` or ``=~``, which the grammar reads as a test
+    operator wanting an operand (so ``echo ==`` is an error and
+    ``echo == x`` drops it), and a bare ``$`` before a terminator are
+    words to bash; spelled as ``_`` filler they parse as the words they
+    are, and ``SourceNode`` gives back their text. So is the ``[`` of a
+    test bash reads as a ``[`` command (``_bracket_is_a_command``, or one
+    an error region opens), which then runs as the builtin. An operator
+    inside an error region gets its own token only once the operators
+    before it are respelled, so the pass repeats on its own parse until
+    nothing changes.
 
     Args:
         data (bytes): shell source.
@@ -161,9 +229,26 @@ def _respelled(data: bytes, root: TSNodeLike) -> bytes:
     stack = [root]
     while stack:
         node = stack.pop()
+        if node.type == "test_command" and _bracket_is_a_command(data, node):
+            out[node.start_byte] = ord("_")
         if node.type in _UNLEXED:
             continue
         stack.extend(node.children)
+        for child in node.children:
+            lo, hi = child.start_byte, child.end_byte
+            if child.is_named:
+                continue
+            if child.type in _BARE_WORDS.get(node.type, ()) and not (
+                child.type == "$" and data[hi : hi + 1] == b'"'
+            ):
+                out[lo:hi] = b"_" * (hi - lo)
+            elif (
+                node.type == "ERROR"
+                and child.type == "["
+                and _breaks_word(data, lo - 1)
+                and _breaks_word(data, hi)
+            ):
+                out[lo] = ord("_")
         start = node.start_byte
         if node.type == "<" and data[start : start + 2] == b"<>":
             out[start] = ord(">")

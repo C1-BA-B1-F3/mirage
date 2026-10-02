@@ -121,6 +121,17 @@ function aliasesOn(session: SessionState): boolean {
   return session.shopts.expand_aliases ?? SHOPT_DEFAULTS.get('expand_aliases') ?? false
 }
 
+/**
+ * The alias names a command word would expand as right now. bash checks a
+ * word where a command starts for an alias before it checks for a reserved
+ * word, so one of these names is a command there even when it is spelled
+ * `fi` or `do`. Mirrors Python's expanding_aliases.
+ */
+export function expandingAliases(session: SessionState): ReadonlySet<string> {
+  if (!aliasesOn(session)) return new Set()
+  return new Set(Object.keys(session.aliases).filter((name) => !session.aliasStack.includes(name)))
+}
+
 /** The alias text a command word expands to, or null. */
 export function aliasValue(session: SessionState, name: string, mark: AliasMark): string | null {
   if (!aliasesOn(session)) return null

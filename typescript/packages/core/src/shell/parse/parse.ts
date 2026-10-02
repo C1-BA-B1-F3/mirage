@@ -103,6 +103,52 @@ const UNLEXED = new Set([
 const WORD_START = ' \t\n;&|(){}'
 const DIGITS = /\d+/y
 const LAST_ARM = /^\s*esac(?![^\s;&|()<>])/
+// Tokens the grammar lexes apart from a word in an argument list, where
+// bash reads a word, by the node they stand under. A bare `$` in a command
+// is already kept as a word, and only an error region loses it; the `$`
+// opening `$"..."` is the translation marker, never a word.
+const BARE_WORDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['command', new Set(['==', '=~'])],
+  ['ERROR', new Set(['==', '=~', '$'])],
+])
+const WORD_BREAK = ' \t\n;&|()<>'
+const LIST_TOKENS = new Set(['&&', '||', '|', '|&', ';', '&', ';;'])
+const TEST_PARTS = new Set([
+  'binary_expression',
+  'unary_expression',
+  'negation_expression',
+  'parenthesized_expression',
+  'ERROR',
+])
+
+/** Whether `text[at]` ends a word: the end of the text, a blank or an operator. */
+function breaksWord(text: string, at: number): boolean {
+  return at < 0 || at >= text.length || WORD_BREAK.includes(text[at] ?? '')
+}
+
+/**
+ * Whether bash reads a `[ ... ]` the grammar built as a test as a command.
+ *
+ * `[` is a command to bash: its words end at the first list or pipe operator,
+ * and the last of them has to be a `]` of its own. The grammar folds `&&`,
+ * `||` and `|` into the expression, closes it at a `]` that bash reads inside
+ * `]]` or `]x`, and builds one whose `]` is missing; bash runs the builtin on
+ * each, which refuses with "[: missing `]'". Mirrors Python's
+ * _bracket_is_a_command.
+ */
+function bracketIsACommand(text: string, node: ShellNode): boolean {
+  const children = node.children
+  if (children[0]?.type !== '[') return false
+  const close = children[children.length - 1]
+  if (close?.type !== ']' || close.isMissing) return true
+  if (!breaksWord(text, close.endIndex)) return true
+  const stack = children.slice(1, -1)
+  for (let part = stack.pop(); part !== undefined; part = stack.pop()) {
+    if (!part.isNamed && LIST_TOKENS.has(part.type)) return true
+    if (TEST_PARTS.has(part.type)) stack.push(...part.children)
+  }
+  return false
+}
 
 /**
  * Spell operators the way the grammar can lex them.
@@ -115,10 +161,15 @@ const LAST_ARM = /^\s*esac(?![^\s;&|()<>])/
  * and a nonzero first digit; `SourceNode` reads the original text, so a
  * redirect whose text opens with `<<<` is the herestring it was. A last case
  * arm's `;&` or `;;&`, which the grammar refuses, ends it as `;;` does, there
- * being no arm after it, so it is spelled so. An operator inside an error
- * region gets its own token only once the operators before it are respelled,
- * so the pass repeats on its own parse until nothing changes. Mirrors
- * Python's _operator_source.
+ * being no arm after it, so it is spelled so. An argument of `==` or `=~`,
+ * which the grammar reads as a test operator wanting an operand (so `echo ==`
+ * is an error and `echo == x` drops it), and a bare `$` before a terminator
+ * are words to bash; spelled as `_` filler they parse as the words they are,
+ * and `SourceNode` gives back their text. So is the `[` of a test bash reads
+ * as a `[` command (`bracketIsACommand`, or one an error region opens), which
+ * then runs as the builtin. An operator inside an error region gets its own
+ * token only once the operators before it are respelled, so the pass repeats
+ * on its own parse until nothing changes. Mirrors Python's _operator_source.
  */
 function operatorSource(parser: Parser, text: string, root: ShellNode): string {
   let current = text
@@ -136,8 +187,24 @@ function respelled(text: string, root: ShellNode): string {
   const out = text.split('')
   const stack: ShellNode[] = [root]
   for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    if (node.type === 'test_command' && bracketIsACommand(text, node)) out[node.startIndex] = '_'
     if (UNLEXED.has(node.type)) continue
     stack.push(...node.children)
+    const bare = BARE_WORDS.get(node.type)
+    for (const child of node.children) {
+      if (child.isNamed) continue
+      if (bare?.has(child.type) === true) {
+        if (child.type === '$' && text[child.endIndex] === '"') continue
+        for (let i = child.startIndex; i < child.endIndex; i++) out[i] = '_'
+      } else if (
+        node.type === 'ERROR' &&
+        child.type === '[' &&
+        breaksWord(text, child.startIndex - 1) &&
+        breaksWord(text, child.endIndex)
+      ) {
+        out[child.startIndex] = '_'
+      }
+    }
     const start = node.startIndex
     if (node.type === '<' && text.startsWith('<>', start)) out[start] = '>'
     else if ((node.type === '<<<' || node.type === '<<') && text.startsWith('<<<', start)) {

@@ -161,6 +161,40 @@ function emptyCompound(node: TSNodeLike): string | null {
   return null
 }
 
+// Reserved words that close or continue a compound command; quoted, escaped,
+// after an assignment or a redirect, or named as an alias the shell would
+// expand there, they are plain words.
+const RESERVED_CLOSERS = new Set([
+  'do',
+  'done',
+  'elif',
+  'else',
+  'esac',
+  'fi',
+  'in',
+  'then',
+  '}',
+  ']]',
+])
+
+/**
+ * The reserved word a command starts with, where none may stand. The grammar
+ * reads `echo hi; fi` as two commands and would run both; bash 5.2 refuses the
+ * line at `fi`, as it does `done`, `then` and the rest when they stand where
+ * a command starts. Mirrors Python's _stray_reserved_word.
+ */
+function strayReservedWord(node: TSNodeLike, aliases: ReadonlySet<string>): string | null {
+  const stack: TSNodeLike[] = [node]
+  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
+    stack.push(...current.children)
+    if (current.type !== 'command') continue
+    const name = current.children[0]
+    if (name?.type !== 'command_name') continue
+    if (RESERVED_CLOSERS.has(name.text) && !aliases.has(name.text)) return name.text
+  }
+  return null
+}
+
 function walkNamed(node: TSNodeLike): TSNodeLike[] {
   const out: TSNodeLike[] = [node]
   for (const child of node.namedChildren) out.push(...walkNamed(child))
@@ -203,13 +237,15 @@ function missingQuote(node: TSNodeLike): string | null {
 /**
  * Locate structural errors and missing tokens throughout a parsed AST.
  * The grammar recovers an empty for-list with an ERROR containing `in`;
- * Bash accepts that one recovery.
+ * Bash accepts that one recovery. A reserved word among `aliases`, the names
+ * the shell would expand where a command starts, is a command there.
  *
  * Returns the offending region's text, or `null` if the AST is clean.
  */
 export function findSyntaxError(
   node: TSNodeLike,
   parse?: (command: string) => TSNodeLike,
+  aliases: ReadonlySet<string> = new Set(),
 ): string | null {
   // Expansion and the `[` builtin own their argument grammar.
   if (node.type === 'expansion') {
@@ -226,12 +262,14 @@ export function findSyntaxError(
     node.text.startsWith('$(') &&
     node.text.endsWith(')')
   ) {
-    return findSyntaxError(parse(node.text.slice(2, -1)), parse)
+    return findSyntaxError(parse(node.text.slice(2, -1)), parse, aliases)
   }
   const stray = strayCaseTerminator(node)
   if (stray !== null) return stray
   const empty = emptyCompound(node)
   if (empty !== null) return empty
+  const reserved = strayReservedWord(node, aliases)
+  if (reserved !== null) return reserved
   if (!node.hasError) return findUnterminatedQuote(node)
   let previous: TSNodeLike | null = null
   for (const child of node.children) {
@@ -257,7 +295,7 @@ export function findSyntaxError(
       return child.text
     }
     if (child.type !== 'ERROR') {
-      const nested = findSyntaxError(child, parse)
+      const nested = findSyntaxError(child, parse, aliases)
       if (nested !== null) return nested
     }
     if (child.isNamed) previous = child

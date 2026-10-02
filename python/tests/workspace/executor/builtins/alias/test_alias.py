@@ -116,3 +116,13 @@ async def test_a_value_holding_a_quote_prints_re_readably():
     out, _ = await _run(ws, 'alias x="it\'s a test"; alias x')
     assert out == "alias x='it'\\''s a test'\n"
     await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_an_alias_spelled_as_a_reserved_word_runs():
+    # bash tries an alias before a reserved word where a command starts,
+    # so with expand_aliases on, an alias named `fi` is a command.
+    ws = _ws()
+    await _run(ws, "shopt -s expand_aliases; alias fi='echo F'")
+    assert await _run(ws, "fi") == ("F\n", 0)
+    await ws.close()

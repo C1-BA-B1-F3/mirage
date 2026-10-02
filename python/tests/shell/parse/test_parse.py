@@ -569,3 +569,111 @@ def test_heredoc_unterminated_body_is_left_as_typed():
     assert not root.has_error
     assert root.source_text.decode() == "cat <<EOF; echo x\nhi\n"
     assert root.warnings
+
+
+@pytest.mark.parametrize(
+    "line, words",
+    [
+        ("echo ==", ["echo", "=="]),
+        ("echo == x", ["echo", "==", "x"]),
+        ("echo a =~ b", ["echo", "a", "=~", "b"]),
+        ("echo =~ a.b*", ["echo", "=~", "a.b*"]),
+        ("test a == a", ["test", "a", "==", "a"]),
+        ('echo =="x"', ["echo", '=="x"']),
+    ],
+)
+def test_a_test_operator_as_an_argument_is_the_word_bash_reads(line, words):
+    # tree-sitter-bash takes `==`/`=~` there for a `[`-style operator that
+    # wants an operand, so `echo ==` failed and `echo == x` lost the word.
+    root = parse(line)
+    assert not root.has_error
+    assert [get_text(p) for p in get_parts(root.named_children[0])] == words
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "echo ==; echo hi",
+        "echo == | cat",
+        "echo ==&& echo hi",
+        "f() { echo ==; }",
+        "case x in x) echo ==;; esac",
+        "echo $; echo hi",
+    ],
+)
+def test_an_operator_word_before_a_terminator_is_no_syntax_error(line):
+    assert not parse(line).has_error
+
+
+def test_a_redirect_after_an_operator_word_stays_a_redirect():
+    # The operand the grammar wanted after `==` swallowed `>/dev/null`.
+    command, redirects = get_redirects(
+        parse("echo == >/dev/null").named_children[0]
+    )
+    assert [get_text(p) for p in get_parts(command)] == ["echo", "=="]
+    assert [r.target for r in redirects] == ["/dev/null"]
+
+
+def test_the_translation_marker_stays_with_its_string():
+    command = parse('echo $"hello"').named_children[0]
+    assert [get_text(p) for p in get_parts(command)] == ["echo", '"hello"']
+
+
+@pytest.mark.parametrize(
+    "line, operator",
+    [("[[ a == b ]]", "=="), ("[ a =~ b ]", "=~"), ("(( 1 == 1 ))", "==")],
+)
+def test_an_operator_inside_a_test_stays_an_operator(line, operator):
+    expression = parse(line).named_children[0].named_children[0]
+    assert expression.type == NT.BINARY_EXPRESSION
+    assert [c.type for c in expression.children if not c.is_named] == [
+        operator
+    ]
+
+
+def _nodes(node, kind: str) -> list:
+    found = [node] if node.type == kind else []
+    for child in node.named_children:
+        found.extend(_nodes(child, kind))
+    return found
+
+
+@pytest.mark.parametrize(
+    "line, commands",
+    [
+        ("[ a && b ]", [["[", "a"], ["b", "]"]]),
+        ("[ a | b ]", [["[", "a"], ["b", "]"]]),
+        ("[ a ]]", [["[", "a", "]]"]]),
+        ("[ a ]x", [["[", "a", "]x"]]),
+        ("[ a; echo x", [["[", "a"], ["echo", "x"]]),
+        ("[ c", [["[", "c"]]),
+        ("[ \\( a \\) ]", [["[", "\\(", "a", "\\)", "]"]]),
+    ],
+)
+def test_a_bracket_bash_reads_as_a_command_parses_as_one(line, commands):
+    # `[` is a command to bash: its words stop at a list or pipe operator
+    # and need a `]` of their own, where the grammar builds a test anyway.
+    root = parse(line)
+    assert not root.has_error
+    assert [
+        [get_text(p) for p in get_parts(c)] for c in _nodes(root, NT.COMMAND)
+    ] == commands
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[ a ] && [ b ]",
+        "[ a -a b ]",
+        '[ "a && b" ]',
+        "[ a ]>/dev/null",
+        "( [ a ])",
+        "[ ! a ]",
+    ],
+)
+def test_a_well_formed_bracket_test_stays_a_test(line):
+    root = parse(line)
+    assert _nodes(root, NT.TEST_COMMAND)
+    assert not any(
+        get_command_name(c) == "[" for c in _nodes(root, NT.COMMAND)
+    )

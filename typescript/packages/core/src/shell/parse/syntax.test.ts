@@ -85,6 +85,44 @@ describe('findSyntaxError', () => {
   })
 })
 
+describe('a reserved word where a command starts', () => {
+  // Pinned against bash 5.2.37, which refuses the line at the word.
+  it.each([
+    ['echo hi; fi', 'fi'],
+    ['done', 'done'],
+    ['then', 'then'],
+    ['esac', 'esac'],
+    ['}', '}'],
+    [']]', ']]'],
+    ['in', 'in'],
+    ['! fi', 'fi'],
+    ['fi >/dev/null', 'fi'],
+    ['echo a | fi', 'fi'],
+    ['echo a && fi', 'fi'],
+  ])('names %j a syntax error at %j', (cmd, word) => {
+    expect(findSyntaxError(parser.parse(cmd))).toBe(word)
+  })
+
+  it.each([
+    '"fi"',
+    '\\fi',
+    'x=1 fi',
+    '>/dev/null fi',
+    'echo fi done then',
+    'if true; then echo y; fi',
+    'for x in a; do echo $x; done',
+    '{ echo a; }',
+    'case a in a) echo m;; esac',
+  ])('reads the word in %j as a word', (cmd) => {
+    expect(findSyntaxError(parser.parse(cmd))).toBeNull()
+  })
+
+  it('reads a reserved word the shell expands as an alias as a command', () => {
+    expect(findSyntaxError(parser.parse('fi'), undefined, new Set(['fi']))).toBeNull()
+    expect(findSyntaxError(parser.parse('fi'), undefined, new Set(['done']))).toBe('fi')
+  })
+})
+
 describe('findUnterminatedBacktick', () => {
   it.each(['echo `echo a', 'echo "`echo \'`\'`"', 'echo a`', '`'])(
     'flags the open region in %j',

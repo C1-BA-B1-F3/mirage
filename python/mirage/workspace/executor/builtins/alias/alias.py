@@ -168,6 +168,23 @@ def alias_value(
     return value
 
 
+def expanding_aliases(session: SessionState) -> frozenset[str]:
+    """The alias names a command word would expand as right now.
+
+    bash checks a word where a command starts for an alias before it
+    checks for a reserved word, so one of these names is a command there
+    even when it is spelled ``fi`` or ``do``.
+
+    Args:
+        session (SessionState): shell session state.
+    """
+    if not session.shopts.get(
+        "expand_aliases", SHOPT_DEFAULTS["expand_aliases"]
+    ):
+        return frozenset()
+    return frozenset(session.aliases) - frozenset(session._alias_stack)
+
+
 def alias_command_text(
     session: SessionState, name: str, rest: str, mark: AliasMark
 ) -> str | None:

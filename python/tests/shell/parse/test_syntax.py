@@ -234,3 +234,49 @@ async def test_literal_quotes_are_not_reported_as_unclosed(command, expected):
         assert await io.stderr_str() == ""
     finally:
         await ws.close()
+
+
+@pytest.mark.parametrize(
+    "command, word",
+    [
+        ("echo hi; fi", "fi"),
+        ("done", "done"),
+        ("then", "then"),
+        ("esac", "esac"),
+        ("}", "}"),
+        ("]]", "]]"),
+        ("in", "in"),
+        ("! fi", "fi"),
+        ("fi >/dev/null", "fi"),
+        ("echo a | fi", "fi"),
+        ("echo a && fi", "fi"),
+    ],
+)
+def test_a_reserved_word_where_a_command_starts_is_a_syntax_error(
+    command, word
+):
+    # Pinned against bash 5.2.37, which refuses the line at the word.
+    assert find_syntax_error(parse(command)) == word
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        '"fi"',
+        "\\fi",
+        "x=1 fi",
+        ">/dev/null fi",
+        "echo fi done then",
+        "if true; then echo y; fi",
+        "for x in a; do echo $x; done",
+        "{ echo a; }",
+        "case a in a) echo m;; esac",
+    ],
+)
+def test_a_reserved_word_bash_reads_as_a_word_is_no_syntax_error(command):
+    assert find_syntax_error(parse(command)) is None
+
+
+def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command():
+    assert find_syntax_error(parse("fi"), frozenset({"fi"})) is None
+    assert find_syntax_error(parse("fi"), frozenset({"done"})) == "fi"

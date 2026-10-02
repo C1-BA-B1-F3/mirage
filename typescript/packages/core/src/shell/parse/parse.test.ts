@@ -377,3 +377,114 @@ describe('heredoc source reader: operator-line regressions', () => {
     expect(root.warnings).not.toBe('')
   })
 })
+
+describe('an operator token where bash reads a word', () => {
+  // tree-sitter-bash takes `==`/`=~` there for a `[`-style operator that
+  // wants an operand, so `echo ==` failed and `echo == x` lost the word.
+  it.each([
+    ['echo ==', ['echo', '==']],
+    ['echo == x', ['echo', '==', 'x']],
+    ['echo a =~ b', ['echo', 'a', '=~', 'b']],
+    ['echo =~ a.b*', ['echo', '=~', 'a.b*']],
+    ['test a == a', ['test', 'a', '==', 'a']],
+    ['echo =="x"', ['echo', '=="x"']],
+  ])('reads %j as words', (line, words) => {
+    const root = parser.parse(line)
+    expect(root.hasError).toBe(false)
+    expect(getParts(root.namedChildren[0] as TSNodeLike).map((p) => getText(p))).toEqual(words)
+  })
+
+  it.each([
+    'echo ==; echo hi',
+    'echo == | cat',
+    'echo ==&& echo hi',
+    'f() { echo ==; }',
+    'case x in x) echo ==;; esac',
+    'echo $; echo hi',
+  ])('parses %j without a syntax error', (line) => {
+    expect(parser.parse(line).hasError).toBe(false)
+  })
+
+  it('keeps a redirect after an operator word a redirect', () => {
+    // The operand the grammar wanted after `==` swallowed `>/dev/null`.
+    const [command, redirects] = getRedirects(
+      parser.parse('echo == >/dev/null').namedChildren[0] as TSNodeLike,
+    )
+    if (command === null) throw new Error('expected the redirected command')
+    expect(getParts(command).map((p) => getText(p))).toEqual(['echo', '=='])
+    expect(redirects.map((r) => r.target)).toEqual(['/dev/null'])
+  })
+
+  it('keeps the translation marker with its string', () => {
+    const command = parser.parse('echo $"hello"').namedChildren[0] as TSNodeLike
+    expect(getParts(command).map((p) => getText(p))).toEqual(['echo', '"hello"'])
+  })
+
+  it.each([
+    ['[[ a == b ]]', '=='],
+    ['[ a =~ b ]', '=~'],
+    ['(( 1 == 1 ))', '=='],
+  ])('keeps the operator inside %j an operator', (line, operator) => {
+    const expression = parser.parse(line).namedChildren[0]?.namedChildren[0]
+    expect(expression?.type).toBe(NT.BINARY_EXPRESSION)
+    expect(expression?.children.filter((c) => !c.isNamed).map((c) => c.type)).toEqual([operator])
+  })
+})
+
+function nodesOf(node: TSNodeLike, kind: string): TSNodeLike[] {
+  const found = node.type === kind ? [node] : []
+  for (const child of node.namedChildren) found.push(...nodesOf(child, kind))
+  return found
+}
+
+describe('a [ that bash reads as a command', () => {
+  // `[` is a command to bash: its words stop at a list or pipe operator and
+  // need a `]` of their own, where the grammar builds a test anyway.
+  it.each([
+    [
+      '[ a && b ]',
+      [
+        ['[', 'a'],
+        ['b', ']'],
+      ],
+    ],
+    [
+      '[ a | b ]',
+      [
+        ['[', 'a'],
+        ['b', ']'],
+      ],
+    ],
+    ['[ a ]]', [['[', 'a', ']]']]],
+    ['[ a ]x', [['[', 'a', ']x']]],
+    [
+      '[ a; echo x',
+      [
+        ['[', 'a'],
+        ['echo', 'x'],
+      ],
+    ],
+    ['[ c', [['[', 'c']]],
+    ['[ \\( a \\) ]', [['[', '\\(', 'a', '\\)', ']']]],
+  ])('parses %j as plain commands', (line, commands) => {
+    const root = parser.parse(line)
+    expect(root.hasError).toBe(false)
+    expect(nodesOf(root, NT.COMMAND).map((c) => getParts(c).map((p) => getText(p)))).toEqual(
+      commands,
+    )
+  })
+
+  it.each([
+    '[ a ] && [ b ]',
+    '[ a -a b ]',
+    '[ "a && b" ]',
+    '[ a ]>/dev/null',
+    '( [ a ])',
+    '[ ! a ]',
+  ])('keeps %j a test', (line) => {
+    const root = parser.parse(line)
+    expect(nodesOf(root, NT.TEST_COMMAND).length).toBeGreaterThan(0)
+    const heads = nodesOf(root, NT.COMMAND).map((c) => getParts(c).map((p) => getText(p))[0])
+    expect(heads).not.toContain('[')
+  })
+})

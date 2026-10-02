@@ -1755,6 +1755,19 @@
           }
         },
         {
+          "command": "python3 -c \"open('/data/new.txt', 'w').close()\"",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "cat /data/new.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
           "command": "python3 -c \"f = open('/data/seed.txt', 'a'); f.write('more\\n'); f.close()\"",
           "expect": {
             "exit": 0,
@@ -1768,6 +1781,46 @@
           "expect": {
             "exit": 0,
             "stdout": "seed\nmore\n"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'w').close()\"",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'x')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileExistsError"
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/fresh.txt', 'x'); f.write('fresh'); f.close()\"",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "cat /data/fresh.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "fresh"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/nope.txt', 'r+')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
           }
         }
       ]
@@ -1845,6 +1898,45 @@
           "expect": {
             "exit": 0,
             "stdout": "True ['child']\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "listing_classifies_through_stat",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c",
+          "script": "fs/py/list.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed.txt\nsub\n"
+          }
+        },
+        {
+          "command": "python3 -c",
+          "script": "fs/py/stat.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "file 5 32768\ndir 16384\nmissing\n"
           }
         }
       ]

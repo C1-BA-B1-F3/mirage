@@ -948,13 +948,41 @@
           }
         },
         {
+          "command": "js -e \"const f = std.open('/data/new.txt', 'w'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/new.txt"
+            ],
+            "ops_absent": [
+              "write /data/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/new.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
           "command": "js -e \"console.log(std.open('/data/seed.txt', 'wx') === null)\"",
           "expect": {
             "exit": 0,
             "stdout": "true\n",
             "ops_absent": [
-              "truncate /data/seed.txt"
+              "create /data/seed.txt",
+              "truncate /data/seed.txt",
+              "write /data/seed.txt"
             ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\n"
           }
         },
         {
@@ -974,6 +1002,41 @@
           }
         },
         {
+          "command": "js -e \"const f = std.open('/data/seed.txt', 'w'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "truncate /data/seed.txt"
+            ],
+            "ops_absent": [
+              "create /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/fresh.txt', 'wx'); f.puts('fresh'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/fresh.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/fresh.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "fresh"
+          }
+        },
+        {
           "command": "ln -s /data/gone /data/lnk",
           "expect": {
             "exit": 0
@@ -988,6 +1051,13 @@
               "create /data/lnk",
               "create /data/gone"
             ]
+          }
+        },
+        {
+          "command": "js -e \"std.open('/data/seed.txt', 'rq')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "invalid file mode"
           }
         }
       ]
@@ -1097,6 +1167,114 @@
           "expect": {
             "exit": 0,
             "stdout": "0 true [\"alias\",\"parent\"] a\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "listing_classifies_through_stat",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "js -e",
+          "script": "fs/js/list.js",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed.txt\nsub\n"
+          }
+        },
+        {
+          "command": "js -e",
+          "script": "fs/js/stat.js",
+          "expect": {
+            "exit": 0,
+            "stdout": "file 5 32768\ndir 16384\nmissing\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rmdir_refuses_a_nonempty_directory",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "mkdir -p /data/qrmdguest && echo keep > /data/qrmdguest/keep.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.remove('/data/qrmdguest') !== 0)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n"
+          }
+        },
+        {
+          "command": "cat /data/qrmdguest/keep.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "keep\n"
+          }
+        }
+      ]
+    },
+    {
+      "note": "qjs-libc checks a mode word character by character, so the real engine (quickjs on the python host) opens 'rr'. The TypeScript shim parses modes with the shared parser, which also holds CPython's one-base rule and refuses it; the stricter answer is the one both guests can agree on.",
+      "id": "refuses_a_mode_word_with_two_bases",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "js -e \"std.open('/data/seed.txt', 'rr')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "invalid file mode"
           }
         }
       ]

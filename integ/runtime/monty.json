@@ -1685,6 +1685,26 @@
           }
         },
         {
+          "command": "python3 -c \"open('/data/new.txt', 'w').close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/new.txt"
+            ],
+            "ops_absent": [
+              "write /data/new.txt",
+              "append /data/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/new.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
           "command": "python3 -c \"f = open('/data/seed.txt', 'a'); f.write('more\\n'); f.close()\"",
           "expect": {
             "exit": 0,
@@ -1698,6 +1718,92 @@
           "expect": {
             "exit": 0,
             "stdout": "seed\nmore\n"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'w').close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "truncate /data/seed.txt"
+            ],
+            "ops_absent": [
+              "create /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/out.txt', 'w'); f.write('hi'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/out.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/out.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "hi"
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/log.txt', 'a'); f.write('one\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/log.txt",
+              "append /data/log.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/log.txt', 'a'); f.write('two\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "append /data/log.txt"
+            ],
+            "ops_absent": [
+              "create /data/log.txt",
+              "truncate /data/log.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/log.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "one\ntwo\n"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'x')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "exclusive creation mode is not supported"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'r+')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "update modes ('+') are not yet supported"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'rr')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "must have exactly one of create/read/write/append mode"
           }
         }
       ]
@@ -1758,6 +1864,113 @@
           "expect": {
             "exit": 0,
             "stdout": "False\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "listing_classifies_through_stat",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c",
+          "script": "fs/py/list.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed.txt\nsub\n"
+          }
+        },
+        {
+          "command": "python3 -c",
+          "script": "fs/py/stat.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "file 5 32768\ndir 16384\nmissing\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reads_share_the_shell_ledger",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"print(open('/data/seed.txt').read().strip())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\n",
+            "ops_contain": [
+              "read /data/seed.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "note": "A guest calling os.rmdir reaches the same op through the runtime VFS, so the refusal has to survive that path too -- and the errno the guest sees is the one the backend stamped.",
+      "id": "rmdir_refuses_a_nonempty_directory",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "mkdir -p /data/qrmdguest && echo keep > /data/qrmdguest/keep.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/qrmdguest').rmdir()\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "Directory not empty"
+          }
+        },
+        {
+          "command": "cat /data/qrmdguest/keep.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "keep\n"
           }
         }
       ]

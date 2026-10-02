@@ -1475,7 +1475,7 @@ jobs:
       # a given runner. Re-read the `suite <host>/<name> <n>s` lines cli.sh
       # prints before moving a suite across; that step is 89% of the job's
       # test time, and it is the only one timed per suite.
-      LEG_A_SUITES: "defaults guestops limits lines policy quickjs registry script_cli"
+      LEG_A_SUITES: "defaults facade limits lines policy quickjs registry script_cli"
     steps:
       - uses: actions/checkout@v7
 

@@ -534,6 +534,19 @@ describe('run', () => {
     expect(ws.getSession('agent').env.DSH_HOME).toBe('/b')
   })
 
+  it('still seeds an earlier call when a later one carries no snapshot', async () => {
+    const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
+    const { entered, open } = stall(shell, 'worldWorkdir')
+    const first = shell.execute(
+      shell.resolve({ command: 'echo "$DSH_HOME"', dshEnv: { DSH_HOME: '/a' } }),
+    )
+    await entered
+    expect((await runOn(shell, shell.resolve({ command: 'true' }))).exitCode).toBe(0)
+    open()
+    expect((await (await first).result()).stdout.text).toBe('/a\n')
+    expect(ws.getSession('agent').env.DSH_HOME).toBe('/a')
+  })
+
   it('lands a seed cancelled mid-flight before the next call, never over it', async () => {
     const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
     const { entered, open } = stall(shell, 'applyManagedEnv')

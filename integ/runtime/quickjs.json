@@ -45,55 +45,6 @@
       ]
     },
     {
-      "id": "read_mount",
-      "world": {
-        "runtimes": [
-          "quickjs",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram",
-            "files": {
-              "data.txt": "hello from ram\n"
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "js -e \"const f = std.open('/ram/data.txt', 'r'); console.log(f.readAsString().trim())\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "hello from ram\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "write_mount",
-      "world": {
-        "runtimes": [
-          "quickjs",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "js -e \"const w = std.open('/ram/from-js.txt', 'w'); w.puts('js-wrote-this'); w.close()\" && cat /ram/from-js.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "js-wrote-this"
-          }
-        }
-      ]
-    },
-    {
       "id": "puts_print_raw",
       "world": {
         "runtimes": [
@@ -108,73 +59,6 @@
             "exit": 0,
             "stdout": "abc\n[object Object] 1,2\n",
             "stderr": ""
-          }
-        }
-      ]
-    },
-    {
-      "id": "os_surface",
-      "world": {
-        "runtimes": [
-          "quickjs",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          },
-          "/other": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "node -e \"console.log(os.mkdir('/ram/d'), os.mkdir('/ram/d'))\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "0 -20\n"
-          }
-        },
-        {
-          "command": "echo xy > /ram/d/a.txt",
-          "expect": {
-            "exit": 0
-          }
-        },
-        {
-          "command": "node -e \"console.log(os.rename('/ram/d/a.txt', '/ram/d/b.txt'), os.rename('/ram/zz', '/ram/yy'))\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "0 -44\n"
-          }
-        },
-        {
-          "command": "echo keep > /ram/cross.txt && node -e \"console.log(os.rename('/ram/cross.txt', '/other/cross.txt'))\" && cat /ram/cross.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "-44\nkeep\n"
-          }
-        },
-        {
-          "command": "node -e \"const [st, e] = os.stat('/ram/d/b.txt'); console.log(e, st.size, (st.mode & os.S_IFMT) === os.S_IFREG, JSON.stringify(os.stat('/ram/nope')))\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "0 3 true [null,44]\n"
-          }
-        },
-        {
-          "command": "node -e \"console.log(os.remove('/ram/d/b.txt'), os.remove('/ram/d/b.txt'), os.remove('/ram/d'))\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "0 -44 0\n"
-          }
-        },
-        {
-          "command": "node -e \"console.log(JSON.stringify(os.readdir('/ram/nope')))\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "[[],44]\n"
           }
         }
       ]
@@ -434,6 +318,11 @@
     },
     {
       "id": "utimes_reaches_the_mount",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "world": {
         "runtimes": [
           "quickjs",
@@ -900,6 +789,11 @@
     },
     {
       "id": "open_follows_the_shared_rule",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "world": {
         "runtimes": [
           "quickjs",
@@ -1124,6 +1018,11 @@
     },
     {
       "id": "structure_is_open_above_mounts_and_links",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "world": {
         "runtimes": [
           "quickjs",
@@ -1173,6 +1072,11 @@
     },
     {
       "id": "listing_classifies_through_stat",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "world": {
         "runtimes": [
           "quickjs",
@@ -1208,47 +1112,6 @@
       ]
     },
     {
-      "id": "rmdir_refuses_a_nonempty_directory",
-      "world": {
-        "runtimes": [
-          "quickjs",
-          "workspace"
-        ],
-        "mounts": {
-          "/data": {
-            "vfs": "ram",
-            "files": {
-              "seed.txt": "seed\n"
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "mkdir -p /data/qrmdguest && echo keep > /data/qrmdguest/keep.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "",
-            "stderr": ""
-          }
-        },
-        {
-          "command": "js -e \"console.log(os.remove('/data/qrmdguest') !== 0)\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "true\n"
-          }
-        },
-        {
-          "command": "cat /data/qrmdguest/keep.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "keep\n"
-          }
-        }
-      ]
-    },
-    {
       "note": "qjs-libc checks a mode word character by character, so the real engine (quickjs on the python host) opens 'rr'. The TypeScript shim parses modes with the shared parser, which also holds CPython's one-base rule and refuses it; the stricter answer is the one both guests can agree on.",
       "id": "refuses_a_mode_word_with_two_bases",
       "hosts": [
@@ -1275,6 +1138,166 @@
           "expect": {
             "exit": 1,
             "stderr_contains": "invalid file mode"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reads_and_writes_reach_the_mount",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "lines.txt": "one\ntwo\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "js -e \"const f = std.open('/data/seed.txt', 'r'); console.log(JSON.stringify(f.readAsString()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "\"seed\\n\"\n",
+            "ops_contain": [
+              "read /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/lines.txt', 'r'); let l; while ((l = f.getline()) !== null) console.log(l)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "one\ntwo\n"
+          }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/seed.txt', 'r'); f.seek(2, 0); console.log(f.tell(), JSON.stringify(f.readAsString()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "2 \"ed\\n\"\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/data/sub/inner.txt', 'r').readAsString().trim())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "in\n"
+          }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/w.txt', 'w'); f.puts('text'); f.close()\" && cat /data/w.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "text"
+          }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/w.txt', 'a'); f.puts('-more'); f.close()\" && cat /data/w.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "text-more"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mutations_reach_the_mount",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n"
+            }
+          },
+          "/other": {
+            "vfs": "ram"
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "js -e \"console.log(os.mkdir('/data/d'), os.mkdir('/data/d'))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0 -20\n"
+          }
+        },
+        {
+          "command": "echo xy > /data/d/a.txt",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.rename('/data/d/a.txt', '/data/d/b.txt'), os.rename('/data/zz', '/data/yy'))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0 -44\n"
+          }
+        },
+        {
+          "command": "echo keep > /data/cross.txt && js -e \"console.log(os.rename('/data/cross.txt', '/other/cross.txt'))\" && cat /data/cross.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "-44\nkeep\n"
+          }
+        },
+        {
+          "command": "js -e \"const [st, e] = os.stat('/data/d/b.txt'); console.log(e, st.size, (st.mode & os.S_IFMT) === os.S_IFREG, JSON.stringify(os.stat('/data/nope')))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0 3 true [null,44]\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.remove('/data/d') !== 0)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n"
+          }
+        },
+        {
+          "command": "cat /data/d/b.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "xy\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.remove('/data/d/b.txt'), os.remove('/data/d/b.txt'), os.remove('/data/d'))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0 -44 0\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(JSON.stringify(os.readdir('/data/nope')))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "[[],44]\n"
           }
         }
       ]

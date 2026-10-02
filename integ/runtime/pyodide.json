@@ -28,229 +28,6 @@
       ]
     },
     {
-      "id": "read_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram",
-            "files": {
-              "data.txt": "hello from ram\n"
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"print(open('/ram/data.txt').read().strip() + '-pyodide')\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "hello from ram-pyodide\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "write_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"open('/ram/from-pyodide.txt', 'w').write('pyodide-wrote-this')\" && cat /ram/from-pyodide.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "pyodide-wrote-this"
-          }
-        }
-      ]
-    },
-    {
-      "id": "mkdir_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"import os; os.makedirs('/ram/a/b')\" && ls /ram/a",
-          "expect": {
-            "exit": 0,
-            "stdout": "b\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "unlink_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "echo -n x > /ram/gone.txt && python3 -c \"from pathlib import Path; Path('/ram/gone.txt').unlink()\" && ls /ram",
-          "expect": {
-            "exit": 0,
-            "stdout": ""
-          }
-        }
-      ]
-    },
-    {
-      "id": "rmtree_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "mkdir /ram/d && echo -n x > /ram/d/inner.txt && python3 -c \"import shutil; shutil.rmtree('/ram/d')\" && ls /ram",
-          "expect": {
-            "exit": 0,
-            "stdout": ""
-          }
-        }
-      ]
-    },
-    {
-      "id": "rename_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "echo -n one > /ram/a.txt && python3 -c \"import os; os.rename('/ram/a.txt', '/ram/b.txt')\" && cat /ram/b.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "one"
-          }
-        }
-      ]
-    },
-    {
-      "id": "append_preserves_mount",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram",
-            "files": {
-              "keep.txt": "base"
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"open('/ram/keep.txt', 'a').write('-more')\" && cat /ram/keep.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "base-more"
-          }
-        }
-      ]
-    },
-    {
-      "id": "rename_across_mounts_refused",
-      "hosts": [
-        "typescript"
-      ],
-      "world": {
-        "runtimes": [
-          "pyodide",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          },
-          "/other": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "echo -n keep > /ram/c.txt && python3 -c \"import os; os.rename('/ram/c.txt', '/other/c.txt')\"",
-          "expect": {
-            "exit": 1
-          }
-        },
-        {
-          "command": "cat /ram/c.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "keep"
-          }
-        }
-      ]
-    },
-    {
       "id": "nested_mounts_one_mountpoint",
       "hosts": [
         "typescript"
@@ -1710,6 +1487,11 @@
       "hosts": [
         "typescript"
       ],
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "world": {
         "runtimes": [
           "pyodide",
@@ -1878,6 +1660,11 @@
       "hosts": [
         "typescript"
       ],
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "world": {
         "runtimes": [
           "pyodide",
@@ -1906,6 +1693,11 @@
       "id": "listing_classifies_through_stat",
       "hosts": [
         "typescript"
+      ],
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
       ],
       "world": {
         "runtimes": [
@@ -1937,6 +1729,249 @@
           "expect": {
             "exit": 0,
             "stdout": "file 5 32768\ndir 16384\nmissing\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reads_and_writes_reach_the_mount",
+      "hosts": [
+        "typescript"
+      ],
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "lines.txt": "one\ntwo\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/data/seed.txt').read_text(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/data/seed.txt').read_bytes())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "b'seed\\n'\n"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/data/lines.txt').read().splitlines())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "['one', 'two']\n"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/data/sub/inner.txt').read(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "in\n",
+            "ops_contain": [
+              "read /data/sub/inner.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/w.txt').write_text('text')\" && cat /data/w.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "text"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/b.txt').write_bytes(b'bytes')\" && cat /data/b.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "bytes"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/data/nope.txt').read_text())\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError: [Errno 44] No such file or directory: '/data/nope.txt'"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mutations_reach_the_mount",
+      "hosts": [
+        "typescript"
+      ],
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n"
+            }
+          },
+          "/other": {
+            "vfs": "ram"
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d').mkdir(); print(Path('/data/d').is_dir())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d').mkdir()\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileExistsError"
+          }
+        },
+        {
+          "command": "echo xy > /data/d/a.txt",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d/a.txt').rename('/data/d/b.txt'); print(Path('/data/d/b.txt').stat().st_size, Path('/data/d/a.txt').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "3 False\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d').rmdir()\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "Directory not empty"
+          }
+        },
+        {
+          "command": "cat /data/d/b.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "xy\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d/b.txt').unlink(); Path('/data/d').rmdir(); print(Path('/data/d').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/zz').rename('/data/yy')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
+          }
+        },
+        {
+          "command": "echo keep > /data/cross.txt && python3 -c \"from pathlib import Path; Path('/data/cross.txt').rename('/other/cross.txt')\"",
+          "expect": {
+            "exit": 1
+          }
+        },
+        {
+          "command": "cat /data/cross.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "keep\n"
+          }
+        },
+        {
+          "command": "python3 -c \"import os, shutil; os.makedirs('/data/m/n'); print(os.listdir('/data/m')); shutil.rmtree('/data/m'); print(os.path.exists('/data/m'))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "['n']\nFalse\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "glob_and_walk_reach_the_mount",
+      "hosts": [
+        "typescript"
+      ],
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n",
+              "sub/b.txt": "b\n",
+              "sub/deep/c.txt": "c\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"import glob; print(sorted(glob.glob('/data/**/*.txt', recursive=True)))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "['/data/a.txt', '/data/sub/b.txt', '/data/sub/deep/c.txt']\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(sorted(str(p) for p in Path('/data').rglob('*.txt')))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "['/data/a.txt', '/data/sub/b.txt', '/data/sub/deep/c.txt']\n"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print([(r, sorted(d), sorted(f)) for r, d, f in os.walk('/data')])\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "[('/data', ['sub'], ['a.txt']), ('/data/sub', ['deep'], ['b.txt']), ('/data/sub/deep', [], ['c.txt'])]\n"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print(sorted((e.name, e.is_dir()) for e in os.scandir('/data')))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "[('a.txt', False), ('sub', True)]\n"
           }
         }
       ]

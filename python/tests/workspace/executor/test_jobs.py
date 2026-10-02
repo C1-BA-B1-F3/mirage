@@ -221,14 +221,17 @@ async def _run_forever(job: Job) -> tuple[IOResult, ExecutionNode]:
     return IOResult(), ExecutionNode()
 
 
-async def _emit_late(job: Job) -> tuple[IOResult, ExecutionNode]:
-    """A runner that prints only after a short wait, so it is still
-    running when the test reaches ``fg``.
+async def _emit_after(
+    job: Job, gate: asyncio.Event
+) -> tuple[IOResult, ExecutionNode]:
+    """A runner that prints only once the test opens ``gate``, so it is
+    still running while ``fg`` picks a job.
 
     Args:
         job (Job): the job being run.
+        gate (asyncio.Event): what the runner waits on before printing.
     """
-    await asyncio.sleep(0.05)
+    await gate.wait()
     return await _emit_and_settle(job, stdout=b"late")
 
 
@@ -449,12 +452,17 @@ async def test_fg_without_an_operand_adopts_a_job_that_already_finished():
 @pytest.mark.asyncio
 async def test_fg_without_an_operand_prefers_a_running_job_to_a_finished_one():
     # bash's current job is the newest one still running; a finished job
-    # answers only when nothing runs.
+    # answers only when nothing runs. The older job holds until fg has
+    # picked, which it does before its first await.
     table = JobTable()
-    table.submit("older", _emit_late, cwd="/")
+    gate = asyncio.Event()
+    table.submit("older", partial(_emit_after, gate=gate), cwd="/")
     done = _submit_settled(table, command="newer", stdout=b"early")
     await table.wait(done.id)
-    stdout, _, _ = await handle_fg(table, ["fg"])
+    fg = asyncio.create_task(handle_fg(table, ["fg"]))
+    await asyncio.sleep(0)
+    gate.set()
+    stdout, _, _ = await fg
     assert stdout == b"older\nlate"
 
 

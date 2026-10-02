@@ -251,18 +251,25 @@ describe('handleFg without an operand', () => {
   })
 
   // bash's current job is the newest one still running; a finished job
-  // answers only when nothing runs.
+  // answers only when nothing runs. The older job holds until fg has picked,
+  // which it does before its first await.
   it('prefers a running job to a finished one', async () => {
     const jt = new JobTable()
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
     const late: JobRunner = async (job) => {
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await gate
       await job.console.emit(Channel.STDOUT, new TextEncoder().encode('late'))
       return [new IOResult(), new ExecutionNode({ command: 'older' })]
     }
     jt.submit({ command: 'older', run: late, abort: new AbortController(), cwd: '/' })
     const done = jt.submit({ command: 'newer', run: quiet, abort: new AbortController(), cwd: '/' })
     await jt.wait(done.id)
-    const [stdout] = await handleFg(jt, ['fg'])
+    const fg = handleFg(jt, ['fg'])
+    release()
+    const [stdout] = await fg
     expect(decode(stdout as Uint8Array)).toBe('older\nlate')
   })
 })

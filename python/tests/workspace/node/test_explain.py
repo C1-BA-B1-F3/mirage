@@ -858,6 +858,71 @@ async def test_a_whole_line_keeps_its_first_answer_while_its_second_waits():
         await ws.close()
 
 
+@pytest.mark.asyncio
+async def test_an_expanded_name_is_explained_as_the_route_reads_it():
+    # The executor judges a name once expanded, so explain says nothing
+    # about it; a runtime that takes the line whole reads it as typed and
+    # refuses it under a rule, and explain then says exactly that.
+    line = 'X=echo; "$X" hi'
+    for whole, profile, code in (
+        (False, PROFILE, 0),
+        (True, {}, 0),
+        (True, PROFILE, 126),
+    ):
+        ws = Workspace(
+            {"/data/": RAMVFS()},
+            mode=MountMode.EXEC,
+            profiles={"r": profile},
+            runtimes=[_LineBox(), "workspace"] if whole else None,
+        )
+        try:
+            ws.create_session("s", profile="r")
+            said = await ws.explain(line, "s")
+            ran = await ws.shell(line, session_id="s")
+            assert ran.exit_code == code
+            assert [(e.exit_code, e.stderr) for e in said if e.exit_code] == (
+                [(code, await ran.stderr_str())] if code else []
+            )
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_path_the_pass_cannot_read_is_left_to_the_gate():
+    # Read as typed in the cwd the pass last knew, `$F` and a relative
+    # word after `cd "$d"` matched the rule's glob, refusing whole lines
+    # that remove only an allowed file, and `.` read as a mount root.
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.EXEC, profiles={"r": PROFILE}
+    )
+    try:
+        ws.create_session("s", profile="r")
+        ws.create_session("t")
+        await ws.shell(
+            "mkdir /data/prod; touch /data/x /data/w", session_id="t"
+        )
+        for session, line, code in (
+            ("s", "cd /data/prod; F=/data/x; rm $F; echo ok", 0),
+            ("s", 'cd /data/prod; d=/data; cd "$d" && rm w; echo ok', 0),
+            ("s", 'd=/data; cd "$d" && rm /data/prod/y; echo ok', 1),
+            (
+                "t",
+                'cd /data; d=prod; cd "$d" && tar -cf /data/t.tar . && echo ok',
+                0,
+            ),
+        ):
+            said = await ws.explain(line, session)
+            ran = await ws.shell(line, session_id=session)
+            err = await ran.stderr_str()
+            assert ran.exit_code == code, err
+            assert ran.stdout == (b"" if code else b"ok\n")
+            assert [(e.exit_code, e.stderr) for e in said if e.exit_code] == (
+                [(code, err)] if code else []
+            )
+    finally:
+        await ws.close()
+
+
 def _no_console(job_id: int) -> JobConsole:
     raise RuntimeError("no console")
 

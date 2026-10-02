@@ -468,7 +468,8 @@ class Workspace:
         and the refusal an agent would read come out of one place and
         cannot disagree. It runs no command, expands nothing, spends no
         grant and puts no question to a host, which is what makes it
-        safe to call about a line nobody typed.
+        safe to call about a line nobody typed. The line is judged on
+        the static bindings' route; a route policy is not consulted.
 
         Host-side only. The structure of a profile's rules is an
         operator's business, so there is no builtin an agent can type
@@ -486,7 +487,11 @@ class Workspace:
         await self.ensure_sessions_loaded()
         session = self.get_session(session_id or self.default_session_id)
         return await explain_line(
-            parse(line), session, self._registry, self._namespace
+            parse(line),
+            session,
+            self._registry,
+            self._namespace,
+            whole_line=self._runtimes.whole_line(None) is not None,
         )
 
     @property

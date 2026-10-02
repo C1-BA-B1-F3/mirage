@@ -380,7 +380,10 @@ before asking about the expanded `cat`. A pending result does not roll
 back earlier work, so retrying such a line can repeat it. The same holds
 for the operands a command appends at run time: `xargs cat` runs `cat`
 on the items it reads from its input, and `find -exec cat {} \;` on the
-paths it finds. Preflight still refuses such a line for a `deny` on the
+paths it finds. So does a path only the runtime expands (`rm $F`) or
+one relative to a `cd` preflight cannot follow (`cd "$d" && rm x`): no
+rule is shown it before the line runs, and the gate judges the path it
+turns out to name. Preflight still refuses such a line for a `deny` on the
 command name, before anything runs, but it never asks about a spelling
 the gate will not read (`cat $F`, a bare `cat`): an answer to that
 question would cover nothing that runs, and the gate would ask again

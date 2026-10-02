@@ -16,8 +16,9 @@ import type { Accessor } from '../../accessor/base.ts'
 import { invalidateAfterWrite, invalidateAncestors } from '../../cache/context.ts'
 import { record, startOp } from '../../observe/context.ts'
 import type { FileStat, PathSpec } from '../../types.ts'
-import { eexist, enoent, enotsup, isMissingPath } from '../../utils/errors.ts'
+import { eexist, enoent, enotdir, enotsup, isMissingPath } from '../../utils/errors.ts'
 import * as kp from '../../utils/key_prefix.ts'
+import { ancestors, norm } from '../../utils/path.ts'
 import { isDir } from '../../utils/stat_view.ts'
 import type {
   MkdirFn,
@@ -141,6 +142,24 @@ async function rowAt<A extends Accessor>(
   }
 }
 
+/** The outermost ancestor of `path` the store holds as a file. */
+async function fileAbove<A extends Accessor, C>(
+  driver: ObjectStoreDriver<A, C>,
+  accessor: A,
+  path: PathSpec,
+): Promise<string | null> {
+  const prefix = driver.keyPrefixOf(accessor)
+  const { conn, close } = await driver.connect(accessor)
+  try {
+    for (const ancestor of ancestors(norm(path.mountPath))) {
+      if ((await driver.head(conn, kp.apply(prefix, ancestor))) !== null) return ancestor
+    }
+  } finally {
+    await close()
+  }
+  return null
+}
+
 /** Build the marker-object mkdir over one driver. */
 export function makeMkdir<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>): MkdirFn<A> {
   const stat = makeStat(driver)
@@ -153,6 +172,13 @@ export function makeMkdir<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>
       // guest, FUSE and ws.vfs reach the op directly, the same callers
       // `makeRmdir` protects.
       throw eexist(path)
+    }
+    if (row === null) {
+      const above = await fileAbove(driver, accessor, path)
+      // A directory cannot sit under a file, and a marker below one made
+      // both unreadable. mkdir(2) blames the operand; the walk `-p` makes
+      // stops at the file and names it.
+      if (above !== null) throw enotdir(parents ? kp.mountedPath(path, above) : path)
     }
     if (driver.markersSupported === false) {
       // The store refuses the marker client-side (hf: create_dir is

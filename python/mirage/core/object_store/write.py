@@ -29,7 +29,8 @@ from mirage.core.object_store.stat import make_stat
 from mirage.observe.context import record, start_op
 from mirage.types import FileStat, PathSpec
 from mirage.utils import key_prefix as kp
-from mirage.utils.errors import eexist, enoent, enotsup
+from mirage.utils.errors import eexist, enoent, enotdir, enotsup
+from mirage.utils.path import ancestors, norm
 from mirage.utils.stat_view import is_dir
 
 
@@ -183,6 +184,24 @@ async def _row(
         return None
 
 
+async def _file_above(
+    driver: ObjectStoreDriver[A, C], accessor: A, path_spec: PathSpec
+) -> str | None:
+    """The outermost ancestor of `path_spec` the store holds as a file.
+
+    Args:
+        driver (ObjectStoreDriver): the store's native surface.
+        accessor (A): the store's accessor.
+        path_spec (PathSpec): the directory about to be made.
+    """
+    prefix = driver.key_prefix_of(accessor)
+    async with driver.connect(accessor) as conn:
+        for ancestor in ancestors(norm(path_spec.mount_path)):
+            if await driver.head(conn, kp.apply(prefix, ancestor)) is not None:
+                return ancestor
+    return None
+
+
 def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
     """Build the marker-object mkdir over one driver.
 
@@ -203,6 +222,15 @@ def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
             # check first: a guest, FUSE and ws.vfs reach the op directly,
             # the same callers `make_rmdir` protects.
             raise eexist(path_spec)
+        if row is None:
+            above = await _file_above(driver, accessor, path_spec)
+            if above is not None:
+                # A directory cannot sit under a file, and a marker below
+                # one made both unreadable. mkdir(2) blames the operand;
+                # the walk `-p` makes stops at the file and names it.
+                raise enotdir(
+                    kp.mounted_path(path_spec, above) if parents else path_spec
+                )
         if not driver.markers_supported:
             # The store refuses the marker client-side (hf: create_dir is
             # unsupported and a slash-terminated write is IsADirectory),

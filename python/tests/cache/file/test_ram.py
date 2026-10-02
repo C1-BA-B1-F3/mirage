@@ -130,6 +130,18 @@ async def test_evict_prefix_reclaims_the_evicted_bytes():
 
 
 @pytest.mark.asyncio
+async def test_exists_keeps_no_lock_for_a_miss_or_a_reclaimed_entry():
+    """exists() is asked once per uncached read of a path a mount-added
+    renderer serves, so it must not leave a key lock behind per path."""
+    cache = RAMFileCacheStore()
+    assert not await cache.exists("/data/never.txt")
+    await cache.set("/data/a.txt", b"12345", ttl=0)
+    assert not await cache.exists("/data/a.txt")
+    assert "/data/never.txt" not in cache._key_locks
+    assert "/data/a.txt" not in cache._key_locks
+
+
+@pytest.mark.asyncio
 async def test_exists_reclaims_an_expired_entry():
     """An expired entry answers absent and frees its bytes, as get() does,
     so a caller that only asks never leaves it counted against the cap."""

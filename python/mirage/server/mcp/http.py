@@ -116,13 +116,11 @@ class McpDoor:
         Raises:
             LookupError: the workspace or the session does not exist.
         """
-        for key, (entry, session, _) in list(self._served.items()):
+        for key, (entry, held, _) in list(self._served.items()):
             if (
                 key[0] not in self._registry
                 or self._registry.get(key[0]) is not entry
-                or all(
-                    s is not session for s in entry.runner.ws.list_sessions()
-                )
+                or all(s is not held for s in entry.runner.ws.list_sessions())
             ):
                 del self._served[key]
         workspace_id = request.path_params["workspace_id"]

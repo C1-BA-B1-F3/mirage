@@ -1,5 +1,8 @@
+import sys
+
 import pytest
 import typer.main
+from mcp import Client, StdioServerParameters
 from typer.testing import CliRunner
 
 from mirage.cli.main import app
@@ -75,3 +78,21 @@ def test_resolve_discovers_by_walking_up(tree):
 
 def test_env_names_are_mcp_then_shared():
     assert MCP_ENV_NAMES == ("MIRAGE_MCP_CONFIG", "MIRAGE_CONFIG")
+
+
+@pytest.mark.asyncio
+async def test_serves_the_tools_over_stdio(tree):
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "mirage.cli.main", "mcp", str(tree / "workspace.yaml")],
+    )
+    async with Client(params) as client:
+        tools = sorted(t.name for t in (await client.list_tools()).tools)
+        await client.call_tool("write", {"path": "/a.txt", "content": "hi\n"})
+        read = await client.call_tool("read", {"path": "/a.txt"})
+        ran = await client.call_tool(
+            "execute_command", {"command": "wc -l /a.txt"}
+        )
+    assert tools == ["edit", "execute_command", "grep", "ls", "read", "write"]
+    assert read.content[0].text == "     1\thi\n"
+    assert ran.content[0].text == "1 /a.txt\n"

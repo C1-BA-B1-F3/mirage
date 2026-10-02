@@ -14,7 +14,10 @@
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { Client } from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildMcpWorkspace, resolveMcpConfig } from './mcp.ts'
 
@@ -70,4 +73,31 @@ describe('buildMcpWorkspace', () => {
     // mirage-node barrel through `await import()`, so that ~5s of module load
     // is charged to this test body instead of the file's import phase.
   }, 30_000)
+})
+
+describe('mirage mcp over stdio', () => {
+  it('serves the tools from the built binary', async () => {
+    const dir = mkTempDir()
+    const path = join(dir, 'workspace.yaml')
+    writeFileSync(path, 'mounts:\n  /:\n    vfs: ram\n    mode: WRITE\n')
+    const bin = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'bin', 'mirage.js')
+    const client = new Client({ name: 'mirage-test', version: '1.0.0' })
+    await client.connect(
+      new StdioClientTransport({ command: process.execPath, args: [bin, 'mcp', path] }),
+    )
+    try {
+      const tools = (await client.listTools()).tools.map((t) => t.name).sort()
+      await client.callTool({ name: 'write', arguments: { path: '/a.txt', content: 'hi\n' } })
+      const read = await client.callTool({ name: 'read', arguments: { path: '/a.txt' } })
+      const ran = await client.callTool({
+        name: 'execute_command',
+        arguments: { command: 'wc -l /a.txt' },
+      })
+      expect(tools).toEqual(['edit', 'execute_command', 'grep', 'ls', 'read', 'write'])
+      expect((read.content as { text: string }[])[0]?.text).toBe('     1\thi\n')
+      expect((ran.content as { text: string }[])[0]?.text).toBe('1 /a.txt\n')
+    } finally {
+      await client.close()
+    }
+  }, 60_000)
 })

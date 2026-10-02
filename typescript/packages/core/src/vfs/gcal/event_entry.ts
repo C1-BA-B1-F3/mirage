@@ -25,8 +25,9 @@ import {
 export const EVENT_SUFFIX = '.gcal.json'
 export const CALENDAR_FILE = 'calendar.json'
 export const PRIMARY_DIR = 'primary'
-// "HHMM-HHMM"
-const HHMM_LEN = 9
+// What follows the id: the day a multi-day bucket's names carry, then the
+// day-clamped "HHMM-HHMM", then the title when NAME_MAX leaves room for one.
+const LABEL_RE = /^(?:([0-9]{4}-[0-9]{2}-[0-9]{2})_)?[0-9]{4}-[0-9]{4}(?:_|$)/
 const UNTITLED = 'untitled'
 // A freeBusyReader calendar returns availability with no summary at all, so
 // there is no title to sanitize and "busy" is the honest rendering.
@@ -44,10 +45,18 @@ export function eventTitle(summary: string | null, freeBusy = false): string {
  * The id leads so that trimming the title can never make two events collide
  * and so `ls <idprefix>*` addresses one event. Google event ids are 5-1024
  * characters by spec (26 in practice), so the title takes whatever of the
- * 255-byte NAME_MAX is left rather than a fixed character count.
+ * 255-byte NAME_MAX is left rather than a fixed character count. In a
+ * multi-day bucket the day goes before the times, since the directory no
+ * longer names it.
  */
-export function makeEventFilename(eventId: string, hhmm: string, title: string): string {
-  const fixed = byteLength(eventId) + 2 + hhmm.length + 1 + EVENT_SUFFIX.length
+export function makeEventFilename(
+  eventId: string,
+  hhmm: string,
+  title: string,
+  day: string | null = null,
+): string {
+  const label = day === null ? hhmm : `${day}_${hhmm}`
+  const fixed = byteLength(eventId) + 2 + label.length + 1 + EVENT_SUFFIX.length
   const trimmed = stripTrailingUnderscores(truncateBytes(title, NAME_MAX_BYTES - fixed))
   if (trimmed === '') {
     // The title is what gives, never the id: trimming the id would make the
@@ -56,26 +65,26 @@ export function makeEventFilename(eventId: string, hhmm: string, title: string):
     // unnameable rather than silently mangled. The spec permits one (ids run
     // 5-1024 chars) but only a caller-supplied id from events.import can be
     // that long; Google's own are 26.
-    return `${eventId}__${hhmm}${EVENT_SUFFIX}`
+    return `${eventId}__${label}${EVENT_SUFFIX}`
   }
-  return `${eventId}__${hhmm}_${trimmed}${EVENT_SUFFIX}`
+  return `${eventId}__${label}_${trimmed}${EVENT_SUFFIX}`
 }
 
 /**
- * Recover `[eventId, hhmm]` from an event filename.
+ * Recover `[eventId, day]` from an event filename.
  *
  * Splitting on the first `__` is safe because a Google event id is base32hex
  * and can hold neither an underscore nor a separator, while a title
- * routinely holds both.
+ * routinely holds both. The day is null in a one-day bucket, whose directory
+ * is the day.
  */
-export function parseEventFilename(name: string): [string, string] {
+export function parseEventFilename(name: string): [string, string | null] {
   if (!name.endsWith(EVENT_SUFFIX)) throw enoent(name)
   const raw = name.slice(0, -EVENT_SUFFIX.length)
   const idx = raw.indexOf('__')
-  if (idx <= 0) throw enoent(name)
-  const rest = raw.slice(idx + 2)
-  if (rest.length < HHMM_LEN) throw enoent(name)
-  return [raw.slice(0, idx), rest.slice(0, HHMM_LEN)]
+  const label = LABEL_RE.exec(raw.slice(idx + 2))
+  if (idx <= 0 || label === null) throw enoent(name)
+  return [raw.slice(0, idx), label[1] ?? null]
 }
 
 /**

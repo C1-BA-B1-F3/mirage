@@ -15,65 +15,54 @@
 import pytest
 
 from mirage.core.gcal.unlink import unlink
-from mirage.types import PathSpec
+from tests.fixtures.gcal_api import make_accessor, spec
 
 pytestmark = pytest.mark.asyncio
 
-EVENT = "/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"
+
+@pytest.mark.parametrize(
+    "size, path",
+    [
+        (1, "/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"),
+        (
+            7,
+            "/primary/2026-08-10--2026-08-16/"
+            "aaaa1__2026-08-11_0900-1030_PhD_Defense.gcal.json",
+        ),
+    ],
+)
+async def test_unlink_deletes_the_event_the_name_carries(
+    gcal_api, size, path, index
+):
+    await unlink(make_accessor(bucket_days=size), spec(path), index)
+    assert gcal_api.deleted == [("integ@example.com", "aaaa1")]
+    # The entry resolves through the parent bucket's one listing first, so
+    # an unlisted name is refused without a destructive call.
+    assert [call[0] for call in gcal_api.listed] == ["integ@example.com"]
 
 
-def spec(virtual: str) -> PathSpec:
-    return PathSpec(
-        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
-    )
-
-
-async def test_unlink_deletes_the_event_the_name_carries(api, accessor, index):
-    await unlink(accessor, spec(EVENT), index)
-    assert api.deleted == [("integ@example.com", "aaaa1")]
-
-
-async def test_unlink_resolves_through_the_day_listing(api, accessor, index):
-    # The kit resolves the entry through the parent day's listing before
-    # deleting, so an unlisted name is refused without a destructive call.
-    await unlink(accessor, spec(EVENT), index)
-    assert len(api.listed) == 1
-    assert api.listed[0][0] == "integ@example.com"
-    assert api.listed[0][1].startswith("2026-08-11")
-
-
-async def test_unlink_refuses_a_directory(api, accessor, index):
-    with pytest.raises(IsADirectoryError):
-        await unlink(accessor, spec("/primary/2026-08-11"), index)
-    assert api.deleted == []
-
-
-async def test_unlink_refuses_a_read_only_calendar(api, accessor, index):
-    path = (
-        "/Engineering__team@group.calendar.google.com/2026-08-11/"
-        "aaaa1__0900-1030_PhD_Defense.gcal.json"
-    )
-    # accessRole reader: refuse at the mount rather than surfacing a 403
-    # from inside the API after the call has already gone out.
-    with pytest.raises(PermissionError):
+@pytest.mark.parametrize(
+    "path, error",
+    [
+        ("/primary/2026-08-11", IsADirectoryError),
+        # accessRole reader and freeBusyReader: refused at the mount rather
+        # than surfacing a 403 after the call has already gone out.
+        (
+            "/Engineering__team@group.calendar.google.com/2026-08-11/"
+            "aaaa1__0900-1030_PhD_Defense.gcal.json",
+            PermissionError,
+        ),
+        (
+            "/Exec__busy@group.calendar.google.com/2026-08-11/"
+            "aaaa1__0900-1030_busy.gcal.json",
+            PermissionError,
+        ),
+        ("/nope/2026-08-11/aaaa1__0900-1030_X.gcal.json", FileNotFoundError),
+    ],
+)
+async def test_unlink_refuses_without_deleting(
+    gcal_api, accessor, index, path, error
+):
+    with pytest.raises(error):
         await unlink(accessor, spec(path), index)
-    assert api.deleted == []
-
-
-async def test_unlink_refuses_a_free_busy_calendar(api, accessor, index):
-    path = (
-        "/Exec__busy@group.calendar.google.com/2026-08-11/"
-        "aaaa1__0900-1030_busy.gcal.json"
-    )
-    with pytest.raises(PermissionError):
-        await unlink(accessor, spec(path), index)
-    assert api.deleted == []
-
-
-async def test_unlink_on_an_unknown_calendar_is_enoent(api, accessor, index):
-    with pytest.raises(FileNotFoundError):
-        await unlink(
-            accessor,
-            spec("/nope/2026-08-11/aaaa1__0900-1030_X.gcal.json"),
-            index,
-        )
+    assert gcal_api.deleted == []

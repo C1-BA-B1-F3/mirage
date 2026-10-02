@@ -433,7 +433,6 @@ module = [
     "mirage.fuse.fs",
     "mirage.fuse.mount",
     "mirage.observe.context",
-    "mirage.ops.gcal.read",
     "mirage.ops.gdocs.read",
     "mirage.ops.generic.factory",
     "mirage.ops.gsheets.read",

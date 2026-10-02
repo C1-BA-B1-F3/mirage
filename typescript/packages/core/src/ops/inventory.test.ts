@@ -19,6 +19,7 @@ import { CHROMA_OPS } from './chroma/index.ts'
 import { DATABRICKS_VOLUME_OPS } from './databricks_volume/index.ts'
 import { DISCORD_OPS } from './discord/index.ts'
 import { DROPBOX_OPS } from './dropbox/index.ts'
+import { GCAL_OPS } from './gcal/index.ts'
 import { GDOCS_OPS } from './gdocs/index.ts'
 import { GDRIVE_OPS } from './gdrive/index.ts'
 import { GITHUB_OPS } from './github/index.ts'
@@ -54,6 +55,7 @@ const TABLES = {
   databricks_volume: DATABRICKS_VOLUME_OPS,
   discord: DISCORD_OPS,
   dropbox: DROPBOX_OPS,
+  gcal: GCAL_OPS,
   gdocs: GDOCS_OPS,
   gdrive: GDRIVE_OPS,
   github: GITHUB_OPS,
@@ -130,6 +132,12 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['truncate', 'dropbox', '', true],
     ['unlink', 'dropbox', '', true],
     ['write', 'dropbox', '', true],
+  ],
+  gcal: [
+    ['read', 'gcal', '', false],
+    ['glob', 'gcal', '', false],
+    ['readdir', 'gcal', '', false],
+    ['stat', 'gcal', '', false],
   ],
   gdocs: [
     ['read', 'gdocs', '.gdoc.json', false],

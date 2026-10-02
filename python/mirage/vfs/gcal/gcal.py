@@ -23,7 +23,7 @@ from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.gcal.config import GCalConfig
-from mirage.vfs.gcal.prompt import PROMPT, WRITE_PROMPT
+from mirage.vfs.gcal.prompt import BUCKET_PROMPT, PROMPT, WRITE_PROMPT
 
 
 class GCalVFS(BaseVFS):
@@ -42,7 +42,9 @@ class GCalVFS(BaseVFS):
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GCalAccessor(self.config, self._token_manager)
-        self.prompt = PROMPT + self.accessor.time_range.prompt()
+        days = config.bucket_days
+        bucket = BUCKET_PROMPT.replace("{days}", str(days)) if days > 1 else ""
+        self.prompt = PROMPT + bucket + self.accessor.time_range.prompt()
 
     def ops(self) -> list[RegisteredOp]:
         return GCAL_VFS_OPS

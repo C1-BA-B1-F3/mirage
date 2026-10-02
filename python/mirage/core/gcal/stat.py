@@ -18,7 +18,7 @@ from mirage.core.gcal.readdir import (
     bucket_zone,
     calendar_index,
     readdir,
-    scoped_day_bounds,
+    scoped_bucket,
 )
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.probe import resolve_entry
@@ -47,29 +47,30 @@ def _file_stat(
     )
 
 
-async def _stat_day(
+async def _stat_bucket(
     accessor: GCalAccessor,
     match: ScopeMatch,
     path: PathSpec,
     index: IndexCacheStore,
 ) -> FileStat:
-    """Stat a day directory, which resolves whether or not it is listed.
+    """Stat a bucket directory, which resolves whether or not it is listed.
 
-    A well-formed day under a calendar that exists is a directory whether
-    or not it holds an event: the range query over that day is positive
-    proof of what is there, so an event-free day (or one outside the
-    default listing window) is an empty directory rather than a miss.
+    A bucket on the mount's grid under a calendar that exists is a
+    directory whether or not it holds an event: the range query over it
+    is positive proof of what is there, so an event-free bucket (or one
+    outside the default listing window) is an empty directory rather than
+    a miss.
 
     Args:
         accessor (GCalAccessor): the mount's accessor.
-        match (ScopeMatch): a match holding ``calendar`` and ``day``.
+        match (ScopeMatch): a match holding ``calendar`` and ``bucket``.
         path (PathSpec): the path to stat.
         index (IndexCacheStore): the mount's index cache.
     """
     calendars = await calendar_index(accessor)
-    scoped_day_bounds(
+    scoped_bucket(
         accessor,
-        match.slots["day"],
+        match.slots["bucket"],
         bucket_zone(accessor, calendars),
         path.virtual,
     )
@@ -77,11 +78,11 @@ async def _stat_day(
     if entry is not None:
         return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
     # Ask the calendar list rather than the index: the index only knows
-    # the calendar once the ROOT has been listed, which a stat of a day
+    # the calendar once the ROOT has been listed, which a stat of a bucket
     # two levels down never triggers.
     if match.slots["calendar"] not in calendars:
         raise enoent(path.virtual)
-    return FileStat(name=match.slots["day"], type=FileType.DIRECTORY)
+    return FileStat(name=match.slots["bucket"], type=FileType.DIRECTORY)
 
 
 stat = make_stat(
@@ -92,5 +93,5 @@ stat = make_stat(
         "calendar_json": _file_stat,
         "event": _file_stat,
     },
-    overrides={"day": _stat_day},
+    overrides={"bucket": _stat_bucket},
 )

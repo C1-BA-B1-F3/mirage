@@ -15,82 +15,74 @@
 import pytest
 
 from mirage.core.gcal.stat import stat
-from mirage.types import ContentType, FileType, PathSpec
+from mirage.core.render.json import compact_json_bytes
+from mirage.types import ContentType, FileType
+from tests.fixtures.gcal_api import EVENTS, make_accessor, spec
 
-pytestmark = pytest.mark.asyncio
-
-
-def spec(virtual: str) -> PathSpec:
-    return PathSpec(
-        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
-    )
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("gcal_api")]
 
 
-async def test_root_is_a_directory(api, accessor, index):
+async def test_root_is_a_directory(accessor, index):
     row = await stat(accessor, spec("/"), index)
     assert row.type is FileType.DIRECTORY
 
 
-async def test_calendar_is_a_directory(api, accessor, index):
-    row = await stat(accessor, spec("/primary"), index)
+@pytest.mark.parametrize(
+    "size, path",
+    [
+        (1, "/primary"),
+        (1, "/primary/2026-08-11"),
+        (7, "/primary/2026-08-10--2026-08-16"),
+        # The range query is positive proof of what is there, so a bucket
+        # with no events is an empty directory rather than ENOENT.
+        (1, "/primary/2027-03-04"),
+        (7, "/primary/2027-03-01--2027-03-07"),
+    ],
+)
+async def test_calendars_and_buckets_are_directories(size, path, index):
+    row = await stat(make_accessor(bucket_days=size), spec(path), index)
     assert row.type is FileType.DIRECTORY
-    assert row.name == "primary"
+    assert row.name == path.rsplit("/", 1)[-1]
 
 
-async def test_day_holding_events_is_a_directory(api, accessor, index):
-    row = await stat(accessor, spec("/primary/2026-08-11"), index)
-    assert row.type is FileType.DIRECTORY
-
-
-async def test_event_free_day_still_resolves_as_a_directory(
-    api, accessor, index
-):
-    # The range query over that day is positive proof of what is there, so
-    # an empty day is an empty directory rather than ENOENT.
-    row = await stat(accessor, spec("/primary/2027-03-04"), index)
-    assert row.type is FileType.DIRECTORY
-    assert row.name == "2027-03-04"
-
-
-async def test_day_under_an_unknown_calendar_is_enoent(api, accessor, index):
-    with pytest.raises(FileNotFoundError):
-        await stat(accessor, spec("/nope/2027-03-04"), index)
-
-
-async def test_malformed_date_is_enoent(api, accessor, index):
-    with pytest.raises(FileNotFoundError):
-        await stat(accessor, spec("/primary/not-a-date"), index)
-
-
-async def test_date_shaped_but_impossible_date_is_enoent(api, accessor, index):
-    # Shape alone used to be enough, so stat reported a directory that
-    # readdir then raised ValueError on.
-    for bad in ("2026-02-30", "2026-13-01"):
-        with pytest.raises(FileNotFoundError):
-            await stat(accessor, spec(f"/primary/{bad}"), index)
-
-
-async def test_event_reports_json_with_a_rendered_size(api, accessor, index):
-    row = await stat(
-        accessor,
-        spec("/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"),
-        index,
-    )
+@pytest.mark.parametrize(
+    "size, path",
+    [
+        (1, "/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"),
+        (
+            7,
+            "/primary/2026-08-10--2026-08-16/"
+            "aaaa1__2026-08-11_0900-1030_PhD_Defense.gcal.json",
+        ),
+    ],
+)
+async def test_an_event_is_json_sized_as_rendered(size, path, index):
+    row = await stat(make_accessor(bucket_days=size), spec(path), index)
     assert row.content is ContentType.JSON
     assert row.extra["event_id"] == "aaaa1"
-    # Size is the rendered payload's byte length, never a source-side number.
-    assert row.size is not None and row.size > 0
+    # The rendered payload's byte length, never a source-side number.
+    assert row.size == len(compact_json_bytes(EVENTS[0]))
 
 
-async def test_calendar_json_reports_json(api, accessor, index):
+async def test_calendar_json_reports_json(accessor, index):
     row = await stat(accessor, spec("/primary/calendar.json"), index)
     assert row.content is ContentType.JSON
 
 
-async def test_unknown_event_is_enoent(api, accessor, index):
+@pytest.mark.parametrize(
+    "size, path",
+    [
+        (1, "/nope/2027-03-04"),
+        (1, "/primary/not-a-date"),
+        # Shape alone used to be enough, so stat reported a directory that
+        # readdir then raised ValueError on.
+        (1, "/primary/2026-02-30"),
+        (1, "/primary/2026-13-01"),
+        (1, "/primary/2026-08-11/zzzz9__0000-0100_Nope.gcal.json"),
+        (7, "/primary/2026-08-11"),
+        (7, "/primary/2026-08-11--2026-08-17"),
+    ],
+)
+async def test_what_the_tree_does_not_hold_is_enoent(size, path, index):
     with pytest.raises(FileNotFoundError):
-        await stat(
-            accessor,
-            spec("/primary/2026-08-11/zzzz9__0000-0100_Nope.gcal.json"),
-            index,
-        )
+        await stat(make_accessor(bucket_days=size), spec(path), index)

@@ -152,6 +152,23 @@ further within the configured scope. With `end_time`, that explicit endpoint
 replaces the default horizon. Calendar refuses a listing still incomplete after
 50 API pages; narrow the range instead of receiving a silently truncated result.
 
+A `gcal` block also takes `bucket_days`: `1` (the default), `7` or `30`, the days
+each date directory covers. With `7` or `30` a directory is named by its first
+and last day, `2026-08-10--2026-08-16/`, on a fixed grid where 7-day buckets run
+Monday to Sunday, and each event file name carries its day
+(`<eventId>__2026-08-11_0900-1030_<Title>.gcal.json`). One listing then answers a
+week or a month of events. Other values are refused.
+
+```yaml
+mounts:
+  /calendar:
+    vfs: gcal
+    mode: read
+    config:
+      access_token: "<google-access-token>"
+      bucket_days: 7
+```
+
 Without either bound, Slack and Discord retain their recent listing defaults
 (90 and 30 days respectively). Configuring a bound makes the selected interval
 discoverable. Bounds are enforced on reads, metadata, listings, and VFS searches;

@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GCAL_OPS } from '../../ops/gcal/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { PROMPT, WRITE_PROMPT } from './prompt.ts'
+import { BUCKET_PROMPT, PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGCalConfig, type GCalConfig, type GCalConfigRedacted } from './config.ts'
@@ -49,7 +49,9 @@ export class GCalVFS extends BaseVFS {
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GCalAccessor({ tokenManager: tm, config })
-    this.prompt = PROMPT + this.accessor.timeRange.prompt()
+    const days = config.bucketDays
+    const bucket = days > 1 ? BUCKET_PROMPT.replaceAll('{days}', String(days)) : ''
+    this.prompt = PROMPT + bucket + this.accessor.timeRange.prompt()
   }
 
   override commands(): readonly RegisteredCommand[] {

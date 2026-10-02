@@ -18,10 +18,13 @@ from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.gcal.client import list_calendars, list_events
 from mirage.core.gcal.day import (
+    bucket_name,
+    bucket_start,
     clamped_hhmm,
     day_bounds,
     days_covered,
     event_span,
+    parse_bucket,
     window_bounds,
     zone,
 )
@@ -43,7 +46,7 @@ from mirage.vfs.gcal.event_entry import (
 
 CALENDAR_DIR = "gcal/calendar_dir"
 CALENDAR_JSON = "gcal/calendar_json"
-DAY_DIR = "gcal/day_dir"
+BUCKET_DIR = "gcal/bucket_dir"
 EVENT = "gcal/event"
 FREE_BUSY_ROLE = "freeBusyReader"
 
@@ -152,30 +155,36 @@ def bucket_zone(
 
 
 def day_span(
-    pattern: str | None, today: date, tz: str, scope: TimeRange = TimeRange()
+    pattern: str | None,
+    today: date,
+    tz: str,
+    scope: TimeRange = TimeRange(),
+    size: int = 1,
 ) -> tuple[str | None, str, date, date]:
     """Resolve a listing's date glob and configured scope.
+
+    A glob's span widens to whole buckets, so a bucket the glob reaches
+    into is decided on all of its days, not only on the ones it named.
 
     Args:
         pattern (str | None): date glob, if present.
         today (date): anchor for the finite future horizon.
         tz (str): mount's bucketing timezone.
         scope (TimeRange): explicit inclusive/exclusive mount bounds.
+        size (int): the mount's bucket length in days.
     """
     span = glob_span(pattern)
     lo = scope.start
     hi = scope.end
     if span is not None:
-        first, last = (
-            day_bounds(span[0].isoformat(), tz)[0],
-            day_bounds((span[1] - timedelta(days=1)).isoformat(), tz)[1],
-        )
-        lo = (
-            max(parse_time(first), lo) if lo is not None else parse_time(first)
-        )
-        hi = min(parse_time(last), hi) if hi is not None else parse_time(last)
+        head = bucket_start(span[0], size)
+        tail = bucket_start(span[1] - timedelta(days=1), size)
+        first = parse_time(day_bounds(head.isoformat(), tz)[0])
+        last = parse_time(day_bounds(tail.isoformat(), tz, size)[1])
+        lo = max(first, lo) if lo is not None else first
+        hi = min(last, hi) if hi is not None else last
     elif hi is None:
-        hi = parse_time(window_bounds(today, tz)[1])
+        hi = parse_time(window_bounds(today, tz, size)[1])
     lower = (
         datetime.fromtimestamp(lo, timezone.utc).isoformat()
         if lo is not None
@@ -193,34 +202,58 @@ def day_span(
     return lower, upper, first_day, last_day
 
 
-def scoped_day_bounds(
-    accessor: GCalAccessor, day: str, tz: str, virtual: str
-) -> tuple[str, str]:
-    """Refuse a day wholly outside the configured mount scope.
+def scoped_bucket(
+    accessor: GCalAccessor, name: str, tz: str, virtual: str
+) -> list[str]:
+    """The days of a bucket directory inside the configured mount scope.
+
+    A name off this mount's grid is absent, as is a bucket wholly outside
+    the scope: direct paths are bounded exactly as listings are.
 
     Args:
         accessor (GCalAccessor): scoped mount accessor.
-        day (str): local date.
+        name (str): the bucket directory name.
         tz (str): mount timezone.
         virtual (str): path reported in ENOENT.
+
+    Returns:
+        list[str]: the bucket's in-scope days, ascending and consecutive.
     """
-    lo, hi = day_bounds(day, tz)
-    start, end = accessor.time_range.clip(parse_time(lo), parse_time(hi))
-    if start >= end:
+    size = accessor.config.bucket_days
+    start = parse_bucket(name, size)
+    if start is None:
         raise enoent(virtual)
-    return lo, hi
+    days: list[str] = []
+    for offset in range(size):
+        day = (start + timedelta(days=offset)).isoformat()
+        lo, hi = day_bounds(day, tz)
+        clipped = accessor.time_range.clip(parse_time(lo), parse_time(hi))
+        if clipped[0] < clipped[1]:
+            days.append(day)
+    if not days:
+        raise enoent(virtual)
+    return days
 
 
 def event_entries(
-    events: list[dict[str, JsonValue]], day: str, tz: str, free_busy: bool
+    events: list[dict[str, JsonValue]],
+    days: list[str],
+    tz: str,
+    free_busy: bool,
+    dated: bool,
 ) -> list[tuple[str, IndexEntry]]:
-    """Build the index entries for one day directory.
+    """Build the index entries for one bucket directory.
+
+    An event gets one entry for each of the bucket's days it covers, so a
+    multi-day bucket lists what its day directories would, flattened.
 
     Args:
-        events (list): events overlapping the day.
-        day (str): the local day, ``YYYY-MM-DD``.
+        events (list): events overlapping the bucket.
+        days (list[str]): the bucket's days, ``YYYY-MM-DD``.
         tz (str): the bucketing zone.
         free_busy (bool): whether the calendar hides event details.
+        dated (bool): whether the names carry their day, as a multi-day
+            bucket's do.
 
     Returns:
         list[tuple[str, IndexEntry]]: (filename, entry) pairs.
@@ -231,30 +264,38 @@ def event_entries(
         if not isinstance(event_id, str) or not event_id:
             continue
         span = event_span(event, tz)
-        if span is None or day not in days_covered(span, tz):
+        if span is None:
             continue
         summary = event.get("summary")
         title = event_title(
             summary if isinstance(summary, str) else None, free_busy=free_busy
         )
-        name = make_event_filename(
-            event_id, clamped_hhmm(span, day, tz), title
-        )
         updated = event.get("updated")
-        payload = compact_json_bytes(event)
-        rows.append(
-            (
-                name,
-                IndexEntry(
-                    id=event_id,
-                    name=title,
-                    resource_type=EVENT,
-                    remote_time=updated if isinstance(updated, str) else "",
-                    vfs_name=name,
-                    size=len(payload),
-                ),
+        size = len(compact_json_bytes(event))
+        for day in days_covered(span, tz):
+            if day not in days:
+                continue
+            name = make_event_filename(
+                event_id,
+                clamped_hhmm(span, day, tz),
+                title,
+                day if dated else None,
             )
-        )
+            rows.append(
+                (
+                    name,
+                    IndexEntry(
+                        id=event_id,
+                        name=title,
+                        resource_type=EVENT,
+                        remote_time=(
+                            updated if isinstance(updated, str) else ""
+                        ),
+                        vfs_name=name,
+                        size=size,
+                    ),
+                )
+            )
     return rows
 
 
@@ -279,7 +320,7 @@ async def readdir(
     # events query itself, and a globbed listing must not be cached as
     # the directory, which the kit readdir has no notion of.
     match = detect_scope(key)
-    if match.kind not in (ROOT, "calendar", "day"):
+    if match.kind not in (ROOT, "calendar", "bucket"):
         raise enoent(path.virtual)
     calendars = await calendar_index(accessor)
     tz = bucket_zone(accessor, calendars)
@@ -307,10 +348,11 @@ async def readdir(
     if not isinstance(cal_id, str):
         raise enoent(path.virtual)
     free_busy = entry.get("accessRole") == FREE_BUSY_ROLE
+    size = accessor.config.bucket_days
 
     if match.kind == "calendar":
         time_min, time_max, first, last = day_span(
-            path.pattern, accessor.today(tz), tz, accessor.time_range
+            path.pattern, accessor.today(tz), tz, accessor.time_range, size
         )
         events = await list_events(
             accessor.token_manager,
@@ -327,7 +369,8 @@ async def readdir(
                 continue
             for day in days_covered(span, tz):
                 if first.isoformat() <= day <= last.isoformat():
-                    seen.add(day)
+                    start = bucket_start(date.fromisoformat(day), size)
+                    seen.add(bucket_name(start, size))
         rows: list[tuple[str, IndexEntry]] = [
             (
                 CALENDAR_FILE,
@@ -340,15 +383,15 @@ async def readdir(
                 ),
             )
         ]
-        for day in sorted(seen):
+        for name in sorted(seen):
             rows.append(
                 (
-                    day,
+                    name,
                     IndexEntry(
-                        id=f"{cal_id}:{day}",
-                        name=day,
-                        resource_type=DAY_DIR,
-                        vfs_name=day,
+                        id=f"{cal_id}:{name}",
+                        name=name,
+                        resource_type=BUCKET_DIR,
+                        vfs_name=name,
                     ),
                 )
             )
@@ -361,8 +404,8 @@ async def readdir(
             await index.set_dir(virtual_key, rows)
         return [f"{prefix}/{key}/{name}" for name, _ in rows]
 
-    day = match.slots["day"]
-    time_min, time_max = scoped_day_bounds(accessor, day, tz, path.virtual)
+    days = scoped_bucket(accessor, match.slots["bucket"], tz, path.virtual)
+    time_min, time_max = day_bounds(days[0], tz, len(days))
     events = await list_events(
         accessor.token_manager,
         cal_id,
@@ -371,6 +414,6 @@ async def readdir(
         tz,
         scope=accessor.time_range,
     )
-    rows = event_entries(events, day, tz, free_busy)
+    rows = event_entries(events, days, tz, free_busy, dated=size > 1)
     await index.set_dir(virtual_key, rows)
     return [f"{prefix}/{key}/{name}" for name, _ in rows]

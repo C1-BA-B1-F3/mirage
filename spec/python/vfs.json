@@ -1737,6 +1737,9 @@
         "api_base": {
           "required": false
         },
+        "bucket_days": {
+          "required": false
+        },
         "client_id": {
           "required": false
         },

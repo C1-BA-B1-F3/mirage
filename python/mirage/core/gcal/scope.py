@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.gcal.day import valid_day
+from mirage.core.gcal.day import valid_bucket
 from mirage.core.hierarchy.codec import Codec
 from mirage.core.hierarchy.scope import Scope, Slot, make_detect_scope
 from mirage.types import ContentType
@@ -28,17 +28,18 @@ def is_event_name(text: str) -> bool:
     return text.endswith(EVENT_SUFFIX)
 
 
-# A calendar day is a real date, not merely date-shaped: 2026-02-30 must
-# classify as invalid, or stat reports a directory every later call
-# raises ValueError on.
-DAY = Codec(validate=valid_day)
+# A bucket is a real date or a span of two, not merely date-shaped:
+# 2026-02-30 must classify as invalid, or stat reports a directory every
+# later call raises ValueError on. Whether it sits on the mount's grid is
+# the accessor's question, since the table is shared by every mount.
+BUCKET = Codec(validate=valid_bucket)
 # The whole filename stays in the slot (no suffix strip): the id and the
-# HHMM label are recovered by parse_event_filename, which needs the name
-# as listed.
+# day are recovered by parse_event_filename, which needs the name as
+# listed.
 EVENT_NAME = Codec(validate=is_event_name)
 
 _CAL = (Slot("calendar"),)
-_DAY = _CAL + (Slot("day", DAY),)
+_BUCKET = _CAL + (Slot("bucket", BUCKET),)
 
 # One description of the tree: readdir, stat, read and unlink all
 # classify through it, so the file surface and the write surface cannot
@@ -53,10 +54,10 @@ SCOPES = (
         leaf=True,
         filetype=ContentType.JSON,
     ),
-    Scope(kind="day", segments=_DAY),
+    Scope(kind="bucket", segments=_BUCKET),
     Scope(
         kind="event",
-        segments=_DAY + (Slot("event", EVENT_NAME),),
+        segments=_BUCKET + (Slot("event", EVENT_NAME),),
         leaf=True,
         filetype=ContentType.JSON,
     ),

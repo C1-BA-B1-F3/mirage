@@ -701,6 +701,32 @@
         "stdout": "scope_last\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gcal_scope_week_bucket_listed",
+      "seq": 880053,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls /weekly/primary",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-06-01--2026-06-07\ncalendar.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_week_keeps_the_scope",
+      "seq": 880054,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "cat /weekly/primary/2026-06-01--2026-06-07/*.gcal.json | jq -r .summary | sort",
+      "expect": {
+        "exit": 0,
+        "stdout": "All day\nAt start\nCross end\nCross start\n",
+        "stderr": ""
+      }
     }
   ]
 }

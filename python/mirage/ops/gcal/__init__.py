@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.gcal.io import IO
-from mirage.ops.gcal.read import read
 from mirage.ops.generic import make_generic_ops
 
-OPS = [*make_generic_ops("gcal", IO, overrides={"read"}), read]
+# The read is the by-VFS one, unlike the gdocs family's: an event payload is
+# the file itself, not a rendering of stored bytes, so there is no
+# filetype-scoped form for the op door to select.
+OPS = make_generic_ops("gcal", IO)

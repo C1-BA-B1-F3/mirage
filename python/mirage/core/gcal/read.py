@@ -15,11 +15,12 @@
 from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.gcal.client import list_events
+from mirage.core.gcal.day import day_bounds
 from mirage.core.gcal.readdir import (
     bucket_zone,
     calendar_index,
     calendar_payload,
-    scoped_day_bounds,
+    scoped_bucket,
 )
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.read import make_read
@@ -53,11 +54,13 @@ async def _read_event(
 
     The event file holds the events.list item unmodified: the directory
     name and the HHMM segment are a view, while the payload is the truth
-    an absolute-instant comparison has to be made against.
+    an absolute-instant comparison has to be made against. Only the day
+    the name is on is queried, so a read in a multi-day bucket costs what
+    one in a day directory does.
 
     Args:
         accessor (GCalAccessor): the mount's accessor.
-        match (ScopeMatch): a match holding ``calendar``, ``day`` and
+        match (ScopeMatch): a match holding ``calendar``, ``bucket`` and
             ``event``.
         path (PathSpec): the file to read.
         index (IndexCacheStore): the mount's index cache.
@@ -70,10 +73,15 @@ async def _read_event(
     cal_id = entry.get("id")
     if not isinstance(cal_id, str):
         raise enoent(path.virtual)
-    event_id, _ = parse_event_filename(match.slots["event"])
-    time_min, time_max = scoped_day_bounds(
-        accessor, match.slots["day"], tz, path.virtual
-    )
+    days = scoped_bucket(accessor, match.slots["bucket"], tz, path.virtual)
+    event_id, day = parse_event_filename(match.slots["event"])
+    # A name carries its day exactly when the mount's buckets span several.
+    if (day is not None) != (accessor.config.bucket_days > 1):
+        raise enoent(path.virtual)
+    day = day or days[0]
+    if day not in days:
+        raise enoent(path.virtual)
+    time_min, time_max = day_bounds(day, tz)
     for event in await list_events(
         accessor.token_manager,
         cal_id,

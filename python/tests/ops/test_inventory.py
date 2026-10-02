@@ -93,6 +93,12 @@ OPS_INVENTORY = {
         ("readdir", "email", "", False),
         ("stat", "email", "", False),
     ],
+    "gcal": [
+        ("glob", "gcal", "", False),
+        ("read", "gcal", "", False),
+        ("readdir", "gcal", "", False),
+        ("stat", "gcal", "", False),
+    ],
     "gdocs": [
         ("glob", "gdocs", "", False),
         ("read", "gdocs", ".gdoc.json", False),

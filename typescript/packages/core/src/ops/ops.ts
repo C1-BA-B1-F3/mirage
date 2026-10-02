@@ -305,7 +305,7 @@ export class Ops {
 
   // `raw` skips the filetype cascade: an explicit null filetype stops
   // the door from stamping the path's extension, so a rendered read op
-  // (gdoc/gsheet/gmail) is bypassed and the stored bytes come back.
+  // (gdoc/gsheet/gslide) is bypassed and the stored bytes come back.
   // `offset`/`size` ride the same kwargs the generic read op already reads,
   // so a backend with a native range fetches one window instead of the whole
   // object. Python spells this `read(path, offset, size, raw)`.

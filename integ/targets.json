@@ -1970,6 +1970,22 @@
           "backend": "gcal"
         },
         {
+          "path": "/week",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "bucket_days": 7
+          }
+        },
+        {
+          "path": "/month",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "bucket_days": 30
+          }
+        },
+        {
           "path": "/scratch",
           "vfs": "ram",
           "backend": "ram"
@@ -3546,6 +3562,17 @@
           "config": {
             "end_time": "2026-06-02T00:00:00Z",
             "time_zone": "UTC"
+          }
+        },
+        {
+          "path": "/weekly",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z",
+            "end_time": "2026-06-02T00:00:00Z",
+            "time_zone": "UTC",
+            "bucket_days": 7
           }
         }
       ]

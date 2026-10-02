@@ -53,6 +53,15 @@ Acting on it:
   ambiguous local time is not interpreted for you.
 `
 
+export const BUCKET_PROMPT = `
+  Buckets: bucket_days={days}, so each date directory holds {days} days
+  instead of one, named by its first and last day (\`2026-08-10--2026-08-16/\`)
+  on a fixed grid where 7-day buckets run Monday to Sunday. A bucket on the
+  grid is a directory even when it holds no events; a bare date or a span
+  off the grid is not. File names carry their day,
+  \`<eventId>__<YYYY-MM-DD>_<HHMM-HHMM>_<Title>.gcal.json\`, and an event
+  appears once for each day of the bucket it covers.`
+
 export const WRITE_PROMPT = `Deleting an event file removes it from the calendar for
 every attendee. Creating and editing events goes through \`gws calendar\`.
 `

@@ -180,11 +180,15 @@ export async function executeCommand(
       const line = source.slice(0, at) + rewritten
       const ast = parser.parse(line)
       const offsets = parser.sourceOffsets(line, ast)
-      const parsedAt = (offset: number): number => offsets.findIndex((o) => o >= offset)
-      const own = new Map<string, readonly [number, number]>()
+      const own = new Map<string, ReadonlySet<number>>()
       for (const [alias, text] of texts) {
-        const end = at + text.length
-        own.set(alias, [parsedAt(at), parsedAt(end)])
+        const start = at
+        const end = start + text.length
+        const covered = new Set<number>()
+        offsets.forEach((offset, index) => {
+          if (start <= offset && offset < end) covered.add(index)
+        })
+        own.set(alias, covered)
         at = end
       }
       const reparse = (text: string): TSNodeLike => parser.parse(text)

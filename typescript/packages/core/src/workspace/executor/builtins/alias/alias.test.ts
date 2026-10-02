@@ -32,6 +32,7 @@ describe('alias', () => {
     ["c='echo C; fi ' fi='echo F'", 'c fi', 'C\nF echo F\n', 0],
     ["c='echo C; ' fi='echo F; fi'", 'c fi', '', 2],
     ["c='echo A; \\\n ' fi='fi; echo F'", 'c fi', '', 2],
+    ["fi='echo SAFE; : <<EOF; fi ' x=$':\\nbody\\nEOF\\n'", 'fi x', '', 2],
   ])('runs alias %s as %j spelled as a reserved word', async (aliases, line, out, code) => {
     const ws = new Workspace(
       { '/data': new RAMVFS() },

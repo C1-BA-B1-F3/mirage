@@ -359,8 +359,9 @@ def test_unquoted_heredoc_body_joins_its_lines():
         "echo /api/$c/$id.json; fi",
         "! echo A \\\n; fi",
         "time echo A \\\n; fi",
+        "cat <<E; fi\nbody\nE",
     ],
-    ids=["continuation", "rebrace", "bang", "time"],
+    ids=["continuation", "rebrace", "bang", "time", "heredoc"],
 )
 def test_source_offsets_point_back_into_the_line_as_typed(command):
     root = parse(command)

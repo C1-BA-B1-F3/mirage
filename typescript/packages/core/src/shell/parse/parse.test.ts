@@ -228,6 +228,7 @@ describe('sourceOffsets', () => {
     ['rebrace', 'echo /api/$c/$id.json; fi'],
     ['bang', '! echo A \\\n; fi'],
     ['time', 'time echo A \\\n; fi'],
+    ['heredoc', 'cat <<E; fi\nbody\nE'],
   ])('points a %s node back into the line as typed', (_label, command) => {
     const root = parser.parse(command)
     const names: TSNodeLike[] = []

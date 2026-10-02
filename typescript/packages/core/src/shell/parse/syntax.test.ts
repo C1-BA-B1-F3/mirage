@@ -158,7 +158,12 @@ describe('a reserved word where a command starts', () => {
     ],
   ]
   it.each(OWN)('reads %j with alias text %j as %j', (line, spans, word) => {
-    const own = new Map(spans.map(([name, start, end]) => [name, [start, end] as const]))
+    const own = new Map(
+      spans.map(([name, start, end]) => [
+        name,
+        new Set(Array.from({ length: end - start }, (_, i) => start + i)),
+      ]),
+    )
     expect(findSyntaxError(parser.parse(line), undefined, new Set(own.keys()), own)).toBe(word)
   })
 })

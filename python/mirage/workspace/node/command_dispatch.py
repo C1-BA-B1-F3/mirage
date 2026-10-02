@@ -14,7 +14,6 @@
 
 import asyncio
 import dataclasses
-from bisect import bisect_left
 from collections.abc import Awaitable, Callable
 from functools import partial
 from types import SimpleNamespace
@@ -180,12 +179,13 @@ async def execute_command(
             line = source[:at].decode() + rewritten
             ast = parse(line)
             offsets = source_offsets(line, ast)
-            own: dict[str, tuple[int, int]] = {}
+            own: dict[str, frozenset[int]] = {}
             for alias, text in texts:
                 end = at + len(text.encode())
-                own[alias] = (
-                    bisect_left(offsets, at),
-                    bisect_left(offsets, end),
+                own[alias] = frozenset(
+                    index
+                    for index, offset in enumerate(offsets)
+                    if at <= offset < end
                 )
                 at = end
             offending = find_syntax_error(ast, expanding_aliases(session), own)

@@ -658,6 +658,21 @@ class MountEntry:
             levels.append(entry)
         return levels
 
+    def reads_ranges(self, path: str) -> bool:
+        """Whether a ranged read of `path` fetches only that range.
+
+        False where the read op that answers it reads the whole file and
+        slices: a backend with no native range, or a filetype-scoped
+        render.
+
+        Args:
+            path (str): virtual path.
+        """
+        levels = self._resolve_cascade(
+            "read", get_extension(path), self._ops, self._general_ops
+        )
+        return bool(levels) and levels[0].ranges
+
     # ── execution ─────────────────────────────────────
 
     async def execute_cmd(

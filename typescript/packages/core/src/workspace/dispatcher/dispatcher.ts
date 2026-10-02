@@ -156,6 +156,13 @@ function readWindow(kwargs: OpKwargs | undefined): [number, number | null] {
   ]
 }
 
+/** A read's kwargs with its range dropped: the whole file. */
+function wholeRead(kwargs: OpKwargs): OpKwargs {
+  return Object.fromEntries(
+    Object.entries(kwargs).filter(([key]) => key !== 'offset' && key !== 'size'),
+  ) as OpKwargs
+}
+
 export type ResolveFn = (path: string) => Promise<[BaseVFS, PathSpec, MountMode]>
 
 /**
@@ -444,13 +451,29 @@ export class Dispatcher {
       throw enotempty(p.virtual)
     }
     const caches = vfs.cachesReads
-    // The file cache is keyed on the path alone, and what a command put
-    // there is the rendered read. A raw read asks for a different value
-    // under the same key, so it must not be served from that cache;
-    // nothing populates it from here, so skipping the probe is the
-    // whole fix. Mirrors Python's Dispatcher.dispatch.
+    // The file cache is keyed on the path alone, and what it holds is the
+    // rendered read. A raw read asks for a different value under the same
+    // key, so it is neither served from that cache nor kept in it.
+    // Mirrors Python's Dispatcher.dispatch.
     await mount.ensureReady()
     const raw = kwargs?.filetype === null
+    // A cold read keeps the whole file it fetched for the next reader,
+    // through the mount's own manager, the one a command's read fills: a
+    // write racing the fetch retires its generation, so the bytes it read
+    // are not kept. A ranged read comes from the store only where the store
+    // can serve one; elsewhere the read op would fetch the whole file and
+    // slice it for every range, so the whole file is read once, kept, and
+    // each range sliced from it. Mirrors Python's Dispatcher.dispatch.
+    const [readOffset, readSize] = readWindow(kwargs)
+    const whole = readOffset === 0 && readSize === null
+    const filler =
+      caches &&
+      !raw &&
+      DISPATCH_READ_OPS.has(opName) &&
+      readSize !== 0 &&
+      (whole || !this.opsRegistry.readsRanges(vfs, getExtension(p.virtual)))
+        ? mount.cacheManager
+        : null
     if (caches && !raw && DISPATCH_READ_OPS.has(opName)) {
       const cached = await this.cache.get(p.virtual)
       if (
@@ -465,8 +488,7 @@ export class Dispatcher {
         // git reads pack indexes this way. sliceWindow is the same
         // helper the ranged read op falls back to, so warm and cold
         // agree. Mirrors Python's Dispatcher.dispatch.
-        const [offset, size] = readWindow(kwargs)
-        const window = sliceWindow(cached, offset, size)
+        const window = sliceWindow(cached, readOffset, readSize)
         // Nothing crossed the network, and neither a gate nor a hard
         // cap leaves the caller able to tell: without the stamp a
         // refused warm read is recorded against the backend and counted
@@ -523,24 +545,32 @@ export class Dispatcher {
     const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
     let result
     try {
-      result = await mount.use(async () => {
-        const answer = await runWithMountContext(
-          () =>
-            runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, async () =>
-              runWithTimeout(
-                Promise.resolve(
-                  opName === 'setattr'
-                    ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
-                    : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
+      const run = (opKwargs: OpKwargs) =>
+        mount.use(async () => {
+          const answer = await runWithMountContext(
+            () =>
+              runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, async () =>
+                runWithTimeout(
+                  Promise.resolve(
+                    opName === 'setattr'
+                      ? this.applySetattr(mount, vfs, scope, p, opKwargs)
+                      : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, opKwargs),
+                  ),
+                  opTimeout,
+                  opName,
                 ),
-                opTimeout,
-                opName,
               ),
-            ),
-          mount.mountId,
-        )
-        return wrapOpStream(answer, mount.mountId, mount.activity)
-      })
+            mount.mountId,
+          )
+          return wrapOpStream(answer, mount.mountId, mount.activity)
+        })
+      if (filler === null) {
+        result = await run(fullKwargs)
+      } else {
+        const kept = await filler.fill(p, () => run(wholeRead(fullKwargs)))
+        result =
+          whole || !(kept instanceof Uint8Array) ? kept : sliceWindow(kept, readOffset, readSize)
+      }
     } catch (err) {
       const code = (err as { code?: string }).code
       if (opName === 'rmdir' && (code === 'ENOTEMPTY' || code === 'EEXIST')) {

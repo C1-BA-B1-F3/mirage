@@ -19,6 +19,7 @@ import { revisionFor } from '../../observe/context.ts'
 import { OpsRegistry, type RegisteredOp } from '../../ops/registry.ts'
 import { POLICY_WRITE_OPS } from './constants.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
+import { sliceWindow } from '../../utils/ranges.ts'
 import { FileStat, FileType, Limit, MountMode, PathSpec } from '../../types.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { SessionState } from '../session/session.ts'
@@ -847,5 +848,69 @@ describe('rmdir namespace entries', () => {
     } finally {
       await ws.close()
     }
+  })
+})
+
+describe('a cold read keeps its bytes for the next reader', () => {
+  // A caching mount whose `.count` reads render BODY, one tally per fetch;
+  // with `race` the first fetch is overtaken by a write. Mirrors Python's
+  // tests/workspace/dispatcher/test_dispatcher.py.
+  function counted(race = false): { ws: Workspace; fetched: string[] } {
+    const fetched: string[] = []
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    const ws = new Workspace({ '/data': vfs }, { mode: MountMode.WRITE, ops })
+    ops.register({
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.count',
+      write: false,
+      fn: async (_accessor, path, _args, kwargs) => {
+        fetched.push(path.virtual)
+        if (race && fetched.length === 1) await ws.vfs.writeFile('/data/f.count', 'NEWER')
+        const offset = typeof kwargs.offset === 'number' ? kwargs.offset : 0
+        const size = typeof kwargs.size === 'number' ? kwargs.size : null
+        return sliceWindow(ENC.encode('BODY'), offset, size)
+      },
+    })
+    return { ws, fetched }
+  }
+
+  it('serves the ranges of a render from one kept read', async () => {
+    // A render has no remote range: the read op would fetch the whole file
+    // and slice it for every range, so the first range keeps the file and
+    // the rest, and the whole read, are served from it.
+    const { ws, fetched } = counted()
+    await ws.vfs.writeFile('/data/f.count', 'STORED')
+    expect(DEC.decode(await ws.vfs.readFile('/data/f.count', { offset: 0, size: 2 }))).toBe('BO')
+    expect(DEC.decode(await ws.vfs.readFile('/data/f.count', { offset: 2, size: 2 }))).toBe('DY')
+    expect(DEC.decode(await ws.vfs.readFile('/data/f.count', { offset: 0, size: 0 }))).toBe('')
+    expect(await ws.vfs.readFileText('/data/f.count')).toBe('BODY')
+    expect(fetched).toEqual(['/data/f.count'])
+  })
+
+  it('keeps nothing from a raw or a natively ranged read', async () => {
+    // A raw read is not the rendering the cache holds under the same key,
+    // and a store that serves a range itself moved only that range.
+    const { ws, fetched } = counted()
+    await ws.vfs.writeFile('/data/f.count', 'STORED')
+    await ws.vfs.writeFile('/data/f.txt', '0123456789')
+    expect(DEC.decode(await ws.vfs.readFile('/data/f.count', { raw: true }))).toBe('STORED')
+    expect(DEC.decode(await ws.vfs.readFile('/data/f.txt', { offset: 2, size: 3 }))).toBe('234')
+    expect(await ws.cache.exists('/data/f.count')).toBe(false)
+    expect(await ws.cache.exists('/data/f.txt')).toBe(false)
+    expect(fetched).toEqual([])
+  })
+
+  it('keeps nothing when a write races the fetch', async () => {
+    // The write lands after the fetch began, so the bytes it read may be
+    // older than the file; keeping them would serve the old file.
+    const { ws, fetched } = counted(true)
+    await ws.vfs.writeFile('/data/f.count', 'STORED')
+    await ws.vfs.readFile('/data/f.count')
+    await ws.vfs.readFile('/data/f.count')
+    expect(fetched).toHaveLength(2)
   })
 })

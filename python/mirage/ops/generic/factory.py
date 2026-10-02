@@ -264,13 +264,19 @@ def _emit(
     write: bool,
     filetype: str | None,
     overrides: set[str],
+    ranges: bool = False,
 ) -> None:
     if name in overrides:
         return
     for res in vfs_names:
         ops.append(
             RegisteredOp(
-                name=name, vfs=res, filetype=filetype, fn=fn, write=write
+                name=name,
+                vfs=res,
+                filetype=filetype,
+                fn=fn,
+                write=write,
+                ranges=ranges,
             )
         )
 
@@ -324,7 +330,16 @@ def make_generic_ops(
     skip = overrides or set()
     ops: list[RegisteredOp] = []
 
-    _emit(ops, vfs_names, "read", _make_ranged_read(table), False, None, skip)
+    _emit(
+        ops,
+        vfs_names,
+        "read",
+        _make_ranged_read(table),
+        False,
+        None,
+        skip,
+        ranges=table.read_range is not None,
+    )
     _emit(
         ops, vfs_names, "readdir", _make_read(table.readdir), False, None, skip
     )

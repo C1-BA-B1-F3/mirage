@@ -1188,6 +1188,13 @@
           "expect": {
             "exit": 0,
             "stdout": "2 \"ed\\n\"\n"
+          },
+          "expect_on": {
+            "s3": {
+              "ops_absent": [
+                "read /data/seed.txt"
+              ]
+            }
           }
         },
         {
@@ -1209,6 +1216,13 @@
           "expect": {
             "exit": 0,
             "stdout": "text-more"
+          }
+        },
+        {
+          "command": "echo new > /data/seed.txt && js -e \"const f = std.open('/data/seed.txt', 'r'); console.log(JSON.stringify(f.readAsString()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "\"new\\n\"\n"
           }
         }
       ]

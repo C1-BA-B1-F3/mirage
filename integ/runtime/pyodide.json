@@ -1764,7 +1764,10 @@
           "command": "python3 -c \"from pathlib import Path; print(Path('/data/seed.txt').read_text(), end='')\"",
           "expect": {
             "exit": 0,
-            "stdout": "seed\n"
+            "stdout": "seed\n",
+            "ops_contain": [
+              "read /data/seed.txt"
+            ]
           }
         },
         {
@@ -1772,6 +1775,13 @@
           "expect": {
             "exit": 0,
             "stdout": "b'seed\\n'\n"
+          },
+          "expect_on": {
+            "s3": {
+              "ops_absent": [
+                "read /data/seed.txt"
+              ]
+            }
           }
         },
         {
@@ -1810,6 +1820,13 @@
           "expect": {
             "exit": 1,
             "stderr_contains": "FileNotFoundError: [Errno 44] No such file or directory: '/data/nope.txt'"
+          }
+        },
+        {
+          "command": "echo new > /data/seed.txt && python3 -c \"from pathlib import Path; print(Path('/data/seed.txt').read_text(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "new\n"
           }
         }
       ]

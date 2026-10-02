@@ -19,6 +19,7 @@ import pytest
 
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import FsCondition, posix_errno
+from mirage.ops.registry import op as register_op
 from mirage.policy import (
     Action,
     CommandRule,
@@ -31,6 +32,7 @@ from mirage.policy import (
 from mirage.policy.rule import RulePolicy
 from mirage.types import FileStat, FileType, HiddenPaths, MountMode, PathSpec
 from mirage.utils.errors import ReadOnlyError
+from mirage.utils.ranges import slice_window
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -1100,3 +1102,65 @@ async def test_rmdir_keeps_a_link_created_while_the_backend_removes():
             reset_current_session(token)
         assert not ws.namespace.is_link("/data/d/old")
         assert ws.namespace.readlink("/data/d/late") == "nowhere"
+
+
+class _CachingRAM(RAMVFS):
+    caches_reads = True
+
+
+def _counted_workspace(race: bool = False) -> tuple[Workspace, list[str]]:
+    """A caching mount whose ``.count`` reads render ``BODY``, one tally per
+    fetch; with ``race`` the first fetch is overtaken by a write."""
+    fetched: list[str] = []
+    ws = Workspace({"/data/": _CachingRAM()}, mode=MountMode.WRITE)
+
+    @register_op("read", vfs="ram", filetype=".count")
+    async def counted(accessor, path: PathSpec, **kwargs) -> bytes:
+        fetched.append(path.virtual)
+        if race and len(fetched) == 1:
+            await ws.vfs.write("/data/f.count", b"NEWER")
+        return slice_window(
+            b"BODY", kwargs.get("offset", 0), kwargs.get("size")
+        )
+
+    ws.mount("/data/").register_fns([counted])
+    return ws, fetched
+
+
+@pytest.mark.asyncio
+async def test_ranges_of_a_render_come_from_one_kept_read():
+    # A render has no remote range: the read op would fetch the whole
+    # file and slice it for every range, so the first range keeps the
+    # file and the rest, and the whole read, are served from it.
+    ws, fetched = _counted_workspace()
+    await ws.vfs.write("/data/f.count", b"STORED")
+    assert await ws.vfs.read("/data/f.count", 0, 2) == b"BO"
+    assert await ws.vfs.read("/data/f.count", 2, 2) == b"DY"
+    assert await ws.vfs.read("/data/f.count", 0, 0) == b""
+    assert await ws.vfs.read("/data/f.count") == b"BODY"
+    assert fetched == ["/data/f.count"]
+
+
+@pytest.mark.asyncio
+async def test_raw_and_natively_ranged_reads_keep_nothing():
+    # A raw read is not the rendering the cache holds under the same key,
+    # and a store that serves a range itself moved only that range.
+    ws, fetched = _counted_workspace()
+    await ws.vfs.write("/data/f.count", b"STORED")
+    await ws.vfs.write("/data/f.txt", b"0123456789")
+    assert await ws.vfs.read("/data/f.count", raw=True) == b"STORED"
+    assert await ws.vfs.read("/data/f.txt", 2, 3) == b"234"
+    assert not await ws.cache.exists("/data/f.count")
+    assert not await ws.cache.exists("/data/f.txt")
+    assert fetched == []
+
+
+@pytest.mark.asyncio
+async def test_a_write_racing_the_fetch_keeps_the_read_out_of_the_cache():
+    # The write lands after the fetch began, so the bytes it read may be
+    # older than the file; keeping them would serve the old file.
+    ws, fetched = _counted_workspace(race=True)
+    await ws.vfs.write("/data/f.count", b"STORED")
+    await ws.vfs.read("/data/f.count")
+    await ws.vfs.read("/data/f.count")
+    assert len(fetched) == 2

@@ -1475,7 +1475,7 @@ jobs:
       # a given runner. Re-read the `suite <host>/<name> <n>s` lines cli.sh
       # prints before moving a suite across; that step is 89% of the job's
       # test time, and it is the only one timed per suite.
-      LEG_A_SUITES: "defaults guestops limits lines policy quickjs registry script_cli"
+      LEG_A_SUITES: "defaults facade limits lines policy quickjs registry script_cli"
     steps:
       - uses: actions/checkout@v7
 
@@ -1495,6 +1495,7 @@ jobs:
           # itself a legal name shape, so the emptiness check cannot be
           # folded into the pattern check.
           names=()
+          s3_suites=()
           for f in integ/runtime/*.json; do
             n=$(jq -r '.suite // empty' "$f")
             if [ -z "$n" ]; then
@@ -1507,6 +1508,11 @@ jobs:
                 exit 1 ;;
             esac
             names+=("$n")
+            # A case's `backends` runs it once per backend, so a suite
+            # with an s3 one needs MinIO wherever it lands.
+            if jq -e 'any(.cases[]?; any((.backends // [])[]; . == "s3"))' "$f" >/dev/null; then
+              s3_suites+=("$n")
+            fi
           done
           all=$(printf '%s\n' "${names[@]}" | sort -u)
           a=$(printf '%s' "$LEG_A_SUITES" | tr ' ' '\n' | grep -v '^$' | sort -u)
@@ -1534,6 +1540,9 @@ jobs:
           in_leg() { grep -qx "$1" <<<"$suites"; }
           if in_leg wasi; then echo "NEEDS_WASI=1" >> "$GITHUB_ENV"; fi
           if in_leg bridge; then echo "NEEDS_MINIO=1" >> "$GITHUB_ENV"; fi
+          for s in "${s3_suites[@]}"; do
+            if in_leg "$s"; then echo "NEEDS_MINIO=1" >> "$GITHUB_ENV"; break; fi
+          done
           if in_leg docker; then echo "NEEDS_DOCKER=1" >> "$GITHUB_ENV"; fi
           if in_leg ssh; then echo "NEEDS_SSH=1" >> "$GITHUB_ENV"; fi
           if in_leg docker || in_leg ssh; then

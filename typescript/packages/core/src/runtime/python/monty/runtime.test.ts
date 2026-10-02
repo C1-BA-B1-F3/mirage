@@ -16,7 +16,7 @@ import { WorkspaceBinding } from '../../binding.ts'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { BridgeDispatchFn } from '../../types.ts'
 import { MontyRuntime } from './index.ts'
-import { MontyUnavailableError } from './binding.ts'
+import { MontyUnavailableError } from './errors.ts'
 import { PyodideRuntime } from '../pyodide/runtime.ts'
 import { buildRuntime } from '../../table.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
@@ -301,8 +301,8 @@ describe('MontyRuntime', () => {
   }, 30_000)
 
   it('mutating os.environ cannot reach the host env', async () => {
-    // The callback hands back a copy, like python's
-    // OSAccess(environ=dict(environ)).
+    // The callback hands back a copy, like python's MontyFs, which
+    // keeps dict(environ).
     const code = "import os\nos.environ['K'] = 'guest'\nprint(os.getenv('K'))"
     const result = await run(make(), code, [], { K: 'v' })
     expect([result.exitCode, text(result.stdout)]).toEqual([0, 'v\n'])
@@ -387,8 +387,8 @@ describe('MontyRuntime', () => {
   }, 30_000)
 
   it('a rename leaving the mount view raises EXDEV without dispatching', async () => {
-    // python routes the pair to the dispatcher, whose resolver refuses
-    // a cross-mount move; a scratch destination is the same boundary.
+    // The door refuses a pair on different mounts before dispatching,
+    // and a destination outside the view is the same boundary.
     const { dispatch, mutations } = makeBridge({ '/s3/a.txt': new Uint8Array([1]) })
     const rt = make(dispatch, () => ['/s3/'])
     const result = await run(
@@ -430,7 +430,7 @@ describe('MontyRuntime', () => {
   }, 30_000)
 
   it('host filesystem stays invisible', async () => {
-    // The scratch tree misses, so the guest reads python's own
+    // A path outside the view is refused with python's own
     // FileNotFoundError — the python host answers this exact type.
     const result = await run(
       make(),
@@ -585,9 +585,8 @@ describe('MontyRuntime', () => {
   }, 30_000)
 
   it('reads outside the live mount view never reach the bridge', async () => {
-    // The scratch tree owns unmounted paths: a read misses there
-    // rather than probing the workspace, so a path the mount view
-    // hides cannot leak through this runtime.
+    // A path outside the live mount view is refused before the door,
+    // so a path the view hides cannot leak through this runtime.
     const { dispatch } = makeBridge({ '/etc/passwd': new TextEncoder().encode('leak') })
     const rt = make(dispatch, () => ['/s3/'])
     const result = await run(rt, "from pathlib import Path\nprint(Path('/etc/passwd').read_text())")
@@ -722,62 +721,23 @@ describe('MontyRuntime', () => {
     expect(mutations).toEqual([])
   }, 30_000)
 
-  it('a path under no mount is real scratch space, like python', async () => {
-    // Python's own scratch semantics, probed: writing needs the parent
-    // directory first (the tree starts holding only '/'), and after a
-    // mkdir the whole file API works there.
-    const { dispatch, writes, mutations } = makeBridge({ '/s3/a.txt': new Uint8Array([1]) })
-    const rt = make(dispatch, () => ['/s3/'])
-    const result = await run(
-      rt,
-      'from pathlib import Path\n' +
-        "Path('/tmp').mkdir()\n" +
-        "f = open('/tmp/notes.txt', 'w')\n" +
-        "f.write('alpha')\n" +
-        'f.close()\n' +
-        "with open('/tmp/notes.txt', 'a') as g:\n" +
-        "    g.write('-beta')\n" +
-        "print(open('/tmp/notes.txt').read())\n" +
-        "Path('/tmp/d').mkdir()\n" +
-        "Path('/tmp/d/x.txt').write_text('deep')\n" +
-        "print(Path('/tmp/d/x.txt').read_text())\n" +
-        "print(sorted(str(p) for p in Path('/tmp').iterdir()))\n" +
-        "print(Path('/tmp/gone').exists(), Path('/tmp/notes.txt').is_file())\n" +
-        "Path('/tmp/notes.txt').rename('/tmp/moved.txt')\n" +
-        "print(Path('/tmp/moved.txt').read_text())",
-    )
-    expect(text(result.stderr ?? new Uint8Array())).toBe('')
-    expect(result.exitCode).toBe(0)
-    expect(text(result.stdout)).toBe(
-      "alpha-beta\ndeep\n['/tmp/d', '/tmp/notes.txt']\nFalse True\nalpha-beta\n",
-    )
-    // Scratch traffic never mutates the workspace.
-    expect(writes).toEqual([])
-    expect(mutations).toEqual([])
-  }, 30_000)
-
-  it('scratch space works with no workspace attached at all', async () => {
-    const result = await run(
-      make(),
-      'from pathlib import Path\n' +
-        "Path('/tmp').mkdir()\n" +
-        "open('/tmp/s.txt', 'w').write('scratch')\n" +
-        "print(open('/tmp/s.txt').read())\n" +
-        "print(Path('/nope').exists())",
-    )
-    expect(result.exitCode).toBe(0)
-    expect(text(result.stdout)).toBe('scratch\nFalse\n')
-  }, 30_000)
-
-  it('a scratch write without its directory misses the way python does', async () => {
-    // Probed on the python host: open('/tmp/x', 'w') with no prior
-    // mkdir raises FileNotFoundError — the tree gives scratch space,
-    // not a pre-made /tmp.
-    const result = await run(make(), "open('/tmp/x.txt', 'w').write('hi')")
-    expect(result.exitCode).toBe(1)
-    expect(text(result.stderr)).toContain(
-      "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/x.txt'",
-    )
+  it('refuses a path no mount serves, as python does', async () => {
+    // The only filesystem a guest sees is the workspace's: with nothing
+    // mounted at /tmp, a directory cannot be made there and a file
+    // cannot be written, and a probe answers False.
+    for (const code of [
+      "from pathlib import Path\nPath('/tmp').mkdir()",
+      "open('/tmp/x.txt', 'w').write('hi')",
+    ]) {
+      const result = await run(make(), code)
+      expect(result.exitCode).toBe(1)
+      expect(text(result.stderr)).toContain(
+        'FileNotFoundError: [Errno 2] No such file or directory',
+      )
+    }
+    const probe = await run(make(), "from pathlib import Path\nprint(Path('/tmp').exists())")
+    expect(probe.exitCode).toBe(0)
+    expect(text(probe.stdout)).toBe('False\n')
   }, 30_000)
 
   it('serves the host clock: naive now, aware now, and today', async () => {
@@ -810,7 +770,7 @@ describe('MontyRuntime', () => {
 
   it('a dead worker maps to exit 1 with a note, and eval propagates it', async () => {
     // python's MontyCrashedError cannot be constructed from python
-    // (the binding seals it), so this mapping is pinned here only; the
+    // (the engine seals it), so this mapping is pinned here only; the
     // JS class is public and a fake pool injects the rejection.
     const monty = (await import('@pydantic/monty')) as unknown as {
       MontyCrashedError: new (message: string, options?: { timedOut?: boolean }) => Error
@@ -922,8 +882,7 @@ describe('Workspace with the monty runtime', () => {
     expect(io2.exitCode).toBe(0)
     const io3 = await ws.shell('cat /data/out.txt')
     expect(new TextDecoder().decode(io3.stdout)).toBe('from-monty')
-    // The open() builtin, end to end: establish + append on a mount,
-    // and a /tmp path served by the per-run scratch tree.
+    // The open() builtin, end to end: establish + append on a mount.
     const io4 = await ws.shell(
       "python3 -c \"h = open('/data/log.txt', 'w'); h.write('first'); h.close(); print(open('/data/log.txt').read())\"",
     )
@@ -931,11 +890,10 @@ describe('Workspace with the monty runtime', () => {
     expect(new TextDecoder().decode(io4.stdout)).toBe('first\n')
     const io5 = await ws.shell('cat /data/log.txt')
     expect(new TextDecoder().decode(io5.stdout)).toBe('first')
-    const io6 = await ws.shell(
-      "python3 -c \"from pathlib import Path; Path('/tmp').mkdir(); open('/tmp/s.txt', 'w').write('tmp-side'); print(open('/tmp/s.txt').read())\"",
-    )
-    expect(new TextDecoder().decode(io6.stderr)).toBe('')
-    expect(new TextDecoder().decode(io6.stdout)).toBe('tmp-side\n')
+    // A path no mount serves is refused: there is no scratch tree.
+    const io6 = await ws.shell("python3 -c \"open('/tmp/s.txt', 'w')\"")
+    expect(io6.exitCode).toBe(1)
+    expect(new TextDecoder().decode(io6.stderr)).toContain('FileNotFoundError')
     await ws.close()
   }, 60_000)
 })

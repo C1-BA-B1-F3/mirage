@@ -19,7 +19,7 @@ from mirage.errors.types import FsCondition
 def test_posix_table_covers_the_whole_vocabulary():
     # The gate of R5a: a condition cannot be half-added. The shared base
     # is pinned here; each runtime dialect pins its own totality beside
-    # its boundary (tests/runtime/wasm/test_abi.py for the preview1
+    # its boundary (tests/runtime/wasm/test_errors.py for the preview1
     # wire, tests/runtime/python/monty/test_errors.py for CPython).
     assert set(POSIX) == set(FsCondition)
 

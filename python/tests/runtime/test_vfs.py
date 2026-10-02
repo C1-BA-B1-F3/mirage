@@ -20,7 +20,6 @@ import pytest
 
 from mirage.runtime.constants import LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
-from mirage.runtime.handles import parse_mode
 from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
@@ -89,25 +88,15 @@ class RecordingVFS(RuntimeVFS):
 
 
 class WorldVFS(RuntimeVFS):
-    """Core over a small world: files, directories, implied directories.
+    """Core over an empty world, or one where every op is refused."""
 
-    An implied directory lists but has no row, the root above a nested
-    mount; a dangling link has a row only for a no-follow stat; a
-    refusal answers every op.
-    """
-
-    def __init__(self, files=(), dirs=(), implied=(), links=(), refuse=None):
+    def __init__(self, refuse=None):
         super().__init__(
             dispatch=None,
             loop=None,
             resolver=PrefixResolver(lambda: ["/data/"]),
         )
-        self.files = set(files)
-        self.dirs = set(dirs)
-        self.implied = set(implied)
-        self.links = set(links)
         self.refuse = refuse
-        self.mutations = []
 
     def _wait(self, pending):
         return asyncio.run(pending)
@@ -115,20 +104,7 @@ class WorldVFS(RuntimeVFS):
     async def _op(self, op, path, **kwargs):
         if self.refuse is not None:
             raise self.refuse
-        if op == "stat":
-            if path in self.files:
-                return FileStat(name=path, size=1, type=FileType.FILE)
-            if path in self.dirs:
-                return FileStat(name=path, type=FileType.DIRECTORY)
-            if path in self.links and kwargs.get("nofollow"):
-                return FileStat(name=path, size=8, type=FileType.SYMLINK)
-            raise FileNotFoundError(path)
-        if op == "readdir":
-            if path in self.dirs or path in self.implied:
-                return []
-            raise FileNotFoundError(path)
-        self.mutations.append((op, path))
-        return None
+        raise FileNotFoundError(path)
 
 
 class RecordingDispatch:
@@ -157,7 +133,7 @@ def test_mount_of_takes_the_longest_prefix():
 def test_a_root_mount_is_a_prefix_like_any_other():
     # It claims every path, which is what mounting at `/` means. The
     # one place that cannot live with an exclusive root claim excludes
-    # it itself (WasmVFS._prefixes), because only it has a build tree
+    # it itself (WasmView._prefixes), because only it has a build tree
     # to protect.
     vfs = RecordingVFS(prefixes=["/"])
     assert vfs.prefixes() == ["/"]
@@ -214,36 +190,37 @@ def test_serves_a_path_reached_through_a_link_outside_every_mount():
 F = "/data/f"
 
 
-@pytest.mark.parametrize(
-    "mode, world, effect, kept, refusal",
-    [
-        ("r", {"files": [F]}, [], True, None),
-        ("r", {}, [], False, FileNotFoundError),
-        ("r", {"dirs": [F]}, [], False, IsADirectoryError),
-        ("r", {"implied": [F]}, [], False, IsADirectoryError),
-        ("w", {"files": [F]}, [("truncate", F)], False, None),
-        ("w", {}, [("create", F)], False, None),
-        ("w", {"implied": [F]}, [], False, IsADirectoryError),
-        ("a", {"files": [F]}, [], True, None),
-        ("a", {}, [("create", F)], False, None),
-        ("a", {"implied": [F]}, [], False, IsADirectoryError),
-        ("wx", {"files": [F]}, [], False, FileExistsError),
-        ("wx", {"links": [F]}, [], False, FileExistsError),
-        ("wx", {"implied": [F]}, [], False, FileExistsError),
-        ("wx", {}, [("create", F)], False, None),
-        ("r", {"links": [F]}, [], False, FileNotFoundError),
-    ],
-)
-def test_open_lands_its_modes_effect_before_any_byte_moves(
-    mode, world, effect, kept, refusal
-):
-    vfs = WorldVFS(**world)
-    if refusal is None:
-        assert (vfs.open(F, parse_mode(mode)) is not None) == kept
-    else:
-        with pytest.raises(refusal):
-            vfs.open(F, parse_mode(mode))
-    assert vfs.mutations == effect
+class ViewVFS(RuntimeVFS):
+    """Core over /data, with a withheld file and a listed-only directory."""
+
+    def __init__(self):
+        super().__init__(
+            dispatch=None,
+            loop=None,
+            resolver=PrefixResolver(lambda: ["/data/"]),
+        )
+
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
+        if op == "stat":
+            if path in ("/data/a.txt", "/.bash_history"):
+                return FileStat(name=path, size=1, type=FileType.FILE)
+            raise FileNotFoundError(path)
+        if op == "readdir" and path in ("/", "/parent", "/.bash_history"):
+            return []
+        raise FileNotFoundError(path)
+
+
+def test_view_stat_opens_structure_and_withholds_content():
+    vfs = ViewVFS()
+    assert vfs.view_stat("/data/a.txt").is_dir is False
+    implied = vfs.view_stat("/parent")
+    assert (implied.is_dir, implied.mode) == (True, DIR_MODE)
+    # A withheld file stays unseen though its mount lists it as empty,
+    # the way the history mount does so a traversal never descends.
+    assert vfs.view_stat("/.bash_history") is None
 
 
 def test_a_refusal_is_not_read_as_an_absence():

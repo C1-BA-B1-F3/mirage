@@ -12,10 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.runtime.python.monty.osaccess import MirageOSAccess
+from mirage.runtime.python.monty.fs import MontyFs
 from mirage.runtime.python.monty.runtime import MontyRuntime
 
 __all__ = [
-    "MirageOSAccess",
+    "MontyFs",
     "MontyRuntime",
 ]

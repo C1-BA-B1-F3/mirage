@@ -86,6 +86,11 @@ interface VersionsQuery {
 export function registerVersionsRoutes(app: FastifyInstance, deps: VersionRoutesDeps): void {
   const openStore = (id: string): Promise<VersionStore> =>
     VersionStore.open(deps.versionBackend, id)
+  // A live workspace's repo is made on first use; one that is not live
+  // (deleted, or not loaded) is only read, so a read never recreates the
+  // repo its delete removed.
+  const existingStore = async (id: string): Promise<VersionStore | null> =>
+    deps.registry.has(id) || deps.versionBackend.hasRepo(id) ? openStore(id) : null
 
   app.post<{ Params: IdParams; Body: CommitBody }>(
     '/v1/workspaces/:id/commit',
@@ -111,8 +116,8 @@ export function registerVersionsRoutes(app: FastifyInstance, deps: VersionRoutes
     '/v1/workspaces/:id/versions',
     async (req) => {
       const branch = req.query.branch ?? 'main'
-      const store = await openStore(req.params.id)
-      if (!(await store.branches()).includes(branch)) return []
+      const store = await existingStore(req.params.id)
+      if (store === null || !(await store.branches()).includes(branch)) return []
       return versionLog(store, branch)
     },
   )
@@ -121,7 +126,8 @@ export function registerVersionsRoutes(app: FastifyInstance, deps: VersionRoutes
     '/v1/workspaces/:id/branch',
     async (req, reply) => {
       const { name, fromBranch } = req.body
-      const store = await openStore(req.params.id)
+      const store = await existingStore(req.params.id)
+      if (store === null) return reply.status(404).send({ detail: 'workspace has no versions' })
       if ((await store.branches()).includes(name)) {
         return reply.status(409).send({ detail: `branch already exists: ${name}` })
       }
@@ -143,7 +149,8 @@ export function registerVersionsRoutes(app: FastifyInstance, deps: VersionRoutes
       const { id } = req.params
       const { a, b } = req.query
       const branch = req.query.branch ?? 'main'
-      const store = await openStore(id)
+      const store = await existingStore(id)
+      if (store === null) return reply.status(404).send({ detail: 'workspace has no versions' })
       const needsLive = a === undefined || b === undefined
       if (needsLive && !deps.registry.has(id)) {
         return reply.status(404).send({ detail: 'workspace not found' })

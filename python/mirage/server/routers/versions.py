@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -54,6 +55,26 @@ async def _state_of(ws: Workspace) -> dict[str, Any]:
     return await to_state_dict(ws)
 
 
+async def _existing_store(
+    request: Request, workspace_id: str
+) -> VersionStore | None:
+    """The workspace's version store, or None when it has none.
+
+    A live workspace's repo is made on first use; one that is not live
+    (deleted, or not loaded) is only read, so a read never recreates the
+    repo its delete removed.
+
+    Args:
+        request (Request): the request, for the registry and backend.
+        workspace_id (str): the workspace whose versions are read.
+    """
+    backend = request.app.state.version_backend
+    if workspace_id not in request.app.state.registry:
+        if not await asyncio.to_thread(backend.has_repo, workspace_id):
+            return None
+    return await VersionStore.open(backend, workspace_id)
+
+
 @router.post(
     "/workspaces/{workspace_id}/commit", response_model=CommitResponse
 )
@@ -83,10 +104,8 @@ async def commit_version(
 async def list_versions(
     workspace_id: str, request: Request, branch: str = Query("main")
 ) -> list[VersionLogItem]:
-    store = await VersionStore.open(
-        request.app.state.version_backend, workspace_id
-    )
-    if branch not in await store.branches():
+    store = await _existing_store(request, workspace_id)
+    if store is None or branch not in await store.branches():
         return []
     entries = await version_log(store, branch)
     return [VersionLogItem(id=e["id"], message=e["message"]) for e in entries]
@@ -100,9 +119,11 @@ async def list_versions(
 async def create_branch(
     workspace_id: str, req: BranchRequest, request: Request
 ) -> BranchResponse:
-    store = await VersionStore.open(
-        request.app.state.version_backend, workspace_id
-    )
+    store = await _existing_store(request, workspace_id)
+    if store is None:
+        raise HTTPException(
+            status_code=404, detail="workspace has no versions"
+        )
     if req.name in await store.branches():
         raise HTTPException(
             status_code=409, detail=f"branch already exists: {req.name!r}"
@@ -125,9 +146,11 @@ async def diff_versions(
     b: str | None = Query(None),
     branch: str = Query("main"),
 ) -> DiffResponse:
-    store = await VersionStore.open(
-        request.app.state.version_backend, workspace_id
-    )
+    store = await _existing_store(request, workspace_id)
+    if store is None:
+        raise HTTPException(
+            status_code=404, detail="workspace has no versions"
+        )
     if a is not None and b is not None:
         try:
             changes = await version_diff(

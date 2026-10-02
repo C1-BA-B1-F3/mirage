@@ -172,6 +172,19 @@ def _recorded(coro):
     return [(r.op, r.path) for r in scope.records]
 
 
+def test_unlink_refuses_a_missing_name_and_a_directory(accessor):
+    # unlink(2) answers ENOENT and EISDIR; a store's delete is silent for
+    # both, so the op stats first and deletes nothing it refuses.
+    store = FakeStore({"a/b/c.txt": b"hi"})
+    with pytest.raises(FileNotFoundError):
+        _managed(
+            make_unlink(make_driver(store))(accessor, spec("/a/nope.txt"))
+        )
+    with pytest.raises(IsADirectoryError):
+        _managed(make_unlink(make_driver(store))(accessor, spec("/a/b")))
+    assert store.deletes == []
+
+
 def test_unlink_records_a_retraction(accessor):
     store = FakeStore({"a/b.txt": b"x"})
     assert _recorded(
@@ -208,7 +221,9 @@ def test_unlink_records_even_when_the_delete_raises(accessor):
     fails the next snapshot load."""
 
     async def run():
-        driver = replace(make_driver(FakeStore()), delete_file=_boom)
+        driver = replace(
+            make_driver(FakeStore({"a/b.txt": b"b"})), delete_file=_boom
+        )
         with pytest.raises(RuntimeError):
             await make_unlink(driver)(accessor, spec("/a/b.txt"))
 
@@ -225,7 +240,9 @@ def test_unlink_evicts_the_cache_even_when_the_delete_raises(accessor):
     left to check it."""
 
     async def run():
-        driver = replace(make_driver(FakeStore()), delete_file=_boom)
+        driver = replace(
+            make_driver(FakeStore({"a/b.txt": b"b"})), delete_file=_boom
+        )
         with pytest.raises(RuntimeError):
             await make_unlink(driver)(accessor, spec("/a/b.txt"))
 

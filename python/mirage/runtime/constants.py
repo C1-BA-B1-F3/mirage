@@ -14,6 +14,8 @@
 
 from typing import Final
 
+from mirage.errors import FsCondition
+
 # Capture unresolved program names without taking over the workspace shell.
 EXTERNAL_COMMANDS: Final = "@external"
 
@@ -29,3 +31,8 @@ LISTING_ENTRY_CONCURRENCY: Final = 16
 # transport failure into "no" reports it as an absence the guest cannot
 # tell from a real one, so nothing else belongs here.
 ABSENT_PATH: Final = (FileNotFoundError, NotADirectoryError)
+
+# What a hard link is refused with, wherever one can be spelled
+# (preview1's `path_link`, the process patch's `os.link`): a hard link
+# is a second name for one inode, and nothing above a mount holds that.
+HARD_LINK_REFUSAL: Final = FsCondition.EPERM

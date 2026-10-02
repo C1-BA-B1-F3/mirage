@@ -19,8 +19,8 @@ import os
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, cast
 
-from mirage.ops.open import make_open
-from mirage.ops.os_patch import os_routing
+from mirage.runtime.python.host.fs import os_routing
+from mirage.runtime.python.host.open import make_open
 from mirage.shell.job_table import cancel_job
 
 if TYPE_CHECKING:
@@ -123,8 +123,24 @@ def close_sync_parts(
     ws._cache._drain_tasks.clear()
 
 
+async def _drop_state(ws: "Workspace") -> None:
+    """Delete the workspace's state: its own planes, then its store scope.
+
+    A plane store passed in directly is not the state store's, so the
+    store's drop alone would leave it holding the workspace.
+
+    Args:
+        ws: the workspace being deleted.
+    """
+    for plane in ws._planes:
+        await plane.clear()
+    await ws._state_store.drop(ws.workspace_id)
+
+
 async def close_async(
     ws: "Workspace",
+    *,
+    drop_state: bool = False,
 ) -> None:
     """Release everything the workspace owns, exactly once.
 
@@ -145,6 +161,8 @@ async def close_async(
 
     Args:
         ws: the workspace being closed.
+        drop_state (bool): delete the workspace's state from its store
+            once nothing writes it any more, before the store closes.
     """
     # Stop lifecycle mutations before teardown yields or captures its close
     # lists. Keep _closed separate so runtime journals can still dispatch.
@@ -193,6 +211,17 @@ async def close_async(
             for mount in ws._registry.mounts()
         }
         await settle(*(store.close() for store in stores.values()))
+        if drop_state:
+            # The kernel mounts still serve requests until the sync parts
+            # unmount them, and a request may write the very state being
+            # deleted, so they go first. A failed drop must not skip the
+            # rest of teardown: a mount left up keeps the process alive.
+            try:
+                ws._kernel_mounts.close()
+            except Exception as exc:
+                failures.append(exc)
+            ws._state_dropped = True
+            await settle(_drop_state(ws))
         if ws._owns_state_store:
             await settle(ws._state_store.close())
         try:

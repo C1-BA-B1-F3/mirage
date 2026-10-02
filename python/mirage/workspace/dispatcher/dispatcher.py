@@ -1297,6 +1297,9 @@ class Dispatcher:
         if self._namespace.is_link(path.virtual) or not mount.supports_op(
             "setattr", path.virtual
         ):
+            # No backend inode answers for the path here, so nothing
+            # would refuse a missing one: the overlay would stamp it.
+            await self._xattr_target(mount, path)
             return await self._overlay_setattr(path, kwargs)
         residual = await mount.execute_op("setattr", path.virtual, **kwargs)
         applied = [

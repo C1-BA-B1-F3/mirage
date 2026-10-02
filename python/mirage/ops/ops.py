@@ -460,8 +460,23 @@ class Ops:
         await self._call("append", path, session_id, data=data)
 
     async def stat(
-        self, path: str, *, session_id: str | None = None
+        self,
+        path: str,
+        *,
+        nofollow: bool = False,
+        session_id: str | None = None,
     ) -> FileStat:
+        """One path's row.
+
+        Args:
+            path (str): Virtual path.
+            nofollow (bool): Report a trailing symlink itself rather
+                than its target (lstat), which is how an exclusive open
+                learns a dangling link is a name that is there.
+            session_id (str | None): Session to run as outside a line.
+        """
+        if nofollow:
+            return await self._call("stat", path, session_id, nofollow=True)
         return await self._call("stat", path, session_id)
 
     async def readdir(

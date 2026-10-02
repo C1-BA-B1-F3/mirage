@@ -125,6 +125,25 @@ export abstract class WorkspaceStateStore {
     throw new Error(`workspace ${workspaceId} meta kept conflicting with another writer`)
   }
 
+  /**
+   * Delete everything this store holds for one workspace.
+   *
+   * Deleting a workspace calls this and closing one does not, which is
+   * what lets a daemon's workspaces survive a restart. Each plane is
+   * cleared through its own store, then every provider involved forgets
+   * the workspace (its metadata record and the handles it keeps for the
+   * id), so a workspace created later under the same id starts empty.
+   */
+  async drop(workspaceId: string): Promise<void> {
+    await this.namespace(workspaceId).clear()
+    await this.observer(workspaceId).clear()
+    await this.sessions(workspaceId).clear()
+    const providers = new Set<WorkspaceStateStore>([this])
+    for (const override of [this.namespaceOverride, this.observerOverride, this.workspaceOverride])
+      if (override !== null) providers.add(override)
+    for (const provider of providers) await provider.forgetSelf(workspaceId)
+  }
+
   /** Release connections held by this provider and its overrides. */
   async close(): Promise<void> {
     for (const override of [this.namespaceOverride, this.observerOverride, this.workspaceOverride])
@@ -142,5 +161,6 @@ export abstract class WorkspaceStateStore {
     fields: WorkspaceFields,
     expectedGeneration: number,
   ): Promise<boolean>
+  protected abstract forgetSelf(workspaceId: string): Promise<void>
   protected abstract closeSelf(): Promise<void>
 }

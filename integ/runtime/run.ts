@@ -99,12 +99,17 @@ interface Step {
   s3_put?: { key: string; body: string }
   rename?: { src: string; dst: string }
   read_op?: string
+  // What one backend answers differently, merged over `expect`.
+  expect_on?: Record<string, Expect>
   facade?: FacadeSpec
   expect?: Expect
 }
 
 interface MountSpecJson {
   vfs: string
+  // Set on a `backends` variant: the mount keeps its objects under a
+  // prefix of its own, so variants never see each other's.
+  scoped?: boolean
   files?: Record<string, string>
   generated_files?: number
   // Names, spelled as `files` spells them, whose stat and read fail the
@@ -150,6 +155,9 @@ interface PolicySpec {
 interface Case {
   id: string
   hosts?: string[]
+  backends?: string[]
+  backend?: string
+  requires?: string[]
   world?: World
   filesystem?: Record<string, Partial<Record<FilesystemOperation, boolean>>>
   build_error?: { contains: string }
@@ -498,6 +506,7 @@ async function buildVfs(spec: MountSpecJson, runId: string): Promise<BaseVFS> {
   if (spec.vfs === 's3') {
     await ensureS3()
     return new S3VFS({
+      ...(spec.scoped === true ? { keyPrefix: `mirage-integ-runtime-ts-${runId}/` } : {}),
       bucket: BUCKET,
       region: 'us-east-1',
       endpoint: process.env.S3_ENDPOINT,
@@ -786,6 +795,39 @@ async function runStep(
   return problems
 }
 
+// What a case's `backends` entry needs on this host before it can run.
+const BACKEND_REQUIRES: Record<string, string[]> = {
+  ram: [],
+  redis: ['env:REDIS_URL'],
+  s3: ['s3'],
+}
+
+/**
+ * The case once per backend it names, its RAM mounts swapped for each:
+ * an S3 variant keeps its objects under a prefix of its own, and each
+ * variant takes its backend's requirements. A step's `expect_on` holds
+ * what a backend answers differently. Mirrors run.py `_variants`.
+ */
+function variants(testCase: Case): Case[] {
+  if (testCase.backends === undefined) return [testCase]
+  return testCase.backends.map((backend) => {
+    const world = structuredClone(testCase.world ?? {})
+    for (const spec of Object.values(world.mounts ?? {})) {
+      if (spec.vfs === 'ram') {
+        spec.vfs = backend
+        spec.scoped = true
+      }
+    }
+    return {
+      ...testCase,
+      id: `${testCase.id}@${backend}`,
+      backend,
+      world,
+      requires: BACKEND_REQUIRES[backend] ?? [`unknown backend ${backend}`],
+    }
+  })
+}
+
 async function runCase(suite: string, testCase: Case): Promise<string[]> {
   const caseId = `${suite}/${testCase.id}`
   const world = testCase.world ?? {}
@@ -819,7 +861,9 @@ async function runCase(suite: string, testCase: Case): Promise<string[]> {
           )
       }
     }
-    for (const [index, step] of (testCase.steps ?? []).entries()) {
+    for (const [index, listed] of (testCase.steps ?? []).entries()) {
+      const override = listed.expect_on?.[testCase.backend ?? ''] ?? {}
+      const step = { ...listed, expect: { ...(listed.expect ?? {}), ...override } }
       problems.push(...(await runStep(ws, caseId, index, step)))
     }
   } finally {
@@ -856,17 +900,31 @@ async function main(): Promise<number> {
       }
       continue
     }
-    for (const testCase of suite.cases) {
-      const hosts = testCase.hosts ?? ['python', 'typescript']
+    for (const listed of suite.cases) {
+      const hosts = listed.hosts ?? ['python', 'typescript']
       if (!hosts.includes(HOST)) continue
-      const problems = await runCase(suite.suite, testCase)
-      if (problems.length > 0) {
-        failed += 1
-        failures.push(...problems)
-        console.log(`FAIL ${suite.suite}/${testCase.id}`)
-      } else {
-        passed += 1
-        console.log(`ok ${suite.suite}/${testCase.id}`)
+      for (const testCase of variants(listed)) {
+        const unmetCase = (testCase.requires ?? []).filter((r) => !requirementMet(r))
+        if (unmetCase.length > 0) {
+          if (strict) {
+            failures.push(
+              `${suite.suite}/${testCase.id}: unmet requirements ${unmetCase.join(', ')} (INTEG_RUNTIME_STRICT=1)`,
+            )
+            failed += 1
+          } else {
+            console.log(`skip ${suite.suite}/${testCase.id} (unmet: ${unmetCase.join(', ')})`)
+          }
+          continue
+        }
+        const problems = await runCase(suite.suite, testCase)
+        if (problems.length > 0) {
+          failed += 1
+          failures.push(...problems)
+          console.log(`FAIL ${suite.suite}/${testCase.id}`)
+        } else {
+          passed += 1
+          console.log(`ok ${suite.suite}/${testCase.id}`)
+        }
       }
     }
   }

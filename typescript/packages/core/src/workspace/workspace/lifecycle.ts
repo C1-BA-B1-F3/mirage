@@ -29,6 +29,11 @@ export interface CloseDeps {
   jobTable: JobTable
   registry: MountRegistry
   sharedMounts: Set<BaseVFS>
+  /** Delete the workspace's state from its store before the store closes. */
+  dropState: boolean
+  workspaceId: string
+  /** The stores the workspace's state lives in, however they were wired. */
+  planes: { clear(): Promise<void> }[]
 }
 
 /**
@@ -82,6 +87,17 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
   )
   const stores = new Set(deps.registry.allMounts().map((mount) => mount.indexStore))
   await settle([...stores].map((store) => () => store.close()))
+  // Nothing writes the state any more, so it can go before its store
+  // closes. A failed drop must not skip the rest of teardown; it is raised
+  // with the other failures once everything is released.
+  if (deps.dropState) {
+    await settle([
+      async () => {
+        for (const plane of deps.planes) await plane.clear()
+        await deps.stateStore.drop(deps.workspaceId)
+      },
+    ])
+  }
   if (deps.ownsStateStore) await settle([() => deps.stateStore.close()])
   await settle([() => deps.cache.clear()])
   await settle([() => deps.cache.close()])

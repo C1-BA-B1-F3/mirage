@@ -16,3 +16,34 @@
 # build. Not a permission model: editing the build would change what the
 # next run executes, so the mounts are the only writable half.
 READONLY_HINT = "interpreter build directory is read-only"
+
+# filetypes
+FT_UNKNOWN = 0
+FT_CHR = 2
+FT_DIR = 3
+FT_REG = 4
+FT_SYMLINK = 7
+
+# lookupflags: whether a path's trailing symlink is resolved. Unset is
+# how a guest spells lstat, so a verb that reads it cannot dereference.
+LOOKUP_SYMLINK_FOLLOW = 1
+
+# fstflags for path_filestat_set_times: which stamp the call writes and
+# whether the value comes from the argument or from the host clock.
+FST_ATIM = 1
+FST_ATIM_NOW = 2
+FST_MTIM = 4
+FST_MTIM_NOW = 8
+
+# path_open oflags
+OFLAG_CREAT = 1
+OFLAG_DIRECTORY = 2
+OFLAG_EXCL = 4
+OFLAG_TRUNC = 8
+
+# fdflags
+FDFLAG_APPEND = 1
+
+# rights
+RIGHT_FD_WRITE = 1 << 6
+ALL_RIGHTS = 2**64 - 1

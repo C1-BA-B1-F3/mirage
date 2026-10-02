@@ -156,3 +156,20 @@ async def test_workspace_discovery_and_session_sharing(prefix):
         await ws.close()
         await store_a.close()
         await store_b.close()
+
+
+@pytest.mark.asyncio
+async def test_drop_deletes_every_key_of_the_workspace(prefix, store):
+    await store.sessions("ws1").set("s1", {"session_id": "s1"})
+    await store.namespace("ws1").set("/a", {"mode": 0o600})
+    await store.observer("ws1").append("d/s1.jsonl", b"{}\n")
+    await store.set_meta("ws1", {"workspace_id": "ws1"})
+    await store.set_meta("ws2", {"workspace_id": "ws2"})
+    await store.drop("ws1")
+    client = aioredis.from_url(REDIS_URL)
+    keys = {key.decode() async for key in client.scan_iter(f"{prefix}*")}
+    meta = await client.hget(f"{prefix}workspaces", "ws1")
+    await client.aclose()
+    assert [key for key in keys if key.startswith(f"{prefix}ws1:")] == []
+    assert meta is None
+    assert await store.load_meta("ws2") is not None

@@ -38,10 +38,9 @@ import { MontyExecution } from './execution.ts'
  * `argv` global (`argv[0]` is the script name) and piped input as the
  * `stdin` global (bytes, None when nothing was piped). The builtin
  * `open()` is bridged (@pydantic/monty 0.0.21 carries a
- * `MontyFileHandle` back from the `os` callback), and a path under no
- * mount lives in a per-run in-memory scratch tree, exactly like
- * python's binding-side tree — so `/tmp` is real scratch space on both
- * hosts. `Path.stat()` is bridged too, as a class instance carrying
+ * `MontyFileHandle` back from the `os` callback), and a path no mount
+ * serves is refused, as on the python host: the guest sees the
+ * workspace and nothing else. `Path.stat()` is bridged too, as a class instance carrying
  * CPython's `stat_result` fields; only its sequence half (`st[6]`,
  * `len(st)`) is the python host's alone. Monty implements a Python
  * subset; host-only features (`sys.stdin`, `sys.argv`, third-party

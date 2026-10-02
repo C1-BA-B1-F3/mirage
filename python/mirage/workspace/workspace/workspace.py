@@ -252,6 +252,7 @@ class Workspace:
         self._closed = False
         self._closing = False
         self._async_closed = False
+        self._state_dropped = False
         self._close_error: BaseException | None = None
         self._close_lock = asyncio.Lock()
         # mounts reused from another live workspace (copy() / load
@@ -381,6 +382,10 @@ class Workspace:
         )
 
         self.observer = Observer(store=stores.observe)
+        # The stores this workspace's state lives in, whether the state
+        # store built them or the caller passed one in directly: delete
+        # clears these, not only what the state store would hand out.
+        self._planes = (stores.namespace, stores.observe, stores.sessions)
         # Explicit at the construction site: the history view does not
         # cache reads, so its policy can only ever be bounded.
         self._registry.mount(
@@ -1116,6 +1121,23 @@ class Workspace:
 
     async def close(self) -> None:
         await close_async(self)
+
+    async def delete(self) -> None:
+        """Close the workspace and delete its state from the store.
+
+        Links, history, sessions and the metadata record all go, so a
+        workspace created later under this id starts empty. ``close``
+        keeps them, which is how a daemon's workspace survives a restart.
+
+        Raises:
+            RuntimeError: the workspace was closed first, which closed
+                the stores its state lives in, so nothing was deleted.
+        """
+        await close_async(self, drop_state=True)
+        if not self._state_dropped:
+            raise RuntimeError(
+                "workspace was closed before delete; its state is kept"
+            )
 
     # ── snapshot / load / copy ─────────────────────────────────────────────
 

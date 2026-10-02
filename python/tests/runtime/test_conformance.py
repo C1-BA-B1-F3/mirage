@@ -22,7 +22,7 @@ from mirage import MountMode, Workspace
 from mirage.io.types import materialize
 from mirage.runtime.binding import WorkspaceBinding
 from mirage.runtime.js.quickjs import QUICKJS_HOME_ENV
-from mirage.runtime.python.wasi import WASI_HOME_ENV
+from mirage.runtime.python.wasi.runtime import WASI_HOME_ENV
 from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.table import build_runtime
 from mirage.runtime.types import RunArgs

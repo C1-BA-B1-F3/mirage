@@ -15,7 +15,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../app.ts'
 import { z } from '@struktoai/mirage-core/vfs/secrets'
 import { registerSecrets } from '@struktoai/mirage-core/secrets/registry'
@@ -211,6 +211,99 @@ describe('workspaces router', () => {
     const detail = await app.inject({ method: 'GET', url: '/v1/workspaces/to-delete' })
     expect(detail.statusCode).toBe(404)
     await app.close()
+  })
+
+  it('DELETE drops the workspace state, so a recreated id starts empty', async () => {
+    // Deleting a workspace deletes everything it kept: one created again
+    // under the same id finds no link, no history, no version and no
+    // state on disk.
+    const root = mkdtempSync(join(tmpdir(), 'mirage-delete-state-'))
+    const stateRoot = join(root, 'state')
+    const versionRoot = join(root, 'versions')
+    const app = buildApp({ stateRoot, versionRoot })
+    const create = (): Promise<unknown> =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/workspaces',
+        payload: { id: 'again', config: { mounts: { '/': { vfs: 'ram', mode: 'write' } } } },
+      })
+    const run = async (command: string): Promise<string> => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces/again/execute',
+        payload: { command },
+      })
+      return res.json<{ stdout: string }>().stdout
+    }
+    try {
+      await create()
+      await run('ln -s /data /alias && echo secret-token')
+      const commit = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces/again/commit',
+        payload: { message: 'first' },
+      })
+      expect(commit.statusCode).toBe(200)
+      expect(existsSync(join(stateRoot, 'workspaces', 'again'))).toBe(true)
+      expect(existsSync(join(versionRoot, 'again'))).toBe(true)
+      await app.inject({ method: 'DELETE', url: '/v1/workspaces/again' })
+      expect(existsSync(join(stateRoot, 'workspaces', 'again'))).toBe(false)
+      expect(existsSync(join(versionRoot, 'again'))).toBe(false)
+      // Reading the versions of a deleted workspace finds none, and does
+      // not recreate the repo its delete removed.
+      const versions = await app.inject({ method: 'GET', url: '/v1/workspaces/again/versions' })
+      expect(versions.json()).toEqual([])
+      expect(existsSync(join(versionRoot, 'again'))).toBe(false)
+      await create()
+      const out = await run('readlink /alias || echo no-link; cat /.bash_history')
+      expect(out).toContain('no-link')
+      expect(out).not.toContain('secret-token')
+    } finally {
+      await app.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a dot id before it can name the state root', async () => {
+    // Deleting a workspace removes its state directory whole, and the dot
+    // names would make that the root or the workspaces directory.
+    const app = buildApp()
+    for (const id of ['..', '.']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces',
+        payload: { id, config: { mounts: { '/': { vfs: 'ram', mode: 'write' } } } },
+      })
+      expect(res.statusCode).toBe(400)
+      const load = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces/load',
+        payload: { id, path: 'missing.tar' },
+      })
+      expect(load.json<{ detail: string }>().detail).toContain('invalid workspace id')
+    }
+    await app.close()
+  })
+
+  it('answers 500 for a failed delete and releases the id', async () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), 'mirage-delete-fail-'))
+    const app = buildApp({ stateRoot })
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces',
+        payload: { id: 'doomed', config: { mounts: { '/': { vfs: 'ram', mode: 'write' } } } },
+      })
+      const ws = app.registry.get('doomed').runner.ws
+      vi.spyOn(ws.stateStore, 'drop').mockRejectedValue(new Error('store on fire'))
+      const res = await app.inject({ method: 'DELETE', url: '/v1/workspaces/doomed' })
+      expect(res.statusCode).toBe(500)
+      expect(res.json<{ detail: string }>().detail).toContain('store on fire')
+      expect(app.registry.has('doomed')).toBe(false)
+    } finally {
+      await app.close()
+      rmSync(stateRoot, { recursive: true, force: true })
+    }
   })
 
   it('POST /v1/workspaces/:id/clone produces a new id', async () => {

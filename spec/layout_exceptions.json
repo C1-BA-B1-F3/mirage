@@ -4,15 +4,17 @@
  "directories": {
   "python_only": {
    "runtime/wasm": "The wasmtime WASI host. npm ships quickjs-emscripten and pyodide with their own hosts and python has no equivalent, so there is nothing to mirror. CLAUDE.md says do not port it.",
+   "runtime/python/host": "The `with ws:` door: the host interpreter's own builtins.open, io.open and os functions patched onto a workspace (fs, open, file, list, stat, errors, constants), plus the re-entrancy bypass (host_io) the mount path sets so a backend serving an op reaches the host. Its node twin is the one module ops/os_patch (patchNodeFs, excused there): an npm consumer holds promises, not file objects, so file, open and the stat and listing shapes have nothing to mirror, and node needs no host_io because the patch swaps only the CommonJS fs object's methods and promises getter, which every node backend's ESM node:fs/promises import never reaches (pinned by os_patch.test.ts, 'a disk root at its own prefix does not re-enter').",
    "bridge": "sync.py exists to run an event loop on a worker thread for the FUSE callbacks, which python needs because its FUSE loop is threaded and node's is not.",
    "agents/agno": "Ecosystem split: agno is a python-only framework.",
    "agents/camel": "Ecosystem split: camel is a python-only framework, and pyproject declares it conflicting with the openai extra.",
    "agents/openai_agents": "Twin of the typescript agents/openai: the python package is named after the openai-agents SDK and the npm subpath after @openai/agents, so the two never pair by name. Each module added to both sides is excused under modules.agents/openai.",
    "agents/openhands": "Ecosystem split: openhands is a python-only framework.",
-   "agents/pydantic_ai": "Ecosystem split: pydantic-ai is a python-only framework."
+   "agents/pydantic_ai": "Ecosystem split: pydantic-ai is a python-only framework.",
+   "runtime/python/wasi": "CPython on Wasmtime is a Python host adapter. TypeScript hosts CPython through Pyodide, whose engine-specific subtree is excused separately."
   },
   "typescript_only": {
-   "runtime/python/pyodide": "Pyodide is the JavaScript-hosted CPython engine, including its VFS and worker transport. Python uses native CPython or WASI and has no Pyodide host adapter to mirror.",
+   "runtime/python/pyodide": "Pyodide is the JavaScript-hosted CPython engine, including its filesystem adapter and worker transport. Python uses native CPython or WASI and has no Pyodide host adapter to mirror.",
    "vfs/opfs": "OPFS is the one typescript-only backend, declared in spec/parity_exceptions.json. There is no browser filesystem API for python to mirror.",
    "core/opfs": "OPFS backend core, browser-only.",
    "core/opfs/du": "OPFS backend core, browser-only.",
@@ -21,7 +23,7 @@
    "cli/bin": "An npm package declares its executable as a real file under bin/; python declares console_scripts in pyproject.toml instead.",
    "server/bin": "Same npm bin convention as cli/bin.",
    "runtime/python/pyodide/worker": "Pyodide worker transport for synchronous WASM filesystem callbacks. Python bridges WASI from a native thread and has no JavaScript worker transport.",
-   "runtime/python/pyodide/vfs": "The Emscripten filesystem adapter for Pyodide. Python uses the shared WASI host or native filesystem integration instead.",
+   "runtime/python/pyodide/fs": "The Emscripten filesystem adapter for Pyodide. Python uses the shared WASI host or native filesystem integration instead.",
    "agents/openai": "Twin of the python agents/openai_agents (excused there): the npm subpath is named after @openai/agents and the python package after the openai-agents SDK.",
    "agents/pi": "Ecosystem split: pi is an npm-only coding agent.",
    "agents/read_file": "Constants (the MIME tables) of the TypeScript-only read_file tool; see modules.agents.typescript_only.read_file."
@@ -29,10 +31,8 @@
  },
  "modules": {
   "ops": {
-   "python_only": {
-    "file": "MirageFile: a sync file object over the Ops facade for embedding python code (with open-style usage). An npm consumer holds promises, not file objects, so there is nothing to mirror.",
-    "host_io": "The re-entrancy bypass the two patched doors (ops/open, ops/os_patch) read, so a backend serving an op reaches the host instead of being handed its own physical path back. TypeScript's ops/os_patch needs none: it swaps only the CommonJS fs object's methods and promises getter, and every node backend binds node:fs/promises as an ESM import that swap never reaches (pinned by os_patch.test.ts, 'a disk root at its own prefix does not re-enter').",
-    "open": "The open() constructor for MirageFile; same embedding convenience as ops/file."
+   "typescript_only": {
+    "os_patch": "patchNodeFs, the node twin of python's `with ws:` door: it swaps node's own fs methods onto a workspace, the way runtime/python/host patches the host interpreter's builtins.open, io.open and os functions (excused there as a directory). The python door is a package of its own (fs, open, file, list, stat, errors, constants, host_io), so the two cannot pair by name; node needs only this one module, for the reasons that directory's entry gives."
    }
   },
   "accessor": {
@@ -43,18 +43,13 @@
     "opfs": "The OPFS accessor, browser-only; see directories.typescript_only.vfs/opfs."
    }
   },
-  "runtime/python/monty": {
-   "typescript_only": {
-    "tree": "The guest's scratch filesystem for unmounted paths. Python needs no twin: its binding hands monty an OSAccess subclass whose base class (pydantic_monty.os_access) already carries this tree, while the JS binding is a bare callback with no tree behind it, so the TypeScript side implements the same semantics itself (message spellings pinned to the python binding's)."
-   }
-  },
   "runtime/js/quickjs": {
    "typescript_only": {
-    "list": "Encodes directory entries as QuickJS Emscripten handles. Python QuickJS uses the shared WASI host callbacks instead.",
-    "stat": "Encodes stat results as QuickJS Emscripten handles. Python QuickJS uses the shared WASI host callbacks instead.",
-    "errors": "Emscripten callback errors and optional npm binding loading. Python QuickJS uses the shared Wasmtime WASI errno boundary and locates its build on disk.",
-    "vfs": "QuickJS Emscripten host callbacks. Python QuickJS serves filesystem operations through the shared runtime/wasm host, which is already excused.",
-    "wasi": "WASI errno constants for Emscripten callbacks, matching the guest-visible numbers of Python runtime/wasm/abi.py. The two engines use different host adapters."
+    "errors": "The preview1 errno table and QuickJsUnavailableError for the Emscripten callbacks: the same guest-visible numbers Python's runtime/wasm/errors.py keeps for every WASI guest, which Python QuickJS uses.",
+    "fs": "The QuickJS Emscripten host callbacks over RuntimeVFS. Python QuickJS is a WASI guest whose file callbacks are the shared runtime/wasm/fs.py host, which is already excused.",
+    "list": "Encodes directory entries as QuickJS Emscripten handles. Python QuickJS gets preview1 dirents from the shared runtime/wasm/list.py.",
+    "loader": "Imports the optional quickjs-emscripten npm package. Python QuickJS locates qjs-wasi.wasm on disk and runs it on the shared runtime/wasm host, whose runtime/wasm/loader.py imports wasmtime.",
+    "stat": "Encodes stat results as QuickJS Emscripten handles. Python QuickJS gets preview1 filestats from the shared runtime/wasm/stat.py."
    }
   },
   "utils": {
@@ -75,11 +70,6 @@
    },
    "python_only": {
     "json_canonical": "Folds integral floats in pymongo/asyncpg rows to int so json.dumps prints 1, not 1.0. JavaScript has one number type and JSON.stringify already prints 1."
-   }
-  },
-  "runtime/python": {
-   "python_only": {
-    "wasi": "CPython on Wasmtime is a Python host adapter. TypeScript hosts CPython through Pyodide, whose engine-specific subtree is excused separately."
    }
   },
   "agents/openai": {

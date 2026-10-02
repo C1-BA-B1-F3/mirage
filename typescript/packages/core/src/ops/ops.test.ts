@@ -434,11 +434,8 @@ describe('Ops is one door with the dispatcher', () => {
     expect(new TextDecoder().decode(named as Uint8Array)).toBe('rendered')
   })
 
-  // Stands in for a VFS that ships its renderer in ops(), as gdocs does.
-  // Only which ops it ships matters to the cache check; a real one must
-  // also make its command reads return the rendering, which this stand-in
-  // does not, so its cache is seeded directly.
-  it('still serves a renderer the VFS ships from the file cache', async () => {
+  // Whoever registered it, a filetype read op renders on every read.
+  it('never serves a renderer the VFS ships from the file cache', async () => {
     const vfs = new RAMVFS()
     Object.assign(vfs, { cachesReads: true })
     const rendering: RegisteredOp = {
@@ -455,30 +452,7 @@ describe('Ops is one door with the dispatcher', () => {
     const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
     await ws.vfs.writeFile('/m/books.tally', 'stored')
     await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
-    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('cached')
-  })
-
-  // Same key as the renderer the VFS ships, a different op: the commands
-  // still read through the VFS, so the entry is not this rendering.
-  it('never serves a user override of a VFS renderer from the file cache', async () => {
-    const vfs = new RAMVFS()
-    Object.assign(vfs, { cachesReads: true })
-    const shipped: RegisteredOp = {
-      name: 'read',
-      vfs: vfs.name,
-      filetype: '.tally',
-      write: false,
-      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
-    }
-    const own = vfs.ops.bind(vfs)
-    Object.assign(vfs, { ops: () => [...own(), shipped] })
-    const ops = new OpsRegistry()
-    ops.registerVfs(vfs)
-    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
-    ops.register({ ...shipped, fn: () => Promise.resolve(new TextEncoder().encode('user')) })
-    await ws.vfs.writeFile('/m/books.tally', 'stored')
-    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
-    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('user')
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
   })
 
   it('still serves an extensionless path beside a user renderer warm', async () => {

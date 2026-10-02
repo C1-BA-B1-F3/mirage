@@ -82,9 +82,7 @@ async def test_raw_read_is_not_served_from_the_file_cache():
 
 class _RenderingRAM(_CachingRAM):
     """Stands in for a VFS that ships its renderer in ``ops()``, as gdocs
-    does. Only which ops it ships matters to the cache check; a real one
-    must also make its command reads return the rendering, which this
-    stand-in does not, so its cache is seeded directly."""
+    does."""
 
     def ops(self):
         return [*super().ops(), *_read_tally._registered_ops]
@@ -135,10 +133,11 @@ async def test_a_renderer_named_by_filetype_is_never_served_warm():
 
 
 @pytest.mark.asyncio
-async def test_a_vfs_own_renderer_is_still_served_from_the_file_cache():
+async def test_a_renderer_the_vfs_ships_is_never_served_from_the_file_cache():
+    # Whoever registered it, a filetype read op renders on every read.
     ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
     await _seed(ws, "/data/books.tally")
-    assert await ws.vfs.read("/data/books.tally") == b"CACHED"
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
 
 
 @pytest.mark.asyncio
@@ -175,21 +174,6 @@ async def test_a_cold_and_a_warm_ranged_read_agree():
         IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"])
     )
     assert await ws.vfs.read("/data/f.bin", 2, 3) == cold
-
-
-@op("read", vfs="ram", filetype=".tally")
-async def _read_tally_override(accessor, path: PathSpec, **kwargs) -> bytes:
-    return b"USER"
-
-
-@pytest.mark.asyncio
-async def test_a_user_override_of_a_vfs_renderer_is_never_served_warm():
-    # Same key as the renderer the VFS ships, a different op: the commands
-    # still read through the VFS, so the entry is not this rendering.
-    ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
-    ws.mount("/data/").register_fns([_read_tally_override])
-    await _seed(ws, "/data/books.tally")
-    assert await ws.vfs.read("/data/books.tally") == b"USER"
 
 
 @pytest.mark.asyncio

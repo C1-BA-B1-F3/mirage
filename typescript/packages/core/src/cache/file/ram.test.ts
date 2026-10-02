@@ -125,6 +125,16 @@ describe('RAMFileCacheStore', () => {
     expect(c.cacheEntries).toBe(1)
   })
 
+  // An expired entry answers absent and frees its bytes, as get() does, so
+  // a caller that only asks never leaves it counted against the cap.
+  it('exists reclaims an expired entry', async () => {
+    const c = new RAMFileCacheStore({ limit: 1024 })
+    await c.set('/data/a.txt', encode('12345'), { ttl: 0 })
+    expect(await c.exists('/data/a.txt')).toBe(false)
+    expect(c.cacheSize).toBe(0)
+    expect(c.cacheEntries).toBe(0)
+  })
+
   it('evictPaths drops the named keys synchronously', async () => {
     const c = new RAMFileCacheStore({ limit: 1024 })
     await c.set('/d/a.txt', encode('12345'))

@@ -551,6 +551,33 @@ describe('Ops is one door with the dispatcher', () => {
     expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
   })
 
+  // The renderer lands while the read waits on the cache; the entry it
+  // finds is still the command's raw bytes, not this rendering.
+  it('never serves a renderer registered mid-read from the file cache', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/m/books.tally', 'stored')
+    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
+    const original = ws.cache.get.bind(ws.cache)
+    Object.assign(ws.cache, {
+      get: async (path: string) => {
+        const data = await original(path)
+        ops.register({
+          name: 'read',
+          vfs: vfs.name,
+          filetype: '.tally',
+          write: false,
+          fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+        })
+        return data
+      },
+    })
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
+  })
+
   it('refuses a write to a read-only mount at the door', async () => {
     const vfs = new RAMVFS()
     const ops = new OpsRegistry()

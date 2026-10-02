@@ -244,3 +244,20 @@ async def test_a_user_renderer_read_never_fetches_the_cached_bytes():
 
     ws.cache.get = no_fetch
     assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
+
+
+@pytest.mark.asyncio
+async def test_a_renderer_registered_mid_read_is_never_served_warm():
+    # The renderer lands while the read waits on the cache; the entry it
+    # finds is still the command's raw bytes, not this rendering.
+    ws = Workspace({"/data/": _CachingRAM()}, mode=MountMode.WRITE)
+    await _seed(ws, "/data/books.tally")
+    original = ws.cache.get
+
+    async def get_then_register(path, *args, **kwargs):
+        data = await original(path, *args, **kwargs)
+        ws.mount("/data/").register_fns([_read_tally])
+        return data
+
+    ws.cache.get = get_then_register
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"

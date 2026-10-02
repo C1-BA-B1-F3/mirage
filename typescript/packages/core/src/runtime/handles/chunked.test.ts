@@ -98,4 +98,27 @@ describe('ChunkedHandle', () => {
       [3, 4],
     ])
   })
+
+  it('answers overlapping reads from their own fetches, and installs none a drop outran', async () => {
+    // FUSE issues reads concurrently, and a write drops the chunk while a
+    // fetch may still be out.
+    const bytes = ENC.encode('0123456789')
+    const pending: (() => void)[] = []
+    const file = new ChunkedHandle(
+      '/f',
+      10,
+      (offset, length) =>
+        new Promise<Uint8Array>((resolve) => {
+          pending.push(() => {
+            resolve(bytes.slice(offset, offset + length))
+          })
+        }),
+    )
+    const first = file.pread(0, 2)
+    const second = file.pread(6, 2)
+    file.drop()
+    for (const release of pending.reverse()) release()
+    expect([DEC.decode(await first), DEC.decode(await second)]).toEqual(['01', '67'])
+    expect(file.lacks(1)).toBe(true)
+  })
 })

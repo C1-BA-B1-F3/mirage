@@ -610,4 +610,24 @@ describe('MountCore chunks', () => {
     expect(new TextDecoder().decode(await core.read('/data/f.txt', reader, 0, 3))).toBe('new')
     await core.release(reader)
   })
+
+  it.each(['rename', 'unlink'] as const)(
+    'keeps an open handle reading past its chunk after a %s',
+    async (change) => {
+      // POSIX keeps an open descriptor on its file: a rename moves it and an
+      // unlink leaves its bytes readable, chunks it has not fetched
+      // included. Mirrors Python's test_an_open_chunked_handle_outlives.
+      const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+      const body = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 251)
+      await ws.vfs.writeFile('/data/big.bin', body)
+      const core = new MountCore(ws.vfs)
+      const fd = await core.open('/data/big.bin')
+      expect(await core.read('/data/big.bin', fd, 0, 3)).toEqual(body.slice(0, 3))
+      if (change === 'rename') await core.rename('/data/big.bin', '/data/moved.bin')
+      else await core.unlink('/data/big.bin')
+      const far = 2 * READ_CHUNK + 5
+      expect(await core.read('/data/big.bin', fd, far, 4)).toEqual(body.slice(far, far + 4))
+      await core.release(fd)
+    },
+  )
 })

@@ -520,3 +520,23 @@ async def test_a_write_drops_the_chunk_an_open_handle_kept():
     core.release(writer)
     assert core.read("/f.txt", 3, 0, reader) == b"new"
     core.release(reader)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["rename", "unlink"])
+async def test_an_open_chunked_handle_outlives_a_rename_or_unlink(change):
+    # POSIX keeps an open descriptor on its file: a rename moves it and an
+    # unlink leaves its bytes readable, chunks it has not fetched included.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    body = bytes(i % 251 for i in range(3 * READ_CHUNK))
+    await ws.vfs.write("/big.bin", body)
+    core = MountCore(ws.vfs)
+    fh = core.open("/big.bin")
+    assert core.read("/big.bin", 3, 0, fh) == body[:3]
+    if change == "rename":
+        core.rename("/big.bin", "/moved.bin")
+    else:
+        core.unlink("/big.bin")
+    far = 2 * READ_CHUNK + 5
+    assert core.read("/big.bin", 4, far, fh) == body[far : far + 4]
+    core.release(fh)

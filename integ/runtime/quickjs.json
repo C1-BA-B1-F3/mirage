@@ -1224,6 +1224,13 @@
             "exit": 0,
             "stdout": "\"new\\n\"\n"
           }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/big.txt', 'w'); for (let i = 0; i < 150000; i++) f.puts('line ' + i + '\\n'); f.close()\" && js -e \"const all = std.open('/data/big.txt', 'r').readAsString(); const part = std.open('/data/big.txt', 'r').readAsString(1048580); const f = std.open('/data/big.txt', 'r'); let n = 0, l, last; while ((l = f.getline()) !== null) { n++; last = l } let refused; try { f.readAsString(-2) } catch (e) { refused = e.name + ': ' + e.message } console.log(all.length, part.length, n, last, refused)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "1688890 1048580 150000 line 149999 RangeError: invalid array index\n"
+          }
         }
       ]
     },

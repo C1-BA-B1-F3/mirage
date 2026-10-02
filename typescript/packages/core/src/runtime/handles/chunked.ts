@@ -38,6 +38,7 @@ export class ChunkedHandle {
   private start = 0
   private kept: Uint8Array = new Uint8Array()
   private end: number | null = null
+  private generation = 0
 
   constructor(
     path: string,
@@ -52,8 +53,8 @@ export class ChunkedHandle {
   /** Read at an explicit offset without moving the position. */
   async pread(offset: number, size: number): Promise<Uint8Array> {
     if (size <= 0 || this.atEnd(offset)) return new Uint8Array()
-    if (!this.covers(offset, size)) await this.load(offset, size)
-    return this.slice(offset, size)
+    if (this.covers(offset, size)) return this.slice(offset, size)
+    return (await this.load(offset, size)).slice(0, size)
   }
 
   /** Whether reading `size` bytes at the position (a negative size: the rest) needs a fetch first. */
@@ -99,6 +100,7 @@ export class ChunkedHandle {
 
   /** Forget the kept bytes: the next read fetches the file anew. */
   drop(): void {
+    this.generation += 1
     this.kept = new Uint8Array()
     this.end = null
   }
@@ -129,28 +131,34 @@ export class ChunkedHandle {
   }
 
   /**
-   * Fetch so a read at `offset` of `size` is answerable. A fetch that
-   * continues the kept bytes is joined onto what they hold from `offset`
-   * on, so a line can run across two chunks.
+   * Fetch so a read at `offset` of `size` is answerable, and answer the
+   * bytes from `offset` on. A fetch that continues the kept bytes is joined
+   * onto what they hold from `offset` on, so a line can run across two
+   * chunks. Reads may overlap (FUSE issues them concurrently), so the state
+   * is read before the fetch and each read answers from its own bytes; a
+   * `drop` while the fetch was out keeps them from being installed.
    */
-  private async load(offset: number, size: number): Promise<void> {
-    const keptEnd = this.start + this.kept.length
-    const from =
-      this.kept.length > 0 && this.start <= offset && offset <= keptEnd ? keptEnd : offset
+  private async load(offset: number, size: number): Promise<Uint8Array> {
+    const { start, kept, generation } = this
+    const keptEnd = start + kept.length
+    const from = kept.length > 0 && start <= offset && offset <= keptEnd ? keptEnd : offset
     const asked = Math.max(offset + size - from, READ_CHUNK)
     const bytes = await this.fetch(from, asked)
-    if (bytes.length < asked) {
-      this.end = from + bytes.length
-      this.size = this.end
+    let joined = bytes
+    if (from !== offset) {
+      const held = kept.subarray(offset - start)
+      joined = new Uint8Array(held.length + bytes.length)
+      joined.set(held)
+      joined.set(bytes, held.length)
     }
-    if (from === offset) {
-      this.kept = bytes
-    } else {
-      const held = this.kept.subarray(offset - this.start)
-      this.kept = new Uint8Array(held.length + bytes.length)
-      this.kept.set(held)
-      this.kept.set(bytes, held.length)
+    if (generation === this.generation) {
+      if (bytes.length < asked) {
+        this.end = from + bytes.length
+        this.size = this.end
+      }
+      this.start = offset
+      this.kept = joined
     }
-    this.start = offset
+    return joined
   }
 }

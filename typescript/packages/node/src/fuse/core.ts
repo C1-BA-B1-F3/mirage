@@ -470,6 +470,7 @@ export class MountCore {
    */
   async unlink(path: string): Promise<void> {
     await this.mutate(this.identity(path), async () => {
+      await this.hold(path)
       await this.op(() => this.ops.unlink(this.resolve(path)))
       await this.changed(path, false)
     })
@@ -529,6 +530,7 @@ export class MountCore {
     await this.mutate(this.identity(src), async () => {
       const source = this.resolve(src)
       const target = this.resolve(dst)
+      await this.hold(dst)
       await this.op(() => this.ops.rename(source, target))
       for (const ctx of this.handles.values()) {
         if (ctx.key === source || ctx.key.startsWith(`${source}/`)) {
@@ -680,15 +682,28 @@ export class MountCore {
       // A file larger than a chunk is read a chunk at a time: the kernel
       // asks in small pieces, and fetching the whole file on the first one
       // moved all of it to answer a `head`. Mirrors Python's MountCore.open.
+      // The fetch reads the handle's path as it is then: a rename moves it.
       ctx.chunked = new ChunkedHandle(path, s.size, (offset, size) =>
-        this.readChunk(path, offset, size),
+        this.op(() => this.ops.readFile(this.resolve(ctx.path), { offset, size })),
       )
     }
     return this.handles.add(ctx)
   }
 
-  private readChunk(path: string, offset: number, size: number): Promise<Uint8Array> {
-    return this.op(() => this.ops.readFile(this.resolve(path), { offset, size }))
+  /**
+   * Read the rest of every chunked handle on `path` before it goes. POSIX
+   * keeps an open descriptor on the bytes it had, and a chunked handle
+   * holds one chunk of them, so an unlink or a rename onto the file would
+   * leave the rest unreadable. Mirrors Python's `MountCore._hold`.
+   */
+  private async hold(path: string): Promise<void> {
+    const key = this.identity(path)
+    for (const ctx of this.handles.values()) {
+      if (ctx.key === key && ctx.chunked !== undefined) {
+        ctx.data = await this.op(() => this.ops.readFile(this.resolve(ctx.path)))
+        delete ctx.chunked
+      }
+    }
   }
 
   async release(fd: number): Promise<void> {

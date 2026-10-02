@@ -567,11 +567,13 @@ class MountCore:
         Args:
             path (str): mount path of the entry to remove.
         """
+        self._hold(path)
         self._run(self._ops.unlink(self.resolve(path)))
         self._forget(path)
 
     def rename(self, old: str, new: str) -> None:
         source, target = self.resolve(old), self.resolve(new)
+        self._hold(new)
         self._run(self._ops.rename(source, target))
         for ctx in self._handles.values():
             if ctx.key == source or ctx.key.startswith(source + "/"):
@@ -705,12 +707,29 @@ class MountCore:
             ctx.chunked = ChunkedHandle(
                 path=path,
                 size=s.size,
-                fetch=functools.partial(self._read_chunk, path),
+                fetch=functools.partial(self._read_chunk, ctx),
             )
         return self._handles.add(ctx)
 
-    def _read_chunk(self, path: str, offset: int, size: int) -> bytes:
-        return self._run(self._ops.read(self.resolve(path), offset, size))
+    def _read_chunk(self, ctx: Handle, offset: int, size: int) -> bytes:
+        # The handle's path as it is now: a rename moves it.
+        return self._run(self._ops.read(self.resolve(ctx.path), offset, size))
+
+    def _hold(self, path: str) -> None:
+        """Read the rest of every chunked handle on ``path`` before it goes.
+
+        POSIX keeps an open descriptor on the bytes it had, and a chunked
+        handle holds one chunk of them, so an unlink or a rename onto the
+        file would leave the rest unreadable.
+
+        Args:
+            path (str): mount path about to be removed or replaced.
+        """
+        key = self.identity(path)
+        for ctx in self._handles.values():
+            if ctx.key == key and ctx.chunked is not None:
+                ctx.data = self._run(self._ops.read(self.resolve(ctx.path)))
+                ctx.chunked = None
 
     def release(self, fh: int) -> None:
         ctx = self._handles.get(fh)

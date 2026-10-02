@@ -1,7 +1,14 @@
 // A chunked file holds one chunk of its bytes: fill until the read it is
-// about to answer lacks nothing (-1 asks for the rest, -2 for a line).
-const fill = (fd, want) => {
-  while (__mirage_lacks(fd, want)) __mirage_fill(fd, want)
+// about to answer lacks nothing (a negative size asks for the rest).
+const fill = (fd, size) => {
+  while (__mirage_lacks(fd, size)) __mirage_fill(fd, size)
+}
+// qjs reads a byte budget through JS_ToIndex: NaN is 0, and a negative
+// or unsafe count is a RangeError.
+const toIndex = (value) => {
+  const n = Math.trunc(Number(value)) || 0
+  if (n < 0 || n > Number.MAX_SAFE_INTEGER) throw new RangeError('invalid array index')
+  return n
 }
 std.open = (path, mode) => {
   const fd = __mirage_open(String(path), String(mode === undefined ? 'r' : mode))
@@ -9,16 +16,16 @@ std.open = (path, mode) => {
   if (fd < 0) return null
   return {
     readAsString: (max) => {
-      const want = max === undefined ? -1 : max | 0
-      fill(fd, want)
-      return __mirage_read(fd, want)
+      const size = max === undefined ? -1 : toIndex(max)
+      fill(fd, size)
+      return __mirage_read(fd, size)
     },
     read: () => {
       fill(fd, -1)
       return __mirage_read(fd, -1)
     },
     getline: () => {
-      fill(fd, -2)
+      while (__mirage_lacks_line(fd)) __mirage_fill(fd, 0)
       return __mirage_getline(fd)
     },
     puts: (s) => {

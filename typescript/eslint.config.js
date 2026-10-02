@@ -146,6 +146,7 @@ export default tseslint.config(
         __mirage_open: 'readonly',
         __mirage_read: 'readonly',
         __mirage_lacks: 'readonly',
+        __mirage_lacks_line: 'readonly',
         __mirage_fill: 'readonly',
         __mirage_getline: 'readonly',
         __mirage_write: 'readonly',

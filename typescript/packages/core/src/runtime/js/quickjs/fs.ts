@@ -39,10 +39,6 @@ const DEC = new TextDecoder('utf-8', { fatal: false })
 // numbering must not leak.
 const ENOENT = WASI.ENOENT
 
-// What the bootstrap's getline asks `__mirage_lacks` for; any other
-// negative want is the rest of the file.
-const WANT_LINE = -2
-
 /**
  * Install the `std.open`/`os.readdir` host functions on an asyncified
  * quickjs context, backed by the runtime vfs. A null vfs (no
@@ -151,16 +147,19 @@ export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | nul
   // A chunked file answers a read only from the chunk it holds, so the
   // bootstrap asks whether a read lacks bytes and fills until it does not;
   // every read below then answers synchronously.
-  defineSync('__mirage_lacks', (fdH, wantH) => {
+  defineSync('__mirage_lacks', (fdH, sizeH) => {
     const file = table.get(ctx.getNumber(fdH))
-    if (!(file instanceof ChunkedHandle)) return ctx.false
-    const want = ctx.getNumber(wantH)
-    return (want === WANT_LINE ? file.lacksLine() : file.lacks(want)) ? ctx.true : ctx.false
+    return file instanceof ChunkedHandle && file.lacks(ctx.getNumber(sizeH)) ? ctx.true : ctx.false
   })
 
-  defineAsync('__mirage_fill', async (fdH, wantH) => {
+  defineSync('__mirage_lacks_line', (fdH) => {
     const file = table.get(ctx.getNumber(fdH))
-    if (file instanceof ChunkedHandle) await file.fill(ctx.getNumber(wantH))
+    return file instanceof ChunkedHandle && file.lacksLine() ? ctx.true : ctx.false
+  })
+
+  defineAsync('__mirage_fill', async (fdH, sizeH) => {
+    const file = table.get(ctx.getNumber(fdH))
+    if (file instanceof ChunkedHandle) await file.fill(ctx.getNumber(sizeH))
     return ctx.undefined
   })
 

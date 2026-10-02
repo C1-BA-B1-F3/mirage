@@ -1132,29 +1132,39 @@ async def _linked_ws() -> Workspace:
     return ws
 
 
+async def _text(ws: Workspace, virtual: str) -> bytes:
+    data, _ = await ws.dispatch("read", _path(virtual))
+    return data
+
+
 @pytest.mark.asyncio
-async def test_a_marked_op_is_judged_on_the_path_the_door_reaches():
-    # The door walks every link above the final name before it acts, so
-    # an op on the name itself is judged on the walked path, and one that
-    # follows the final link on the target as well.
+async def test_a_marked_op_is_judged_on_every_path_it_reaches():
+    # Each spelling once, in the order the door meets it: as handed in,
+    # walked, then followed. A refused op leaves the bytes alone; an
+    # unmarked one is the door's alone.
     ws = await _linked_ws()
+    await ws.shell(
+        "echo new > /data/real/other && echo o > /data/other && "
+        "ln -s /data/other /data/real/flink2"
+    )
     try:
         gate = _RefusingGate("/data/real/secret")
-        with pytest.raises(PermissionError):
-            await ws.dispatch(
-                "unlink", _path("/data/alias/secret"), rule_gate=gate
-            )
-        with pytest.raises(PermissionError):
-            await ws.dispatch(
+        for op, virtual, kwargs in (
+            ("unlink", "/data/alias/secret", {}),
+            (
                 "rename",
-                _path("/data/real/other"),
-                dst=_path("/data/alias/secret"),
-                rule_gate=gate,
-            )
-        with pytest.raises(PermissionError):
-            await ws.dispatch("read", _path("/data/flink"), rule_gate=gate)
-        # Each spelling once, in the order the door meets it: as handed
-        # in, walked, then followed.
+                "/data/real/other",
+                {"dst": _path("/data/alias/secret")},
+            ),
+            ("read", "/data/flink", {}),
+            (
+                "write",
+                "/data/alias/secret",
+                {"data": b"x\n", "nofollow": True},
+            ),
+        ):
+            with pytest.raises(PermissionError):
+                await ws.dispatch(op, _path(virtual), rule_gate=gate, **kwargs)
         assert gate.asked == [
             "/data/alias/secret",
             "/data/real/secret",
@@ -1163,45 +1173,73 @@ async def test_a_marked_op_is_judged_on_the_path_the_door_reaches():
             "/data/real/secret",
             "/data/flink",
             "/data/real/secret",
+            "/data/alias/secret",
+            "/data/real/secret",
         ]
-        # Unmarked, the same op is the door's alone: no command rule.
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+        assert await _text(ws, "/data/real/other") == b"new\n"
+        walked = _RefusingGate("/data/real/flink2")
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "read", _path("/data/alias/flink2"), rule_gate=walked
+            )
+        assert walked.asked == ["/data/alias/flink2", "/data/real/flink2"]
         await ws.dispatch("unlink", _path("/data/alias/secret"))
-        assert (await ws.dispatch("readdir", _path("/data/real")))[0] == []
+        with pytest.raises(FileNotFoundError):
+            await _text(ws, "/data/real/secret")
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
-async def test_a_marked_op_answers_hidden_space_before_the_rule():
-    # A link into hidden space is missing for the session; the door says
-    # so before the command's rule on the visible link is asked.
+async def test_a_marked_unlink_of_a_link_is_judged_on_the_link_entry():
+    # The link table answers unlink of a link: a rule on the link name
+    # holds before that answer, and one on the referent is never asked.
     ws = await _linked_ws()
-    session = SessionState(
-        session_id="hider", hidden_paths=HiddenPaths(paths=("/data/real",))
-    )
-    token = set_current_session(session)
     try:
-        gate = _RefusingGate("/data/flink")
-        with pytest.raises(FileNotFoundError):
-            await ws.dispatch("read", _path("/data/flink"), rule_gate=gate)
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "unlink",
+                _path("/data/flink"),
+                rule_gate=_RefusingGate("/data/flink"),
+            )
+        referent = _RefusingGate("/data/real/secret")
+        await ws.dispatch("unlink", _path("/data/flink"), rule_gate=referent)
+        assert referent.asked == ["/data/flink"]
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_hidden_space_answers_a_marked_op_before_any_rule():
+    # A write into hidden space, a link there, a hidden rename endpoint
+    # and one behind a linked parent are missing, and the command's gate
+    # is never asked.
+    ws = await _linked_ws()
+    await ws.shell(
+        "mkdir -p /data/hid && echo h > /data/hid/h && "
+        "ln -s /data/hid /data/halias && ln -s /data/hid/h /data/hlink"
+    )
+    token = set_current_session(
+        SessionState(
+            session_id="hider", hidden_paths=HiddenPaths(paths=("/data/hid",))
+        )
+    )
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        for op, virtual, kwargs in (
+            ("write", "/data/hid/x", {"data": b"x\n"}),
+            ("read", "/data/hlink", {}),
+            ("rename", "/data/real/secret", {"dst": _path("/data/hid/x")}),
+            ("rename", "/data/hid/h", {"dst": _path("/data/real/moved")}),
+            ("rename", "/data/real/secret", {"dst": _path("/data/halias/x")}),
+        ):
+            with pytest.raises(FileNotFoundError):
+                await ws.dispatch(op, _path(virtual), rule_gate=gate, **kwargs)
         assert gate.asked == []
     finally:
         reset_current_session(token)
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_marked_op_on_a_link_entry_is_judged_before_the_table_answers():
-    # unlink of a link is answered from the namespace's link table, not a
-    # mount; the command's rule on the link name holds before that answer.
-    ws = await _linked_ws()
-    try:
-        gate = _RefusingGate("/data/flink")
-        with pytest.raises(PermissionError):
-            await ws.dispatch("unlink", _path("/data/flink"), rule_gate=gate)
-        target, _ = await ws.dispatch("readlink", _path("/data/flink"))
-        assert target == "/data/real/secret"
-    finally:
         await ws.close()
 
 
@@ -1223,147 +1261,5 @@ async def test_the_mark_never_reaches_the_op(monkeypatch):
         await ws.dispatch("read", _path("/data/real/secret"), rule_gate=gate)
         assert seen and all("rule_gate" not in kw for kw in seen)
         assert gate.asked == ["/data/real/secret"]
-    finally:
-        await ws.close()
-
-
-async def _text(ws: Workspace, virtual: str) -> bytes:
-    data, _ = await ws.dispatch("read", _path(virtual))
-    return data
-
-
-@pytest.mark.asyncio
-async def test_a_refused_marked_rename_overwrites_nothing():
-    # A rename whose destination reaches a protected file through a linked
-    # parent is refused before the move: the protected bytes stay.
-    ws = await _linked_ws()
-    try:
-        await ws.shell("echo new > /data/real/other")
-        gate = _RefusingGate("/data/real/secret")
-        with pytest.raises(PermissionError):
-            await ws.dispatch(
-                "rename",
-                _path("/data/real/other"),
-                dst=_path("/data/alias/secret"),
-                rule_gate=gate,
-            )
-        assert await _text(ws, "/data/real/secret") == b"s\n"
-        assert await _text(ws, "/data/real/other") == b"new\n"
-    finally:
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_marked_nofollow_write_is_judged_through_a_linked_parent():
-    # `nofollow` keeps the final name but not the linked directories above
-    # it: the write reaches /data/real/secret, and is judged there.
-    ws = await _linked_ws()
-    try:
-        gate = _RefusingGate("/data/real/secret")
-        with pytest.raises(PermissionError):
-            await ws.dispatch(
-                "write",
-                _path("/data/alias/secret"),
-                data=b"x\n",
-                nofollow=True,
-                rule_gate=gate,
-            )
-        assert await _text(ws, "/data/real/secret") == b"s\n"
-    finally:
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_marked_unlink_of_a_link_is_judged_on_the_link_not_its_referent():
-    # Removing a link touches the link entry, never what it points at: a
-    # rule on the referent leaves link removal alone, and the referent
-    # stays.
-    ws = await _linked_ws()
-    try:
-        gate = _RefusingGate("/data/real/secret")
-        await ws.dispatch("unlink", _path("/data/flink"), rule_gate=gate)
-        assert gate.asked == ["/data/flink"]
-        with pytest.raises(FileNotFoundError):
-            await ws.dispatch("readlink", _path("/data/flink"))
-        assert await _text(ws, "/data/real/secret") == b"s\n"
-    finally:
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_hidden_rename_endpoint_answers_before_a_rule_on_the_other():
-    # Hiding answers first for either endpoint: a rule on the visible one
-    # is never asked, so no refusal names a path next to hidden space.
-    ws = await _linked_ws()
-    await ws.shell("mkdir -p /data/hid && echo h > /data/hid/h")
-    session = SessionState(
-        session_id="hider", hidden_paths=HiddenPaths(paths=("/data/hid",))
-    )
-    token = set_current_session(session)
-    try:
-        into = _RefusingGate("/data/real/secret")
-        with pytest.raises(FileNotFoundError):
-            await ws.dispatch(
-                "rename",
-                _path("/data/real/secret"),
-                dst=_path("/data/hid/x"),
-                rule_gate=into,
-            )
-        out_of = _RefusingGate("/data/real/moved")
-        with pytest.raises(FileNotFoundError):
-            await ws.dispatch(
-                "rename",
-                _path("/data/hid/h"),
-                dst=_path("/data/real/moved"),
-                rule_gate=out_of,
-            )
-        assert into.asked == [] and out_of.asked == []
-    finally:
-        reset_current_session(token)
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_rename_into_hidden_space_through_a_linked_parent_answers_first():
-    # Both endpoints are walked before either is judged: a destination
-    # whose linked parent leads into hidden space is missing, before a rule
-    # on the source can name it.
-    ws = await _linked_ws()
-    await ws.shell("mkdir -p /data/hid && ln -s /data/hid /data/halias")
-    session = SessionState(
-        session_id="hider", hidden_paths=HiddenPaths(paths=("/data/hid",))
-    )
-    token = set_current_session(session)
-    try:
-        gate = _RefusingGate("/data/real/secret")
-        with pytest.raises(FileNotFoundError):
-            await ws.dispatch(
-                "rename",
-                _path("/data/real/secret"),
-                dst=_path("/data/halias/x"),
-                rule_gate=gate,
-            )
-        assert gate.asked == []
-    finally:
-        reset_current_session(token)
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_followed_op_is_judged_on_its_walked_spelling():
-    # A follow op whose parent is linked has three spellings: as handed
-    # in, walked, followed. A rule on the walked one, the link entry at its
-    # real place, holds.
-    ws = await _linked_ws()
-    await ws.shell(
-        "echo o > /data/other && ln -s /data/other /data/real/flink2"
-    )
-    try:
-        gate = _RefusingGate("/data/real/flink2")
-        with pytest.raises(PermissionError):
-            await ws.dispatch(
-                "read", _path("/data/alias/flink2"), rule_gate=gate
-            )
-        assert gate.asked == ["/data/alias/flink2", "/data/real/flink2"]
     finally:
         await ws.close()

@@ -577,10 +577,8 @@ class EntryGate(Protocol):
         ...
 
     def refuses(self, virtual: str) -> bool:
-        """Whether a rule in force refuses this entry for the running
-        command: True exactly where ``check`` would raise. For a door
-        that declines rather than fails, as the read cache declines to
-        serve bytes the command may not read.
+        """True exactly where ``check`` would raise, for a door that
+        declines instead (the read cache).
 
         Args:
             virtual (str): absolute virtual path of the entry.

@@ -884,27 +884,30 @@ async function linkedWs(): Promise<Workspace> {
 const text = async (ws: Workspace, virtual: string): Promise<string> =>
   new TextDecoder().decode((await ws.dispatch('read', virtual)) as Uint8Array)
 
-describe('a marked op is judged on the path the door reaches', () => {
-  // The door walks every link above the final name before it acts, so an
-  // op on the name itself is judged on the walked path, and one that
-  // follows the final link on the target as well.
-  it('judges the walked and followed paths', async () => {
+const spec = (virtual: string): PathSpec => PathSpec.fromStrPath(virtual)
+
+describe('a marked op is judged on the paths the door reaches', () => {
+  // Each spelling once, in the order the door meets it: as handed in,
+  // walked, then followed. A refused op leaves the bytes alone; an unmarked
+  // one is the door's alone.
+  it('judges every spelling once', async () => {
     const ws = await linkedWs()
     try {
-      const { gate, asked } = refusing('/data/real/secret')
-      await expect(
-        ws.dispatch('unlink', '/data/alias/secret', [], { ruleGate: gate }),
-      ).rejects.toThrow('sealed')
-      await expect(
-        ws.dispatch('rename', '/data/real/other', [PathSpec.fromStrPath('/data/alias/secret')], {
-          ruleGate: gate,
-        }),
-      ).rejects.toThrow('sealed')
-      await expect(ws.dispatch('read', '/data/flink', [], { ruleGate: gate })).rejects.toThrow(
-        'sealed',
+      await ws.shell(
+        'echo new > /data/real/other && echo o > /data/other && ' +
+          'ln -s /data/other /data/real/flink2',
       )
-      // Each spelling once, in the order the door meets it: as handed in,
-      // walked, then followed.
+      const { gate, asked } = refusing('/data/real/secret')
+      for (const [op, virtual, args, kwargs] of [
+        ['unlink', '/data/alias/secret', [], {}],
+        ['rename', '/data/real/other', [spec('/data/alias/secret')], {}],
+        ['read', '/data/flink', [], {}],
+        ['write', '/data/alias/secret', [new TextEncoder().encode('x\n')], { nofollow: true }],
+      ] as const) {
+        await expect(ws.dispatch(op, virtual, args, { ...kwargs, ruleGate: gate })).rejects.toThrow(
+          'sealed',
+        )
+      }
       expect(asked).toEqual([
         '/data/alias/secret',
         '/data/real/secret',
@@ -913,32 +916,75 @@ describe('a marked op is judged on the path the door reaches', () => {
         '/data/real/secret',
         '/data/flink',
         '/data/real/secret',
+        '/data/alias/secret',
+        '/data/real/secret',
       ])
-      // Unmarked, the same op is the door's alone: no command rule.
+      expect(await text(ws, '/data/real/secret')).toBe('s\n')
+      expect(await text(ws, '/data/real/other')).toBe('new\n')
+      const walked = refusing('/data/real/flink2')
+      await expect(
+        ws.dispatch('read', '/data/alias/flink2', [], { ruleGate: walked.gate }),
+      ).rejects.toThrow('sealed')
+      expect(walked.asked).toEqual(['/data/alias/flink2', '/data/real/flink2'])
       await ws.dispatch('unlink', '/data/alias/secret')
-      expect(await ws.dispatch('readdir', '/data/real')).toEqual([])
+      await expect(text(ws, '/data/real/secret')).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
       await ws.close()
     }
   })
 
-  // unlink of a link is answered from the namespace's link table, not a
-  // mount; the command's rule on the link name holds before that answer.
-  it('judges a link entry before the table answers', async () => {
+  // The link table answers unlink of a link: a rule on the link name holds
+  // before that answer, and one on the referent is never asked.
+  it('judges a link removal on the link entry', async () => {
     const ws = await linkedWs()
     try {
-      const { gate } = refusing('/data/flink')
-      await expect(ws.dispatch('unlink', '/data/flink', [], { ruleGate: gate })).rejects.toThrow(
-        'sealed',
+      await expect(
+        ws.dispatch('unlink', '/data/flink', [], { ruleGate: refusing('/data/flink').gate }),
+      ).rejects.toThrow('sealed')
+      const referent = refusing('/data/real/secret')
+      await ws.dispatch('unlink', '/data/flink', [], { ruleGate: referent.gate })
+      expect(referent.asked).toEqual(['/data/flink'])
+      expect(await text(ws, '/data/real/secret')).toBe('s\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // A write into hidden space, a link there, a hidden rename endpoint and
+  // one behind a linked parent are missing, and the gate is never asked.
+  it('answers hidden space before any rule', async () => {
+    const ws = await linkedWs()
+    try {
+      await ws.shell(
+        'mkdir -p /data/hid && echo h > /data/hid/h && ' +
+          'ln -s /data/hid /data/halias && ln -s /data/hid/h /data/hlink',
       )
-      expect(await ws.dispatch('readlink', '/data/flink')).toBe('/data/real/secret')
+      const session = new SessionState({
+        sessionId: 'hider',
+        hiddenPaths: { paths: ['/data/hid'] },
+      })
+      const { gate, asked } = refusing('/data/real/secret')
+      await runWithSession(session, async () => {
+        for (const [op, virtual, args] of [
+          ['write', '/data/hid/x', [new TextEncoder().encode('x\n')]],
+          ['read', '/data/hlink', []],
+          ['rename', '/data/real/secret', [spec('/data/hid/x')]],
+          ['rename', '/data/hid/h', [spec('/data/real/moved')]],
+          ['rename', '/data/real/secret', [spec('/data/halias/x')]],
+        ] as const) {
+          await expect(ws.dispatch(op, virtual, args, { ruleGate: gate })).rejects.toMatchObject({
+            code: 'ENOENT',
+          })
+        }
+      })
+      expect(asked).toEqual([])
     } finally {
       await ws.close()
     }
   })
 
   // The door lifts the mark at entry: the mount's op sees only its own
-  // arguments, whatever the command's dispatcher carried.
+  // arguments. A null mark is no mark, as Python's rule_gate=None.
   it('never forwards the mark to the op', async () => {
     const ws = await linkedWs()
     const spy = vi.spyOn(OpsRegistry.prototype, 'call')
@@ -949,169 +995,10 @@ describe('a marked op is judged on the path the door reaches', () => {
       expect(seen.length).toBeGreaterThan(0)
       expect(seen.every((kw) => kw === undefined || !('ruleGate' in kw))).toBe(true)
       expect(asked).toEqual(['/data/real/secret'])
+      const read = await ws.dispatch('read', '/data/real/secret', [], { ruleGate: null })
+      expect(new TextDecoder().decode(read as Uint8Array)).toBe('s\n')
     } finally {
       spy.mockRestore()
-      await ws.close()
-    }
-  })
-
-  // A link into hidden space is missing for the session; the door says so
-  // before the command's rule on the visible link is asked.
-  it('answers hidden space before the rule', async () => {
-    const ws = await linkedWs()
-    try {
-      const { gate, asked } = refusing('/data/flink')
-      const session = new SessionState({
-        sessionId: 'hider',
-        hiddenPaths: { paths: ['/data/real'] },
-      })
-      await runWithSession(session, async () => {
-        await expect(
-          ws.dispatch('read', '/data/flink', [], { ruleGate: gate }),
-        ).rejects.toMatchObject({ code: 'ENOENT' })
-      })
-      expect(asked).toEqual([])
-    } finally {
-      await ws.close()
-    }
-  })
-})
-
-describe('a marked op keeps every endpoint to its rule', () => {
-  // A rename whose destination reaches a protected file through a linked
-  // parent is refused before the move: the protected bytes stay.
-  it('overwrites nothing on a refused rename', async () => {
-    const ws = await linkedWs()
-    try {
-      await ws.shell('echo new > /data/real/other')
-      const { gate } = refusing('/data/real/secret')
-      await expect(
-        ws.dispatch('rename', '/data/real/other', [PathSpec.fromStrPath('/data/alias/secret')], {
-          ruleGate: gate,
-        }),
-      ).rejects.toThrow('sealed')
-      expect(await text(ws, '/data/real/secret')).toBe('s\n')
-      expect(await text(ws, '/data/real/other')).toBe('new\n')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  // `nofollow` keeps the final name but not the linked directories above
-  // it: the write reaches /data/real/secret, and is judged there.
-  it('judges a nofollow write through a linked parent', async () => {
-    const ws = await linkedWs()
-    try {
-      const { gate } = refusing('/data/real/secret')
-      await expect(
-        ws.dispatch('write', '/data/alias/secret', [new TextEncoder().encode('x\n')], {
-          nofollow: true,
-          ruleGate: gate,
-        }),
-      ).rejects.toThrow('sealed')
-      expect(await text(ws, '/data/real/secret')).toBe('s\n')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  // Removing a link touches the link entry, never what it points at: a rule
-  // on the referent leaves link removal alone, and the referent stays.
-  it('judges a link removal on the link, not its referent', async () => {
-    const ws = await linkedWs()
-    try {
-      const { gate, asked } = refusing('/data/real/secret')
-      await ws.dispatch('unlink', '/data/flink', [], { ruleGate: gate })
-      expect(asked).toEqual(['/data/flink'])
-      await expect(ws.dispatch('readlink', '/data/flink')).rejects.toMatchObject({ code: 'ENOENT' })
-      expect(await text(ws, '/data/real/secret')).toBe('s\n')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  // Both endpoints are walked before either is judged: a destination whose
-  // linked parent leads into hidden space is missing, before a rule on the
-  // source can name it.
-  it('answers a rename into hidden space through a linked parent first', async () => {
-    const ws = await linkedWs()
-    try {
-      await ws.shell('mkdir -p /data/hid && ln -s /data/hid /data/halias')
-      const session = new SessionState({
-        sessionId: 'hider',
-        hiddenPaths: { paths: ['/data/hid'] },
-      })
-      const { gate, asked } = refusing('/data/real/secret')
-      await runWithSession(session, async () => {
-        await expect(
-          ws.dispatch('rename', '/data/real/secret', [PathSpec.fromStrPath('/data/halias/x')], {
-            ruleGate: gate,
-          }),
-        ).rejects.toMatchObject({ code: 'ENOENT' })
-      })
-      expect(asked).toEqual([])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  // A follow op whose parent is linked has three spellings: as handed in,
-  // walked, followed. A rule on the walked one, the link entry at its real
-  // place, holds.
-  it('judges a followed op on its walked spelling', async () => {
-    const ws = await linkedWs()
-    try {
-      await ws.shell('echo o > /data/other && ln -s /data/other /data/real/flink2')
-      const { gate, asked } = refusing('/data/real/flink2')
-      await expect(
-        ws.dispatch('read', '/data/alias/flink2', [], { ruleGate: gate }),
-      ).rejects.toThrow('sealed')
-      expect(asked).toEqual(['/data/alias/flink2', '/data/real/flink2'])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  // A null mark is no mark, as Python's rule_gate=None: the op runs as the
-  // door's alone.
-  it('treats a null mark as absent', async () => {
-    const ws = await linkedWs()
-    try {
-      const read = (await ws.dispatch('read', '/data/real/secret', [], {
-        ruleGate: null,
-      })) as Uint8Array
-      expect(new TextDecoder().decode(read)).toBe('s\n')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  // Hiding answers first for either endpoint: a rule on the visible one is
-  // never asked, so no refusal names a path next to hidden space.
-  it('answers a hidden rename endpoint before a rule on the other', async () => {
-    const ws = await linkedWs()
-    try {
-      await ws.shell('mkdir -p /data/hid && echo h > /data/hid/h')
-      const session = new SessionState({
-        sessionId: 'hider',
-        hiddenPaths: { paths: ['/data/hid'] },
-      })
-      const into = refusing('/data/real/secret')
-      const outOf = refusing('/data/real/moved')
-      await runWithSession(session, async () => {
-        await expect(
-          ws.dispatch('rename', '/data/real/secret', [PathSpec.fromStrPath('/data/hid/x')], {
-            ruleGate: into.gate,
-          }),
-        ).rejects.toMatchObject({ code: 'ENOENT' })
-        await expect(
-          ws.dispatch('rename', '/data/hid/h', [PathSpec.fromStrPath('/data/real/moved')], {
-            ruleGate: outOf.gate,
-          }),
-        ).rejects.toMatchObject({ code: 'ENOENT' })
-      })
-      expect([into.asked, outOf.asked]).toEqual([[], []])
-    } finally {
       await ws.close()
     }
   })

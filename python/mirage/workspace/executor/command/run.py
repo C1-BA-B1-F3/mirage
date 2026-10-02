@@ -14,9 +14,6 @@
 
 import functools
 
-from mirage.commands.builtin.generic_bind.adapter import (
-    with_dispatch_rule_guard,
-)
 from mirage.commands.config import ExecContext
 from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.spec.types import CommandSpec, FlagValue
@@ -281,10 +278,7 @@ async def run_on_mount(
         else None
     )
     readdir_path = (
-        functools.partial(
-            path_readdir,
-            with_dispatch_rule_guard(dispatch),
-        )
+        functools.partial(path_readdir, dispatch)
         if dispatch is not None
         else None
     )

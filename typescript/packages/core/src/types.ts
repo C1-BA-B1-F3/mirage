@@ -169,12 +169,7 @@ export interface EntryGate {
    */
   readonly granted: readonly CommandRule[]
   check(virtual: string): void
-  /**
-   * Whether a rule in force refuses this entry for the running command:
-   * true exactly where `check` would throw. For a door that declines
-   * rather than fails, as the read cache declines to serve bytes the
-   * command may not read.
-   */
+  /** True exactly where `check` would throw, for a door that declines instead (the read cache). */
   refuses(virtual: string): boolean
 }
 

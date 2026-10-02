@@ -433,49 +433,27 @@ describe('admission', () => {
     // An operand the gate judged passes whatever the rules say about it
     // (the line was admitted on it), and a grant under the asking rule
     // opens its scope to the walk.
-    new Admitted({
+    const judged = new Admitted({
       rules,
       tokens: ['grep', 'x', '/data/asked/a'],
       judged: new Set(['/data/asked/a']),
       granted: [],
       scoped: true,
-    }).check('/data/asked/a')
-    new Admitted({
+    })
+    judged.check('/data/asked/a')
+    const granted = new Admitted({
       rules,
       tokens: ['grep', '-r', 'x', '/data/asked'],
       judged: new Set(['/data/asked']),
       granted: [ask],
       scoped: true,
-    }).check('/data/asked/a')
-  })
-
-  // The cache door asks without throwing: an answer it can decline on,
-  // true exactly where check would throw.
-  it('the admitted gate answers refuses as check would', () => {
-    const deny: CommandRule = { reason: 'sealed', paths: ['/data/sealed'] }
-    const rules: AdmissionRules = { allow: null, ask: [], deny: [deny] }
-    const gate = new Admitted({
-      rules,
-      tokens: ['grep', '-r', 'x', '/data'],
-      judged: new Set(['/data/sealed/named']),
-      granted: [],
-      scoped: true,
     })
-    expect(gate.refuses('/data/sealed/s')).toBe(true)
-    expect(gate.refuses('/data/open/o')).toBe(false)
-    expect(gate.refuses('/data/sealed/named')).toBe(false)
-    const ask: CommandRule = { reason: 'nod', commands: ['grep'], paths: ['/data/asked/*'] }
-    const asked: AdmissionRules = { allow: null, ask: [ask], deny: [] }
-    const under = (granted: readonly CommandRule[]) =>
-      new Admitted({
-        rules: asked,
-        tokens: ['grep', '-r', 'x', '/data'],
-        judged: new Set(['/data']),
-        granted,
-        scoped: true,
-      })
-    expect(under([]).refuses('/data/asked/a')).toBe(true)
-    expect(under([ask]).refuses('/data/asked/a')).toBe(false)
+    granted.check('/data/asked/a')
+    // refuses answers exactly where check throws, without throwing.
+    expect(
+      ['/data', '/data/open/o', '/data/sealed/s', '/data/asked/a'].map((p) => gate.refuses(p)),
+    ).toEqual([false, false, true, true])
+    expect(judged.refuses('/data/asked/a') || granted.refuses('/data/asked/a')).toBe(false)
   })
 
   it('admit reports the grant the line runs under and its scope', async () => {

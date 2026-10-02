@@ -386,20 +386,11 @@ export function withRuleGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
 }
 
 /**
- * Return `dispatch` marking each op with the admitted command's gate, for
- * the door to judge.
- *
- * The op dispatcher a command is handed (`opts.dispatch`, the cross-mount
- * relay's) reaches a mount without passing the command's own guarded
- * slots, so `withRuleGuard` never sees what a relayed `tar -cf -` or a
- * cross-mount `cp -r` reads and writes. The door enforces hiding, modes and
- * pure path rules on its own but cannot tell which command issued an op,
- * so the op carries the bound gate as `ruleGate` and the door judges it on
- * the path as handed in and the paths it actually reaches: after its own walk (a `..` through a
- * missing directory, a link into hidden space answer as missing first),
- * with every link above the final name followed, and the final one for an
- * op that follows it. A metadata op passes unmarked, as the slot chain
- * lets `stat` pass.
+ * Return `dispatch` marking each op with the admitted command's gate as
+ * `ruleGate`, which the door judges on the paths the op reaches: the
+ * command's dispatcher skips its guarded slots, and the door cannot tell
+ * which command issued an op. A metadata op passes unmarked, as
+ * `withRuleGuard` lets `stat` pass.
  */
 export function withDispatchRuleGuard(dispatch: DispatchFn): DispatchFn {
   return async (op, path, args, options, report) => {

@@ -128,33 +128,9 @@ A command pattern is a **prefix of the line**: `git push` covers
 `*` is every command (`git push` and `git push *` are the same rule).
 The same patterns spell the `allow` list.
 
-A rule holds for the entries a command reaches below its operands as well
-as the ones it names. A walk (`grep -r`, `cp -r`, `tar`), a line that
-spans mounts, and bytes another session left in the shared read cache
-are all refused for the running command exactly as a cold read of them
-would be. Each command reports the refused entry as it reports any entry
-it cannot read or write, mostly with GNU's wording (`grep: <path>:
-Permission denied`). `find -delete` is the exception: it names the rule's
-reason, `find: cannot delete '<path>': <reason>`, as it does for a `paths`
-rule's refusal at the op door. A rule with `paths` and no command also
-reaches the VFS op door, so `ws.vfs` and FUSE mounts cannot go around it.
-A rule that names a command binds that command's own reads and writes,
-judged on the absolute path the command hands over and on the path the op
-actually reaches: every linked directory above the name followed, and the
-final link too for an op that follows one. A relative path is resolved
-against the working directory first, so under a linked working directory
-a rule spelled through the link does not match it. For a path a command
-opens on its own (awk's `print >`, sed's `w`), a `..` through a missing
-directory answers "No such file or directory" first, as GNU does, and a
-link into hidden space answers the same way, since a hidden path does not
-exist for the session; a parent directory that is plainly missing, or a
-dangling link, still answers with the rule. A path typed on the line is
-judged by the gate before the command runs, so the rule's reason answers
-there even where the path is unreachable. A CLI's or interpreter's own
-file access (`git`, `python3`), and a shell builtin's (`getfattr`,
-`setfattr`, `ln`, `readlink`), is held only to its operands and to `paths`
-rules: `getfattr -R` reads the attributes of a child a `getfattr`-only rule
-names. A whole-command `deny` refuses in bash's own voice, `<command>: Permission denied` at exit 126, and the
+A rule with `paths` and no command also reaches the VFS op door, so FUSE
+mounts and `ws.vfs` cannot go around it. A whole-command `deny` refuses
+in bash's own voice, `<command>: Permission denied` at exit 126, and the
 reason rides beside the output as the result's `refusal` record
 (`{"kind": "deny", "reason": ..., "policy": ..., "scope": "command"}`,
 `null` on a line that ran). A `deny` matched through `paths` refuses the
@@ -164,6 +140,23 @@ command's own operand exit code
 with the reason on the line and the record's `scope` set to `operand`.
 An `ask` refuses at 126 the same way, with a `pending` record naming the
 ask id, until a host answers; see [Asks](#asks) below.
+
+A rule holds past the paths typed on the line:
+
+- **Walks and lines across mounts.** Every entry `grep -r`, `rg`, `tar`,
+  `cp -r` or `find -delete` reaches is refused in the command's own voice
+  for an entry it cannot open (`grep: <path>: Permission denied`);
+  `find -delete` names the reason.
+- **Paths a command opens itself**, such as awk's `print >` and sed's `w`,
+  judged on the path as written and with every link followed.
+- **The read cache.** Bytes another session left in the shared cache are
+  refused exactly as a cold read of them.
+
+Not covered yet: the file access of a CLI or interpreter (`git`, `python3`)
+and of the builtins `getfattr`, `setfattr`, `ln` and `readlink`, which
+answer to their operands and to `paths` rules only; and a backend that
+searches on its own side, so `grep -r` and `rg` on a GitHub mount can print
+a file a rule refuses.
 
 ### `paths` and `vars`: hide and show
 

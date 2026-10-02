@@ -632,48 +632,13 @@ def test_the_admitted_gate_judges_what_the_line_did_not_name():
         scoped=True,
     )
     granted.check("/data/asked/a")
-
-
-def test_the_admitted_gate_answers_refuses_as_check_would():
-    # The cache door asks without raising: an answer it can decline on,
-    # true exactly where check would raise.
-    deny = CommandRule(reason="sealed", paths=("/data/sealed",))
-    rules = AdmissionRules(deny=(deny,))
-    gate = Admitted(
-        rules=rules,
-        tokens=("grep", "-r", "x", "/data"),
-        judged=frozenset({"/data/sealed/named"}),
-        granted=(),
-        scoped=True,
-    )
-    assert gate.refuses("/data/sealed/s") is True
-    assert gate.refuses("/data/open/o") is False
-    assert gate.refuses("/data/sealed/named") is False
-    ask = CommandRule(
-        reason="nod", commands=("grep",), paths=("/data/asked/*",)
-    )
-    asked = AdmissionRules(ask=(ask,))
-    tokens = ("grep", "-r", "x", "/data")
-    assert (
-        Admitted(
-            rules=asked,
-            tokens=tokens,
-            judged=frozenset({"/data"}),
-            granted=(),
-            scoped=True,
-        ).refuses("/data/asked/a")
-        is True
-    )
-    assert (
-        Admitted(
-            rules=asked,
-            tokens=tokens,
-            judged=frozenset({"/data"}),
-            granted=(ask,),
-            scoped=True,
-        ).refuses("/data/asked/a")
-        is False
-    )
+    # refuses answers exactly where check raises, without raising.
+    assert [
+        gate.refuses(p)
+        for p in ("/data", "/data/open/o", "/data/sealed/s", "/data/asked/a")
+    ] == [False, False, True, True]
+    assert not judged.refuses("/data/asked/a")
+    assert not granted.refuses("/data/asked/a")
 
 
 @pytest.mark.asyncio

@@ -177,7 +177,7 @@ async def _finish_find(
         session_id=session.session_id,
         ns=ns,
         stat_path=stat_path,
-        dispatch=with_dispatch_rule_guard(dispatch),
+        dispatch=dispatch,
         identity=identity_from(ns, session_view(session, registry.policies)),
         stdin=stdin,
         starts=starts,
@@ -289,6 +289,10 @@ async def handle_command(
                 else None
             ),
         )
+
+    # Every op the command issues from here carries its gate to the door.
+    if dispatch is not None:
+        dispatch = with_dispatch_rule_guard(dispatch)
 
     if cmd_name in CWD_DEFAULT_RAW:
         operand = default_cwd_operand(
@@ -542,7 +546,7 @@ async def handle_command(
             cross_scopes,
             cross_texts,
             cross_flags,
-            with_dispatch_rule_guard(dispatch),
+            dispatch,
             run_operand,
             stdin=stdin,
             storage_key=make_storage_key(registry),

@@ -38,11 +38,7 @@ from mirage.context import (
 )
 from mirage.context.session_context import require_paths_writable
 from mirage.io import IOResult
-from mirage.ops.types import (
-    ChildMounts,
-    LinkTargetStat,
-    StatOverlay,
-)
+from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
 from mirage.policy.constants import METADATA_OPS
 from mirage.policy.policies import Policies, pre_ops_gate
 from mirage.runtime.types import DispatchFn
@@ -1022,20 +1018,10 @@ def with_rule_guard(ops: CommandIO) -> CommandIO:
 
 def with_dispatch_rule_guard(dispatch: DispatchFn) -> DispatchFn:
     """Return ``dispatch`` marking each op with the admitted command's
-    gate, for the door to judge.
-
-    The op dispatcher a command is handed (``opts.dispatch``, the
-    cross-mount relay's) reaches a mount without passing the command's
-    own guarded slots, so ``with_rule_guard`` never sees what a relayed
-    ``tar -cf -`` or a cross-mount ``cp -r`` reads and writes. The door
-    enforces hiding, modes and pure path rules on its own but cannot
-    tell which command issued an op, so the op carries the bound gate
-    as ``rule_gate`` and the door judges it on the path as handed in and
-    the paths it actually reaches: after its own walk (a ``..`` through a
-    missing directory, a link into hidden space answer as missing first),
-    with every link above the final name followed, and the final one for
-    an op that follows it. A metadata op passes unmarked, as the slot chain lets
-    ``stat`` pass.
+    gate as ``rule_gate``, which the door judges on the paths the op
+    reaches: the command's dispatcher skips its guarded slots, and the
+    door cannot tell which command issued an op. A metadata op passes
+    unmarked, as ``with_rule_guard`` lets ``stat`` pass.
 
     Args:
         dispatch (DispatchFn): the workspace op dispatcher.

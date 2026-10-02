@@ -221,12 +221,9 @@ export class MountRegistry {
       m.prefix,
       m.vfs.cachesReads,
       (path) => !m.retiring && this.tryMountFor(path) === m,
-      // The cache is shared by every session, so a warm entry the running
-      // command may not read is not served: the read goes cold to the
-      // guarded backend read, which refuses it exactly as a cold read.
-      // Asked before the reconciler, so a refused path costs no freshness
-      // probe. Only this door asks; the dispatcher's has no command tier
-      // behind it to refuse.
+      // The cache is shared by every session: a warm entry the running
+      // command may not read goes cold to the guarded read, which refuses
+      // it, before any freshness probe.
       (key) =>
         getAdmission()?.refuses(key) === true
           ? Promise.resolve(false)

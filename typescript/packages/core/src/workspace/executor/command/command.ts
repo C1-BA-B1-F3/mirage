@@ -139,7 +139,7 @@ async function finishFind(
       sessionId: session.sessionId,
       ns: ns ?? null,
       statPath,
-      dispatch: withDispatchRuleGuard(dispatch),
+      dispatch,
       identity: identityFrom(ns, sessionView(session, registry.policies)),
       stdin,
       starts,
@@ -264,6 +264,9 @@ export async function handleCommand(
       mergeSignals(signal, session.abortSignal),
     )
   }
+
+  // Every op the command issues from here carries its gate to the door.
+  dispatch = withDispatchRuleGuard(dispatch)
 
   if (cmdName in CWD_DEFAULT_RAW) {
     const operand = defaultCwdOperand(parts, cmdName, registry, session.cwd, stdin)
@@ -515,7 +518,7 @@ export async function handleCommand(
       csScopes,
       csTexts,
       csFlags,
-      withDispatchRuleGuard(dispatch),
+      dispatch,
       runOperand,
       stdin,
       makeStorageKey(registry),

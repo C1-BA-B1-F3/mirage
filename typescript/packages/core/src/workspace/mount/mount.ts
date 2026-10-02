@@ -34,7 +34,6 @@ import type { LinkView } from '../../ops/types.ts'
 
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
-import { withDispatchRuleGuard } from '../../commands/builtin/generic_bind/adapter.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError, UsageError } from '../../commands/errors.ts'
 import { readFailExitCode } from '../../commands/spec/usage.ts'
@@ -627,9 +626,7 @@ export class MountEntry {
         command: cmdName,
         cwd: context.cwd ?? ROOT_CWD,
         index: this.index,
-        ...(context.dispatch !== undefined
-          ? { dispatch: withDispatchRuleGuard(context.dispatch) }
-          : {}),
+        ...(context.dispatch !== undefined ? { dispatch: context.dispatch } : {}),
         ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
         ...(context.env !== undefined ? { env: context.env } : {}),
         ...(context.sessionView !== undefined ? { sessionView: context.sessionView } : {}),

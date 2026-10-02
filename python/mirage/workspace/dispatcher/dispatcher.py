@@ -224,19 +224,18 @@ class _MountChannel:
             await self.invalidate(spec)
 
 
-def _judge(gate: EntryGate, *paths: PathSpec) -> None:
-    """Ask a command's gate about each distinct spelling of the path an
-    op reaches: as handed in, as walked, as followed.
+def _judge(gate: EntryGate, *paths: PathSpec | None) -> None:
+    """Ask a command's gate once about each distinct path an op reaches.
 
     Args:
         gate (EntryGate): the gate the command was admitted under.
-        *paths (PathSpec): the spellings, in the order the door met them.
+        *paths (PathSpec | None): the spellings in the order the door
+            met them; None (no rename destination) is skipped.
     """
-    seen: set[str] = set()
-    for spec in paths:
-        if spec.virtual not in seen:
-            seen.add(spec.virtual)
-            gate.check(spec.virtual)
+    for virtual in dict.fromkeys(
+        p.virtual for p in paths if isinstance(p, PathSpec)
+    ):
+        gate.check(virtual)
 
 
 class Dispatcher:
@@ -327,10 +326,7 @@ class Dispatcher:
         report: OpReport | None = None,
         **kwargs: Any,
     ) -> tuple[Any, IOResult]:
-        # A command's own dispatcher marks its ops with the gate the
-        # command was admitted under (with_dispatch_rule_guard); the door
-        # judges that gate on the path as handed in and the paths it reaches, after its
-        # own walk, and never forwards the mark to an op.
+        # with_dispatch_rule_guard's mark, never forwarded to an op.
         rule_gate: EntryGate | None = kwargs.pop("rule_gate", None)
         await self._namespace.ensure_loaded()
         # Pending fingerprint checks from a strict snapshot restore run
@@ -377,30 +373,16 @@ class Dispatcher:
         # os.symlink), so a link made, read or removed under a linked
         # directory lands in the directory the link names, not under a
         # name nothing else would look up.
-        typed = path
+        typed, typed_dst = path, dst
         path = self._walked(path, op in HIDDEN_CREATE_OPS)
-        # An op that acts on the name itself reaches the walked path; it
-        # is judged on that and on the spelling the command handed in (a
-        # rule written through a linked directory names the latter),
-        # before anything about the name is acted on. One that follows
-        # the final link is judged below, once the follow has answered
-        # for hidden space.
-        no_follow = op in NO_FOLLOW_OPS or bool(kwargs.get("nofollow"))
-        # Both rename endpoints are walked before either is judged, so a
-        # destination whose linked parent leads into hidden space answers
-        # as missing before a rule on the source can.
-        typed_dst = dst
         if op == "rename" and isinstance(dst, PathSpec):
             dst = kwargs["dst"] = self._walked(dst, True)
+        # The command's gate judges each spelling, as handed in and as
+        # walked, once both walks have answered for hidden space: here
+        # for an op on the name itself, below the follow for the rest.
+        no_follow = op in NO_FOLLOW_OPS or bool(kwargs.get("nofollow"))
         if rule_gate is not None and no_follow:
-            _judge(rule_gate, typed, path)
-        if (
-            rule_gate is not None
-            and op == "rename"
-            and isinstance(dst, PathSpec)
-            and isinstance(typed_dst, PathSpec)
-        ):
-            _judge(rule_gate, typed_dst, dst)
+            _judge(rule_gate, typed, path, typed_dst, dst)
         if op == "rename" and isinstance(dst, PathSpec):
             # A rename re-anchors everything below its source while the
             # hides stay where they are written, so hidden content would

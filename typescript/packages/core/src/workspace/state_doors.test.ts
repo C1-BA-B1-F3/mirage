@@ -2276,23 +2276,8 @@ describe('a walk below the operand meets the rule guard', () => {
 
 describe('a relayed walk meets the command rules', () => {
   const RELAY_DOC: SessionProfile = parseSessionProfile({
-    paths: { hide: ['/data/r/ghost', '/data/hd'] },
+    paths: { hide: ['/data/r/ghost'] },
     commands: {
-      allow: [
-        'mkdir',
-        'echo',
-        'cat',
-        'cp',
-        'tar',
-        'find',
-        'split',
-        'ls',
-        'awk',
-        'csplit',
-        'mktemp',
-        'unzip',
-        'sed',
-      ],
       deny: [
         {
           reason: 'cut',
@@ -2302,7 +2287,6 @@ describe('a relayed walk meets the command rules', () => {
             awk: ['/data/out/locked'],
             mktemp: ['/data/tmpd/*'],
             unzip: ['/data/uz/*'],
-            sed: ['/data/hd/x'],
           },
         },
         { reason: 'tarred', commands: { tar: ['/data/r/sec', '/data/r/ghost'] } },
@@ -2421,26 +2405,12 @@ describe('a relayed walk meets the command rules', () => {
     expect(await line(ws, 'unzip -q -d /data/uz /other/z.zip')).toEqual([50, '', refused])
     expect((await line(ws, 'find /data/tmpd /data/uz'))[1]).toBe('/data/tmpd\n/data/uz\n')
   })
-
-  // A rule on a hidden path stays silent: a write the dispatcher carries
-  // into a hidden directory is missing, as the door answers it, never
-  // refused, which would say the directory is there.
-  it('never names a hidden entry a write reaches', async () => {
-    const ws = await relayWs()
-    await ws.shell('mkdir -p /data/hd')
-    expect(await line(ws, "sed -n 'w /data/hd/x' /data/r/open")).toEqual([
-      4,
-      '',
-      "sed: couldn't open file /data/hd/x: No such file or directory\n",
-    ])
-  })
 })
 
 describe('a warm walk is refused as the cold walk is', () => {
   const WARM_DOC: SessionProfile = parseSessionProfile({
     paths: { hide: ['/data/w/h.txt'] },
     commands: {
-      allow: ['cat', 'grep', 'rg', 'cp', 'tar', 'find', 'echo'],
       deny: [
         {
           reason: 'sealed',
@@ -2527,7 +2497,6 @@ describe('a warm walk is refused as the cold walk is', () => {
 describe('a dispatched read through a link meets the target rule', () => {
   const LINKED_DOC: SessionProfile = parseSessionProfile({
     commands: {
-      allow: ['awk', 'sed', 'ln', 'echo'],
       deny: [{ reason: 'sealed', commands: { awk: ['/data/secret'], sed: ['/data/secret'] } }],
     },
   })
@@ -2609,7 +2578,6 @@ describe('a dispatched op meets the rule on the path the door reaches', () => {
   it('holds the rule through a linked parent', async () => {
     const doc = parseSessionProfile({
       commands: {
-        allow: ['zap', 'ls', 'ln', 'mkdir', 'echo'],
         deny: [{ reason: 'sealed', commands: { zap: ['/data/real/secret'] } }],
       },
     })
@@ -2638,7 +2606,6 @@ describe('a dispatched op meets the rule on the path the door reaches', () => {
   it('binds a rule spelled through a linked parent', async () => {
     const doc = parseSessionProfile({
       commands: {
-        allow: ['sed', 'cat', 'ln', 'echo', 'mkdir'],
         deny: [
           {
             reason: 'sealed',
@@ -2669,47 +2636,11 @@ describe('a dispatched op meets the rule on the path the door reaches', () => {
     ])
     expect(stdoutStr(await ws.shell('cat /data/real/secret'))).toBe('s\n')
   })
-
-  // The door answers for the path it can actually reach first: a link into
-  // hidden space, and a name behind a missing directory, are not there, as
-  // GNU reports them, whatever a rule says about the name.
-  it('answers missing before any rule', async () => {
-    const doc = parseSessionProfile({
-      paths: { hide: ['/data/real'] },
-      commands: {
-        allow: ['sed', 'awk', 'ln', 'echo', 'mkdir'],
-        deny: [{ reason: 'sealed', commands: { sed: ['/data/flink'], awk: ['/data/secret'] } }],
-      },
-    })
-    const parser = await getTestParser()
-    const ws = new Workspace(
-      { '/data': new RAMVFS() },
-      { mode: MountMode.WRITE, shellParser: parser, profiles: { walled: doc } },
-    )
-    open.push(ws)
-    ws.createSession('g', { profile: 'walled' })
-    await ws.shell(
-      'mkdir -p /data/real && echo s > /data/real/secret && echo s > /data/secret && ' +
-        'ln -s /data/real/secret /data/flink && ln -s /data/secret /data/alias && echo o > /data/f',
-    )
-    expect(await line(ws, "sed -n 'w /data/flink' /data/f")).toEqual([
-      4,
-      '',
-      "sed: couldn't open file /data/flink: No such file or directory\n",
-    ])
-    expect(stdoutStr(await ws.shell('cat /data/real/secret'))).toBe('s\n')
-    expect(await line(ws, `awk 'BEGIN { print "x" > "/data/missing/../alias" }'`)).toEqual([
-      2,
-      '',
-      'awk: cannot open "/data/missing/../alias" for output (No such file or directory)\n',
-    ])
-  })
 })
 
 describe('a walk the executor fans out meets the command rules', () => {
   const FANOUT_DOC: SessionProfile = parseSessionProfile({
     commands: {
-      allow: ['rg', 'find', 'tree', 'ls', 'mkdir', 'echo'],
       deny: [
         {
           reason: 'sealed',
@@ -2783,11 +2714,10 @@ describe('a walk the executor fans out meets the command rules', () => {
 describe('a dispatched op is judged by the gate of the command that issued it', () => {
   const SEALED_DOC = parseSessionProfile({
     commands: {
-      allow: ['sed', 'find', 'cat', 'echo', 'mkdir'],
       deny: [{ reason: 'sealed', commands: { sed: ['/data/real/secret'] } }],
     },
   })
-  const OPEN_DOC = parseSessionProfile({ commands: { allow: ['sed'] } })
+  const OPEN_DOC = parseSessionProfile({})
 
   async function sealedWs(): Promise<Workspace> {
     const parser = await getTestParser()
@@ -2853,7 +2783,6 @@ describe('a dispatched op is judged by the gate of the command that issued it', 
         profiles: {
           mixed: parseSessionProfile({
             commands: {
-              allow: ['cat'],
               deny: [
                 { reason: 'sealed', commands: { cat: ['/data/real/secret'] } },
                 { reason: 'walled', paths: ['/data/real/walled'] },

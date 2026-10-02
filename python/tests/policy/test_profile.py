@@ -2045,23 +2045,8 @@ async def test_a_walk_below_the_operand_meets_the_rule_guard():
 
 
 RELAY_DOC = {
-    "paths": {"hide": ["/data/r/ghost", "/data/hd"]},
+    "paths": {"hide": ["/data/r/ghost"]},
     "commands": {
-        "allow": [
-            "mkdir",
-            "echo",
-            "cat",
-            "cp",
-            "tar",
-            "find",
-            "split",
-            "ls",
-            "awk",
-            "csplit",
-            "mktemp",
-            "unzip",
-            "sed",
-        ],
         "deny": [
             {
                 "reason": "cut",
@@ -2071,7 +2056,6 @@ RELAY_DOC = {
                     "awk": ["/data/out/locked"],
                     "mktemp": ["/data/tmpd/*"],
                     "unzip": ["/data/uz/*"],
-                    "sed": ["/data/hd/x"],
                 },
             },
             {
@@ -2199,7 +2183,6 @@ async def test_a_write_through_the_command_dispatcher_meets_the_rules():
 WARM_DOC = {
     "paths": {"hide": ["/data/w/h.txt"]},
     "commands": {
-        "allow": ["cat", "grep", "rg", "cp", "tar", "find", "echo"],
         "deny": [
             {
                 "reason": "sealed",
@@ -2293,7 +2276,6 @@ async def test_a_warm_entry_no_rule_refuses_is_still_served_from_cache():
 
 FANOUT_DOC = {
     "commands": {
-        "allow": ["rg", "find", "tree", "ls", "mkdir", "echo"],
         "deny": [
             {
                 "reason": "sealed",
@@ -2422,7 +2404,6 @@ async def test_a_create_through_the_command_dispatcher_meets_the_rules():
 
 LINKED_DOC = {
     "commands": {
-        "allow": ["awk", "sed", "ln", "echo"],
         "deny": [
             {
                 "reason": "sealed",
@@ -2507,7 +2488,6 @@ async def test_a_dispatched_op_meets_the_rule_through_a_linked_parent():
     # on the name itself (unlink, rename) as for one that follows it.
     doc = {
         "commands": {
-            "allow": ["zap", "ls", "ln", "mkdir", "echo"],
             "deny": [
                 {
                     "reason": "sealed",
@@ -2547,7 +2527,6 @@ async def test_a_rule_spelled_through_a_linked_parent_binds_a_dispatched_op():
     # command's own ops exactly as it holds for a named operand.
     doc = {
         "commands": {
-            "allow": ["sed", "cat", "ln", "echo", "mkdir"],
             "deny": [
                 {
                     "reason": "sealed",
@@ -2582,18 +2561,13 @@ async def test_a_rule_spelled_through_a_linked_parent_binds_a_dispatched_op():
             "",
             "cat: /data/dalias/secret: sealed\n",
         )
-        assert (await ws.shell("cat /data/real/secret")).exit_code == 0
-        assert (
-            await (await ws.shell("cat /data/real/secret")).stdout_str()
-            == "s\n"
-        )
+        assert await _line(ws, "cat /data/real/secret") == (0, "s\n", "")
     finally:
         await ws.close()
 
 
 SPELLED_DOC = {
     "commands": {
-        "allow": ["sed", "find", "cat", "echo", "mkdir"],
         "deny": [
             {"reason": "sealed", "commands": {"sed": ["/data/real/secret"]}}
         ],
@@ -2607,7 +2581,7 @@ async def _sealed_ws() -> Workspace:
         mode=MountMode.WRITE,
         profiles={
             "sealed": SPELLED_DOC,
-            "open": {"commands": {"allow": ["sed"]}},
+            "open": {},
         },
     )
     ws.create_session("g", profile="sealed")
@@ -2672,7 +2646,6 @@ async def test_a_raw_vfs_route_keeps_its_own_policy_scope():
     # before.
     doc = {
         "commands": {
-            "allow": ["cat"],
             "deny": [
                 {
                     "reason": "sealed",
@@ -2697,77 +2670,6 @@ async def test_a_raw_vfs_route_keeps_its_own_policy_scope():
         with pytest.raises(PermissionError):
             await handle.vfs.read("/data/real/walled")
         assert (await handle.shell("cat /data/real/secret")).exit_code == 1
-    finally:
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_dispatched_op_answers_missing_before_any_rule():
-    # The door answers for the path it can actually reach first: a link
-    # into hidden space, and a name behind a missing directory, are not
-    # there, as GNU reports them, whatever a rule says about the name.
-    doc = {
-        "paths": {"hide": ["/data/real"]},
-        "commands": {
-            "allow": ["sed", "awk", "ln", "echo", "mkdir"],
-            "deny": [
-                {
-                    "reason": "sealed",
-                    "commands": {
-                        "sed": ["/data/flink"],
-                        "awk": ["/data/secret"],
-                    },
-                }
-            ],
-        },
-    }
-    ws = Workspace(
-        {"/data/": (RAMVFS(), MountMode.WRITE)},
-        mode=MountMode.WRITE,
-        profiles={"walled": doc},
-    )
-    ws.create_session("g", profile="walled")
-    try:
-        await ws.shell(
-            "mkdir -p /data/real && echo s > /data/real/secret && "
-            "echo s > /data/secret && ln -s /data/real/secret /data/flink && "
-            "ln -s /data/secret /data/alias && echo o > /data/f"
-        )
-        assert await _line(ws, "sed -n 'w /data/flink' /data/f", "g") == (
-            4,
-            "",
-            "sed: couldn't open file /data/flink: No such file or directory\n",
-        )
-        assert (
-            await (await ws.shell("cat /data/real/secret")).stdout_str()
-            == "s\n"
-        )
-        assert await _line(
-            ws, 'awk \'BEGIN { print "x" > "/data/missing/../alias" }\'', "g"
-        ) == (
-            2,
-            "",
-            'awk: cannot open "/data/missing/../alias" for output '
-            "(No such file or directory)\n",
-        )
-    finally:
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_write_through_the_dispatcher_never_names_a_hidden_entry():
-    # A rule on a hidden path stays silent: a write the dispatcher carries
-    # into a hidden directory is missing, as the door answers it, never
-    # refused, which would say the directory is there.
-    ws = _relay_ws()
-    try:
-        await _seed_relay_tree(ws)
-        await ws.shell("mkdir -p /data/hd")
-        assert await _line(ws, "sed -n 'w /data/hd/x' /data/r/open", "g") == (
-            4,
-            "",
-            "sed: couldn't open file /data/hd/x: No such file or directory\n",
-        )
     finally:
         await ws.close()
 

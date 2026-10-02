@@ -147,36 +147,10 @@ function takeIssuer(
   return [issuer, rest]
 }
 
-/**
- * The `ruleGate` kwarg lifted off an op, with the kwargs it leaves behind.
- *
- * A command's own dispatcher (`withDispatchRuleGuard`) marks each op with
- * the gate the command was admitted under, and the door consumes it here,
- * like `issuer`: it judges the paths the op actually reaches and is never
- * forwarded to a backend.
- */
-function takeRuleGate(
-  kwargs: Record<string, unknown> | undefined,
-): [EntryGate | undefined, Record<string, unknown> | undefined] {
-  const gate = kwargs?.ruleGate
-  if (gate === undefined || gate === null) return [undefined, kwargs]
-  const rest = { ...kwargs }
-  delete rest.ruleGate
-  return [gate as EntryGate, rest]
-}
-
-/**
- * Ask a command's gate about each distinct spelling of the path an op
- * reaches: as handed in, as walked, as followed, in the order the door met
- * them.
- */
-function judge(gate: EntryGate, ...paths: readonly PathSpec[]): void {
-  const seen = new Set<string>()
-  for (const spec of paths) {
-    if (seen.has(spec.virtual)) continue
-    seen.add(spec.virtual)
-    gate.check(spec.virtual)
-  }
+/** Ask a command's gate once about each distinct path an op reaches. */
+function judge(gate: EntryGate, ...paths: readonly unknown[]): void {
+  const specs = paths.filter((p): p is PathSpec => p instanceof PathSpec)
+  for (const virtual of new Set(specs.map((p) => p.virtual))) gate.check(virtual)
 }
 
 /** The byte window a read asked for, whole file when it asked none. */
@@ -264,12 +238,9 @@ export class Dispatcher {
     // The caller's own mark on the op, lifted before any gate fires so
     // each one is told whose op it judges.
     const [issuer, stripped] = takeIssuer(kwargs)
-    // A command's own dispatcher marks its ops with the gate the command
-    // was admitted under (withDispatchRuleGuard); the door judges that
-    // gate on the path as handed in and the paths it reaches, after its own walk, and
-    // never forwards the mark to an op.
-    const [ruleGate, unmarked] = takeRuleGate(stripped)
-    kwargs = unmarked
+    // withDispatchRuleGuard's mark, never forwarded to an op.
+    const { ruleGate, ...unmarked } = (stripped ?? {}) as { ruleGate?: EntryGate | null }
+    kwargs = ruleGate === undefined ? stripped : unmarked
     await this.namespace.ensureLoaded()
     // Pending fingerprint checks from a strict snapshot restore run
     // before the op can touch a mount, whichever surface called: FUSE
@@ -324,27 +295,17 @@ export class Dispatcher {
     // op facade, a runtime's os.symlink), so a link made, read or removed
     // under a linked directory lands in the directory the link names, not
     // under a name nothing else would look up.
-    const typed = path
+    const [typed, typedDst] = [path, dstArg]
     path = this.walked(path, HIDDEN_CREATE_OPS.has(opName))
-    // An op that acts on the name itself reaches the walked path; it is
-    // judged on that and on the spelling the command handed in (a rule
-    // written through a linked directory names the latter), before anything
-    // about the name is acted on. One that follows the final link is judged
-    // below, once the follow has answered for hidden space.
-    const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
-    // Both rename endpoints are walked before either is judged, so a
-    // destination whose linked parent leads into hidden space answers as
-    // missing before a rule on the source can.
-    let renamedPair: [PathSpec, PathSpec] | null = null
     if (opName === 'rename' && dstArg instanceof PathSpec) {
-      const typedDst = dstArg
-      const walkedDst = this.walked(dstArg, true)
-      dstArg = walkedDst
-      args = [walkedDst, ...(args ?? []).slice(1)]
-      renamedPair = [typedDst, walkedDst]
+      dstArg = this.walked(dstArg, true)
+      args = [dstArg, ...(args ?? []).slice(1)]
     }
-    if (ruleGate !== undefined && noFollow) judge(ruleGate, typed, path)
-    if (ruleGate !== undefined && renamedPair !== null) judge(ruleGate, ...renamedPair)
+    // The command's gate judges each spelling, as handed in and as walked,
+    // once both walks have answered for hidden space: here for an op on the
+    // name itself, below the follow for the rest.
+    const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
+    if (ruleGate != null && noFollow) judge(ruleGate, typed, path, typedDst, dstArg)
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
       // stay where they are written, so hidden content would land at
@@ -397,7 +358,7 @@ export class Dispatcher {
         if (!pathAllowed(p.virtual)) throw hiddenRefusal(p.virtual, HIDDEN_CREATE_OPS.has(opName))
       }
     }
-    if (ruleGate !== undefined && !noFollow) judge(ruleGate, typed, path, p)
+    if (ruleGate != null && !noFollow) judge(ruleGate, typed, path, p)
     if (XATTR_OPS.has(opName)) {
       return [await this.xattrOp(opName, p, kwargs ?? {}, report, issuer), new IOResult()]
     }

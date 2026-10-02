@@ -75,21 +75,27 @@ afterEach(async () => {
   while (workspaces.length > 0) await workspaces.pop()?.close()
 })
 
-/** Hold the next managed-env step until the returned function is called. */
-function stallManagedEnv(shell: MirageShellExecutor): () => void {
+/** Hold the next call of one preparation step until `open` is called. */
+function stall(
+  shell: MirageShellExecutor,
+  step: 'applyManagedEnv' | 'worldWorkdir',
+): { entered: Promise<void>; open: () => void } {
   let open = (): void => undefined
+  let enter = (): void => undefined
   const gate = new Promise<void>((resolve) => {
     open = resolve
   })
-  const target = shell as unknown as {
-    applyManagedEnv: (...args: unknown[]) => Promise<void>
-  }
-  const real = target.applyManagedEnv.bind(shell)
-  vi.spyOn(target, 'applyManagedEnv').mockImplementationOnce(async (...args: unknown[]) => {
-    await gate
-    await real(...args)
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
   })
-  return open
+  const target = shell as unknown as Record<typeof step, (...args: unknown[]) => Promise<unknown>>
+  const real = target[step].bind(shell)
+  vi.spyOn(target, step).mockImplementationOnce(async (...args: unknown[]) => {
+    enter()
+    await gate
+    return real(...args)
+  })
+  return { entered, open }
 }
 
 describe('resolve', () => {
@@ -486,7 +492,7 @@ describe('run', () => {
 
   it('settles at the deadline while preparation is still stalled', async () => {
     const { shell } = await makeShell({}, { sessionId: 'agent' })
-    const open = stallManagedEnv(shell)
+    const { open } = stall(shell, 'worldWorkdir')
     const execution = await shell.execute(
       shell.resolve({ command: 'true', timeoutMs: 20, dshEnv: { DSH_HOME: '/a' } }),
     )
@@ -494,15 +500,31 @@ describe('run', () => {
     open()
   })
 
-  it('lands a cancelled preparation before the next call, never over it', async () => {
-    // Preparing applies the bound session's DSH_* snapshot; one the caller
-    // stopped waiting for still runs, and must not land after a later one.
+  it('runs the next call while a given-up preparation is stalled, and never seeds it', async () => {
     const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
-    const open = stallManagedEnv(shell)
+    const { open } = stall(shell, 'worldWorkdir')
+    const first = await shell.execute(
+      shell.resolve({ command: 'true', timeoutMs: 20, dshEnv: { DSH_HOME: '/a' } }),
+    )
+    expect((await first.result()).timedOut).toBe(true)
+    const second = await runOn(
+      shell,
+      shell.resolve({ command: 'echo "$DSH_HOME"', dshEnv: { DSH_HOME: '/b' } }),
+    )
+    expect(second.stdout.text).toBe('/b\n')
+    open()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ws.getSession('agent').env.DSH_HOME).toBe('/b')
+  })
+
+  it('lands a seed cancelled mid-flight before the next call, never over it', async () => {
+    const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
+    const { entered, open } = stall(shell, 'applyManagedEnv')
     const controller = new AbortController()
     const first = shell.execute(
       shell.resolve({ command: 'true', signal: controller.signal, dshEnv: { DSH_HOME: '/a' } }),
     )
+    await entered
     controller.abort()
     await expect(first).rejects.toThrow()
     const second = shell.execute(

@@ -65,13 +65,13 @@ export class WorkspaceRunner {
   }
 
   /**
-   * Close the workspace and mark the runner as stopped. Idempotent;
-   * concurrent calls are deduplicated.
+   * Close the workspace (delete it, with `delete`) and mark the runner as
+   * stopped. Idempotent; concurrent calls are deduplicated.
    */
-  async stop(): Promise<void> {
+  async stop(options: { delete?: boolean } = {}): Promise<void> {
     if (this.stopped) return this.stopping ?? Promise.resolve()
     this.stopped = true
-    this.stopping = this.ws.close()
+    this.stopping = options.delete === true ? this.ws.delete() : this.ws.close()
     await this.stopping
   }
 }

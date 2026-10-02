@@ -676,6 +676,17 @@ describe('Ops rename is bounded by the mount', () => {
   })
 })
 
+describe('Ops.stat', () => {
+  it('reports a dangling link itself under nofollow', async () => {
+    const ws = mkWorkspace()
+    await ws.vfs.mkdir('/data/dir')
+    await ws.vfs.symlink('/data/dir/ghost', 'missing.txt')
+    await expect(ws.vfs.stat('/data/dir/ghost')).rejects.toMatchObject({ code: 'ENOENT' })
+    const row = await ws.vfs.stat('/data/dir/ghost', undefined, { nofollow: true })
+    expect(row.type).toBe(FileType.SYMLINK)
+  })
+})
+
 describe('Ops.setattr', () => {
   it('lands where stat reads it', async () => {
     const ws = mkWorkspace()

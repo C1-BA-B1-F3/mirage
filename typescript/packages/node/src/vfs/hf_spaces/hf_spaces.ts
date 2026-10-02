@@ -18,7 +18,7 @@ import { HfSpacesHubAccessor } from '../../accessor/hf_hub.ts'
 import { assertHfRepoRef } from '../hf_buckets/config.ts'
 import { HfHubVFS } from '../hf_hub/base.ts'
 import { type HfSpacesConfig, type HfSpacesConfigRedacted, redactHfSpacesConfig } from './config.ts'
-import { HF_SPACES_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface HfSpacesVFSState {
   type: string
@@ -27,7 +27,7 @@ export interface HfSpacesVFSState {
 
 export class HfSpacesVFS extends HfHubVFS {
   override readonly name: string = VFSName.HF_SPACES
-  readonly prompt: string = HF_SPACES_PROMPT
+  readonly prompt: string = PROMPT
   readonly config: HfSpacesConfig
   readonly accessor: HfSpacesHubAccessor
 

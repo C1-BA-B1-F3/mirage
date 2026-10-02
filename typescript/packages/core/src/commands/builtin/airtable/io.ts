@@ -23,7 +23,7 @@ import { streamFromBytes } from '../utils/wrap.ts'
 // the byte-mutation commands are absent. head pushes its line count into
 // maxRecords (kept bespoke); everything else runs generic over the rendered
 // files.
-export const AIRTABLE_IO: CommandIO<AirtableAccessor> = {
+export const IO: CommandIO<AirtableAccessor> = {
   readdir: airtableReaddir,
   readBytes: airtableRead,
   streamsBytes: true,

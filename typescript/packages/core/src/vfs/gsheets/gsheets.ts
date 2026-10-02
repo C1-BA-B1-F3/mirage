@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GSHEETS_OPS } from '../../ops/gsheets/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GSHEETS_PROMPT, GSHEETS_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGSheetsConfig, type GSheetsConfig, type GSheetsConfigRedacted } from './config.ts'
@@ -38,8 +38,8 @@ export class GSheetsVFS extends BaseVFS {
   override readonly indexTtl: number = 86_400
   // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
   override readonly readRevalidatable: boolean = true
-  override readonly prompt: string = GSHEETS_PROMPT
-  override readonly writePrompt: string = GSHEETS_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: GSheetsConfig
   override readonly accessor: GSheetsAccessor
 

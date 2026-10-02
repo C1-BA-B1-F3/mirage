@@ -16,7 +16,7 @@ import type { PostgresAccessor } from '../../../accessor/postgres.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { countRows } from '../../../core/postgres/client.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { POSTGRES_IO } from './io.ts'
+import { IO } from './io.ts'
 import { readStream } from '../../../core/postgres/read.ts'
 import { detectScope } from '../../../core/postgres/scope.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
@@ -27,7 +27,7 @@ import { parseN } from '../tail_counts.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { noteAfter, rowCapNotice } from '../utils/limit.ts'
 
-const resolveGlob = resolveGlobOf(POSTGRES_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 // Row reads on tables/views fetch only the last N rows (COUNT + OFFSET)
 // instead of the whole relation; tailGeneric then trims the already-small
@@ -81,7 +81,7 @@ async function tailCommand(
     texts,
     opts,
     (p) => tailSource(accessor, p, opts.index ?? undefined, lines, pushdown, notices),
-    (p) => POSTGRES_IO.stat(accessor, p, opts.index ?? undefined),
+    (p) => IO.stat(accessor, p, opts.index ?? undefined),
   )
   if (result === null) return result
   const [out, io] = result

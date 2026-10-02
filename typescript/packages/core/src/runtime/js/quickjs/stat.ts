@@ -14,8 +14,7 @@
 
 import type { QuickJSAsyncContext, QuickJSHandle } from 'quickjs-emscripten'
 import type { RuntimeVFS, VFSStat } from '../../vfs.ts'
-import { WASI } from './wasi.ts'
-import { wasiErrno } from './errors.ts'
+import { WASI, errnoFor } from './errors.ts'
 
 export async function stat(
   ctx: QuickJSAsyncContext,
@@ -24,13 +23,14 @@ export async function stat(
 ): Promise<QuickJSHandle> {
   let st: VFSStat | null = null
   let errno = 0
-  if (!vfs?.mountOf(path)) {
+  if (vfs === null) {
     errno = WASI.ENOENT
   } else {
     try {
-      st = await vfs.stat(path)
+      st = await vfs.viewStat(path)
+      if (st === null) errno = WASI.ENOENT
     } catch (err) {
-      errno = wasiErrno(err)
+      errno = errnoFor(err)
     }
   }
   const tuple = ctx.newArray()

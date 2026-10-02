@@ -118,6 +118,20 @@ describe('Workspace Mount spec (per-mount fuse, without a real mount)', () => {
     expect(ws.fuseMountpoints).toEqual({})
   })
 
+  it('unmounts on delete too, even when the drop fails', async () => {
+    // Delete reaches the core teardown without passing close(), so it
+    // takes the kernel mounts down itself: a mount left up serves a
+    // workspace already closed.
+    const ws = new Workspace({ '/a': new Mount(new RAMVFS(), { backend: MountBackend.FUSE }) })
+    await ws.fuseReady()
+    expect(ws.fuseMountpoints).toEqual({ '/a': '/tmp/fake-_a' })
+    vi.spyOn(ws.stateStore, 'drop').mockRejectedValue(new Error('store on fire'))
+
+    await expect(ws.delete()).rejects.toThrow('store on fire')
+
+    expect(ws.fuseMountpoints).toEqual({})
+  })
+
   it('addFuseMount registers each mount; rejects a colliding pinned path before mounting', async () => {
     const ws = new Workspace({ '/a': new RAMVFS(), '/b': new RAMVFS() })
     await ws.addFuseMount('/a', '/tmp/shared')

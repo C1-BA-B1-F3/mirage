@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const BOX_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Mirrors Box folder hierarchy. Every item is served as its raw bytes:
     <name>.boxnote      Box Note    (raw ProseMirror-style JSON; pipe to jq)
     <name>.boxcanvas    Box Canvas  (raw canvas JSON; pipe to jq)

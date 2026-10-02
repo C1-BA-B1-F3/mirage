@@ -15,7 +15,7 @@
 import { lsGeneric } from '../../generic/ls.ts'
 import { type Builder, overlaidStat, resolveGlobOf } from '../adapter.ts'
 
-export const LS_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'ls',
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined

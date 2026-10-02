@@ -115,7 +115,9 @@ run_case() {
   local cli="$1" host="$2" suite="$3" case_json="$4" work="$5"
   local case_id wsid world_json session_id
   case_id="$suite/$(jq -r '.id' <<<"$case_json")"
-  wsid="rt-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
+  # The suite is part of the id: suites share case ids by design (each
+  # runtime's open, view and structure cases).
+  wsid="rt-$(tr '_' '-' <<<"$suite")-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
   world_json=$(jq -c '.world // {}' <<<"$case_json")
   write_world_yaml "$world_json" "$work"
 

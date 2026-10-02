@@ -83,20 +83,23 @@ describe('hf unlink', () => {
     expect(fake.files.has('a.txt')).toBe(false)
   })
 
-  it('leaves a directory subtree untouched', async () => {
-    // The op is a blind single-key delete; the "Is a directory" refusal
-    // lives in the generic rm builder, which stats before unlinking. A
-    // directory owns no key of its own, so this must touch nothing.
+  it('refuses a directory and leaves its subtree untouched', async () => {
+    // unlink(2) refuses a directory with EISDIR, and the op answers it
+    // itself: a guest, FUSE and ws.vfs reach it without the rm builder's
+    // stat. A directory owns no key of its own, so nothing is touched.
     const { accessor, fake } = await setup({ 'dir/a.txt': 'x' })
-    await expect(unlink(accessor, PathSpec.fromStrPath('/dir'))).resolves.toBeUndefined()
+    await expect(unlink(accessor, PathSpec.fromStrPath('/dir'))).rejects.toMatchObject({
+      code: 'EISDIR',
+    })
     expect(fake.files.has('dir/a.txt')).toBe(true)
   })
 
-  it('is silent on a missing key', async () => {
-    // Per the driver contract; the "No such file or directory" refusal
-    // is the rm builder's, from the stat it takes before unlinking.
+  it('refuses a missing key', async () => {
+    // unlink(2) answers ENOENT, which the store's own delete never says.
     const { accessor } = await setup()
-    await expect(unlink(accessor, PathSpec.fromStrPath('/nope'))).resolves.toBeUndefined()
+    await expect(unlink(accessor, PathSpec.fromStrPath('/nope'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 })
 

@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GDOCS_OPS } from '../../ops/gdocs/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GDOCS_PROMPT, GDOCS_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGDocsConfig, type GDocsConfig, type GDocsConfigRedacted } from './config.ts'
@@ -38,8 +38,8 @@ export class GDocsVFS extends BaseVFS {
   override readonly indexTtl: number = 86_400
   // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
   override readonly readRevalidatable: boolean = true
-  override readonly prompt: string = GDOCS_PROMPT
-  override readonly writePrompt: string = GDOCS_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: GDocsConfig
   override readonly accessor: GDocsAccessor
 

@@ -22,7 +22,7 @@ import { HttpLangfuseTransport } from '../../core/langfuse/client.ts'
 import { LANGFUSE_OPS } from '../../ops/langfuse/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { LANGFUSE_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactLangfuseConfig, type LangfuseConfig, type LangfuseConfigRedacted } from './config.ts'
@@ -35,7 +35,7 @@ export interface LangfuseVFSState {
 export class LangfuseVFS extends BaseVFS {
   override readonly name: string = VFSName.LANGFUSE
   override readonly cachesReads: boolean = true
-  override readonly prompt: string = LANGFUSE_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: LangfuseConfig
   override readonly accessor: LangfuseAccessor
 

@@ -28,6 +28,6 @@
     "--- os.listdir() sub ---",
     "  nested.txt",
     "",
-    "Stats: 5 ops, 12 bytes transferred"
+    "Stats: 6 ops, 12 bytes transferred"
   ]
 }

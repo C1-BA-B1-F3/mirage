@@ -15,7 +15,7 @@
 import { tsortGeneric } from '../../generic/tsort.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const TSORT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tsort',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -14,9 +14,10 @@
 
 import { ConcurrencyLimiter } from '../concurrency/limiter.ts'
 import { classify } from '../errors/index.ts'
-import { eexist, eisdir, enoent, isMissingOp, isMissingPath } from '../utils/errors.ts'
+import { isMissingOp, isMissingPath } from '../utils/errors.ts'
 import {
   contentSize,
+  DIR_MODE,
   deviceRdev,
   isCharDevice,
   isDir,
@@ -28,7 +29,6 @@ import { ABSENT_PATH, LISTING_ENTRY_CONCURRENCY } from './constants.ts'
 import { CrossMountError } from './errors.ts'
 import { normDir, rstripSlash } from '../utils/slash.ts'
 import { planFlush } from './handles/index.ts'
-import type { OpenMode } from './handles/mode.ts'
 import { PrefixResolver, type MountResolver } from './resolver.ts'
 import type { BridgeDispatchFn, RuntimeContext } from './types.ts'
 import type { FileStat, SetAttrFields } from '../types.ts'
@@ -202,12 +202,12 @@ export class RuntimeVFS {
   /**
    * Whether the workspace answers for `path`.
    *
-   * A guest routes on this: a path the workspace does not serve is the
-   * engine's own (monty's scratch tree). A mount serves what is under
-   * it, and a namespace link serves what is reached through it wherever
-   * it lives, because the dispatcher follows a link outside every mount
-   * the same way. With no mounts wired there is no scoping, and every
-   * path routes here.
+   * A guest's content calls gate on this: monty and quickjs refuse a
+   * path the workspace does not serve, so they read and write only the
+   * view. A mount serves what is under it, and a namespace link serves
+   * what is reached through it wherever it lives, because the
+   * dispatcher follows a link outside every mount the same way. With no
+   * mounts wired there is no scoping, and every path routes here.
    */
   serves(path: string): boolean {
     if (this.prefixes().length === 0 || this.mountOf(path) !== null) return true
@@ -273,6 +273,29 @@ export class RuntimeVFS {
   }
 
   /**
+   * `path`'s row as a runtime may see it, or null.
+   *
+   * Structure is open and content is not. A path in the view (`serves`)
+   * answers with its mount's own row; any path the workspace lists
+   * answers as a directory, so the root above nested mounts and the
+   * directories above a link are directories here as they are in a
+   * shell, while a withheld surface's files (history, the program view)
+   * stay unseen. A file's own row decides that, not its listing: the
+   * history mount lists its one file as empty so a traversal never
+   * descends into it. 0 is the door's spelling of an unknown mtime.
+   */
+  async viewStat(path: string): Promise<VFSStat | null> {
+    const row = await this.statOrNull(path)
+    if (this.serves(path)) {
+      if (row !== null) return row
+    } else if (row !== null && !row.isDir) {
+      return null
+    }
+    if ((await this.listingOrNull(path)) === null) return null
+    return { size: 0, isDir: true, mode: DIR_MODE, mtimeMs: 0 }
+  }
+
+  /**
    * The directory's unclassified rows, or null when it is not one: the
    * question a guest asks of a path with no row of its own, a directory
    * a mount only implies (the root above a nested mount), so nothing
@@ -286,45 +309,6 @@ export class RuntimeVFS {
       if (isAbsent(err)) return null
       throw err
     }
-  }
-
-  /**
-   * Apply an open's effect on the mount, before any byte moves.
-   *
-   * One rule for every guest open, however it is spelled (a mode string,
-   * preview1 oflags): a directory refuses, an exclusive create refuses
-   * what exists, a missing path is created when the mode creates and
-   * refused when it does not, and a truncating mode empties what exists.
-   * The effect lands at open because CPython's `open('w')` leaves an
-   * empty file behind even when nothing is written; a bare open and
-   * close never flushes.
-   *
-   * Returns the file's row when its content survives the open (a read
-   * or an append), null when it starts empty (created or truncated).
-   * Throws EEXIST for an exclusive create that found the path, a
-   * dangling link included, EISDIR for a directory, a mount's implied
-   * one included, and ENOENT for a missing path the mode does not
-   * create.
-   */
-  async open(path: string, mode: OpenMode): Promise<VFSStat | null> {
-    // An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so a
-    // dangling one is a name that is there. A path with no row may still
-    // be a directory the mount lists, and a create there would put a
-    // file at a directory's name.
-    const row = await this.statOrNull(path, mode.exclusive)
-    const listed = row !== null ? row.isDir : (await this.listingOrNull(path)) !== null
-    if (mode.exclusive && (row !== null || listed)) throw eexist(path)
-    if (listed) throw eisdir(path)
-    if (row === null) {
-      if (!mode.create) throw enoent(path)
-      await this.create(path)
-      return null
-    }
-    if (mode.truncate) {
-      await this.truncate(path)
-      return null
-    }
-    return row
   }
 
   /**

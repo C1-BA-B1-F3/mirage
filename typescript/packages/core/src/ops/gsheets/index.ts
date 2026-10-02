@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { GSHEETS_IO } from '../../commands/builtin/gsheets/io.ts'
+import { IO } from '../../commands/builtin/gsheets/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
@@ -21,7 +21,7 @@ import { readOp } from './read.ts'
 // The only read is the rendered filetype op, so the factory's plain
 // read is suppressed via overrides.
 export const GSHEETS_OPS: readonly RegisteredOp[] = [
-  ...makeGenericOps(VFSName.GSHEETS, GSHEETS_IO, {
+  ...makeGenericOps(VFSName.GSHEETS, IO, {
     overrides: new Set(['read']),
   }),
   readOp,

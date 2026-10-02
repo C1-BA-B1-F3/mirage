@@ -1,2 +1,2 @@
-export const MEM0_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   <memory-id>.json`

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GCAL_PROMPT = `Google Calendar is mounted as one directory per calendar, one
+export const PROMPT = `Google Calendar is mounted as one directory per calendar, one
 directory per local day, and one JSON file per event.
 
     /<mount>/primary/calendar.json
@@ -53,6 +53,6 @@ Acting on it:
   ambiguous local time is not interpreted for you.
 `
 
-export const GCAL_WRITE_PROMPT = `Deleting an event file removes it from the calendar for
+export const WRITE_PROMPT = `Deleting an event file removes it from the calendar for
 every attendee. Creating and editing events goes through \`gws calendar\`.
 `

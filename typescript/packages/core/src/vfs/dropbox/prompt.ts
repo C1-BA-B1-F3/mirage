@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const DROPBOX_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Mirrors Dropbox folder hierarchy. Each entry is a real file or folder
   (no special document types — Dropbox stores opaque files).
     <name>/             folder

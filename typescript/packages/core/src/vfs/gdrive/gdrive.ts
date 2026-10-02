@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GDRIVE_OPS } from '../../ops/gdrive/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GDRIVE_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGDriveConfig, type GDriveConfig, type GDriveConfigRedacted } from './config.ts'
@@ -40,7 +40,7 @@ export class GDriveVFS extends BaseVFS {
   override readonly supportsSnapshot: boolean = true
   override readonly readRevalidatable: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = GDRIVE_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: GDriveConfig
   override readonly accessor: GDriveAccessor
 

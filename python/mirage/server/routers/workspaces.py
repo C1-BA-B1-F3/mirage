@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -37,8 +38,21 @@ from mirage.server.schemas import (
 from mirage.server.summary import make_brief, make_detail
 from mirage.utils.ids import new_workspace_id
 from mirage.workspace.store import DiskWorkspaceStateStore
+from mirage.workspace.store.disk import DOT_IDS
 
 router = APIRouter(prefix="/v1/workspaces")
+
+
+def _refuse_dot_id(workspace_id: str | None) -> None:
+    """Refuse an id that would name the state root, not a workspace.
+
+    Args:
+        workspace_id (str | None): the id the request names, if any.
+    """
+    if workspace_id is not None and workspace_id in DOT_IDS:
+        raise HTTPException(
+            status_code=400, detail=f"invalid workspace id: {workspace_id!r}"
+        )
 
 
 @router.post("", response_model=WorkspaceDetail, status_code=201)
@@ -66,7 +80,12 @@ async def create_workspace(
     # The registry id and the state-store scope must be the same identity,
     # so resolve it before construction: explicit REST id, then the
     # config's workspace_id, then a fresh mint.
-    wid = req.id or kwargs.get("workspace_id") or new_workspace_id()
+    wid = (
+        req.id
+        if req.id is not None
+        else kwargs.get("workspace_id") or new_workspace_id()
+    )
+    _refuse_dot_id(wid)
     kwargs["workspace_id"] = wid
     # Daemon default is disk (a created workspace survives restart with
     # zero infrastructure, like git init); the library default stays ram.
@@ -123,7 +142,16 @@ async def delete_workspace(
     registry = request.app.state.registry
     if workspace_id not in registry:
         raise HTTPException(status_code=404, detail="workspace not found")
-    await registry.remove(workspace_id)
+    backend = request.app.state.version_backend
+    try:
+        await registry.remove(
+            workspace_id,
+            cleanup=lambda: asyncio.to_thread(backend.drop_repo, workspace_id),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"workspace delete failed: {exc}"
+        ) from exc
     return DeleteWorkspaceResponse(id=workspace_id, closed_at=time.time())
 
 
@@ -136,6 +164,7 @@ async def clone_workspace(
     registry = request.app.state.registry
     if workspace_id not in registry:
         raise HTTPException(status_code=404, detail="workspace not found")
+    _refuse_dot_id(req.id)
     if req.id is not None and req.id in registry:
         raise HTTPException(
             status_code=409, detail=f"workspace id already exists: {req.id!r}"
@@ -193,6 +222,7 @@ async def load_workspace(
         )
     except PathOutsideRootError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _refuse_dot_id(req.id)
     if req.id is not None and req.id in registry:
         raise HTTPException(
             status_code=409, detail=f"workspace id already exists: {req.id!r}"

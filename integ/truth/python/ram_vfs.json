@@ -76,6 +76,6 @@
     "  host path still reads: host bytes",
     "  host readlink(bytes): b'from_host.txt'",
     "",
-    "Stats: 36 ops, 38 bytes transferred"
+    "Stats: 38 ops, 38 bytes transferred"
   ]
 }

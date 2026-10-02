@@ -17,8 +17,11 @@ from dataclasses import replace
 
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.changes import head_entries
-from mirage.commands.cli.builtin.git.constants import HEAD
+from mirage.commands.cli.builtin.git.changes import (
+    head_entries,
+    staged_entries,
+    work_entries,
+)
 from mirage.commands.cli.builtin.git.diff_output import (
     DiffFlags,
     compare,
@@ -26,7 +29,6 @@ from mirage.commands.cli.builtin.git.diff_output import (
     parse_diff_flags,
     renames_enabled,
     render_changes,
-    tree_output,
 )
 from mirage.commands.cli.builtin.git.errors import (
     GitError,
@@ -47,11 +49,11 @@ from mirage.commands.cli.builtin.git.revparse import (
 )
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.tree import tree_entries
-from mirage.commands.cli.builtin.git.types import IndexState
 from mirage.commands.cli.builtin.git.util import (
     check_operands,
     escaped,
     fatal,
+    links_of,
     split_marked,
     start_point,
 )
@@ -72,12 +74,16 @@ from mirage.io.types import ByteSource, IOResult
 # `log --oneline`, `show`'s header and `branch` ARE byte-identical.
 
 
+Tree = dict[bytes, tuple[int, bytes]]
+
+
 def _sides(
     repo: BaseRepo, texts: tuple[str, ...]
-) -> tuple[bytes, bytes, bytes]:
-    """Resolve the two trees a diff compares, synchronously.
+) -> tuple[Tree | None, Tree | None, bytes]:
+    """Resolve the two sides a diff compares, synchronously.
 
-    One revision is compared with HEAD and two with each other.
+    No revision compares the index with the working tree, one compares
+    that revision with it, and two compare them with each other.
     ``A..B`` is the two-revision form written as one operand, and
     ``A...B`` compares B with the merge base of the two, which is what
     a branch changed since it forked; with several bases git warns and
@@ -88,17 +94,21 @@ def _sides(
 
     Args:
         repo (BaseRepo): repository to read.
-        texts (tuple[str, ...]): the revision operands, at least one.
+        texts (tuple[str, ...]): the revision operands.
 
     Returns:
-        tuple[bytes, bytes, bytes]: the old tree, the new tree and any
-            warning.
+        tuple: the old side's entries, None for the index; the new
+            side's, None for the working tree; and any warning.
     """
     warning = b""
     ends = range_commits(repo, texts[0]) if len(texts) == 1 else None
     if ends is None:
+        if not texts:
+            return None, None, warning
         old = resolve_commit(repo, texts[0])
-        new = resolve_commit(repo, texts[1] if len(texts) >= 2 else HEAD)
+        if len(texts) == 1:
+            return tree_entries(repo.object_store, old.tree), None, warning
+        new = resolve_commit(repo, texts[1])
     else:
         old, new, symmetric = ends
         if symmetric:
@@ -111,12 +121,14 @@ def _sides(
                     f"warning: {texts[0]}: multiple merge bases, "
                     f"using {old.id.decode()}\n"
                 ).encode()
-    return old.tree, new.tree, warning
+    return (
+        tree_entries(repo.object_store, old.tree),
+        tree_entries(repo.object_store, new.tree),
+        warning,
+    )
 
 
-def _base(
-    repo: BaseRepo, texts: tuple[str, ...]
-) -> dict[bytes, tuple[int, bytes]]:
+def _base(repo: BaseRepo, texts: tuple[str, ...]) -> Tree:
     """The tree ``--cached`` compares the index with, synchronously.
 
     The named revision, HEAD by default, or the empty tree on an unborn
@@ -135,23 +147,17 @@ def _base(
     return head_entries(repo) or {}
 
 
-def _cached(
-    repo: BaseRepo,
-    before: dict[bytes, tuple[int, bytes]],
-    state: IndexState,
-    flags: DiffFlags,
+def _output(
+    repo: BaseRepo, before: Tree, after: Tree, flags: DiffFlags
 ) -> bytes:
-    """Compare a commit tree with staged entries.
+    """Render what changed from one side's entries to the other's.
 
     Args:
         repo (BaseRepo): repository to read.
-        before (dict[bytes, tuple[int, bytes]]): the base tree's entries.
-        state (IndexState): staged entries.
+        before (Tree): the old side, path to (mode, id).
+        after (Tree): the new side.
         flags (DiffFlags): output options.
     """
-    after: dict[bytes, tuple[int, bytes]] = {
-        path: (entry.mode, entry.sha) for path, entry in state.entries.items()
-    }
     return render_changes(
         repo,
         compare(
@@ -165,9 +171,10 @@ def _cached(
 
 
 async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
-    """Diff commits or compare staged content with a commit.
+    """Diff the working tree, staged content or commits.
 
-    One revision diffs it against HEAD's tree, two diff against each
+    No revision compares the index with the working tree, and one
+    compares that revision with it, as git does; two diff against each
     other. With --cached or --staged, compare the index with the named
     revision, HEAD by default, or the empty tree on an unborn branch.
     Operands after ``--`` are pathspecs, read once the revisions have
@@ -181,16 +188,13 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             ``inv.doors``.
     """
     doors = inv.doors or CLIDoors()
-    dispatch = doors.dispatch
+    dispatch, stat_path = doors.dispatch, doors.stat_path
     texts = inv.texts
-    flags = inv.flags
-    fl = FlagView(flags)
+    fl = FlagView(inv.flags)
     cached = fl.as_bool("cached") or fl.as_bool("staged")
     revisions, paths = split_marked(tuple(texts), inv.argv)
-    if not revisions and not cached and not paths:
-        return None, IOResult()
     try:
-        if dispatch is None:
+        if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
         check_operands(texts, InvalidOptionError, escaped(inv.argv))
         repo, location = await opened(fl, doors)
@@ -201,30 +205,32 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
                 dispatch, location, b"core", b"quotepath", True
             ),
         )
-        if not revisions and not cached:
-            pathspec_patterns(location, start_point(fl), paths)
-            return None, IOResult()
+        warning = b""
         if cached:
             state = await read_index(dispatch, location.gitdir)
             refuse_unresolved(state)
             before = await asyncio.to_thread(_base, repo, revisions)
-            parsed = replace(
-                parsed,
-                pathspecs=pathspec_patterns(location, start_point(fl), paths),
-            )
-            body = await asyncio.to_thread(
-                _cached, repo, before, state, parsed
-            )
-            warning = b""
+            after = staged_entries(state)
         else:
             old, new, warning = await asyncio.to_thread(
                 _sides, repo, revisions
             )
-            parsed = replace(
-                parsed,
-                pathspecs=pathspec_patterns(location, start_point(fl), paths),
-            )
-            body = await asyncio.to_thread(tree_output, repo, old, new, parsed)
+            if new is None:
+                state = await read_index(dispatch, location.gitdir)
+                after = await work_entries(
+                    dispatch, stat_path, repo, location, state, links_of(doors)
+                )
+                if old is None:
+                    for path in state.conflicts:
+                        after.pop(path, None)
+                before = staged_entries(state) if old is None else old
+            else:
+                before, after = old or {}, new
+        parsed = replace(
+            parsed,
+            pathspecs=pathspec_patterns(location, start_point(fl), paths),
+        )
+        body = await asyncio.to_thread(_output, repo, before, after, parsed)
     except GitError as exc:
         return fatal(exc)
     result = IOResult(stderr=warning) if warning else IOResult()

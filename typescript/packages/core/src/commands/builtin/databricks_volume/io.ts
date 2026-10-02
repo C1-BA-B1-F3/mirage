@@ -30,23 +30,22 @@ import { unlink as dbxUnlink } from '../../../core/databricks_volume/unlink.ts'
 import { writeBytes as dbxWrite } from '../../../core/databricks_volume/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const DATABRICKS_VOLUME_IO: CommandIO<DatabricksVolumeAccessor> =
-  new VFSAdapter<DatabricksVolumeAccessor>({
-    read: { readdir: dbxReaddir, readBytes: dbxRead, stat: dbxStat },
-    native: { readRange: rangeOf(dbxRead), readStream: dbxStream, exists: dbxExists },
-    writes: {
-      append: appendFromRead(dbxRead, dbxWrite),
-      write: dbxWrite,
-      mkdir: (accessor, path, parents) => dbxMkdir(accessor, path, undefined, parents === true),
-      unlink: dbxUnlink,
-      rmdir: dbxRmdir,
-      rmR: async (accessor, path) => {
-        await dbxRmR(accessor, path)
-      },
-      rename: dbxRename,
-      copy: dbxCopy,
-      create: dbxCreate,
+export const IO: CommandIO<DatabricksVolumeAccessor> = new VFSAdapter<DatabricksVolumeAccessor>({
+  read: { readdir: dbxReaddir, readBytes: dbxRead, stat: dbxStat },
+  native: { readRange: rangeOf(dbxRead), readStream: dbxStream, exists: dbxExists },
+  writes: {
+    append: appendFromRead(dbxRead, dbxWrite),
+    write: dbxWrite,
+    mkdir: (accessor, path, parents) => dbxMkdir(accessor, path, undefined, parents === true),
+    unlink: dbxUnlink,
+    rmdir: dbxRmdir,
+    rmR: async (accessor, path) => {
+      await dbxRmR(accessor, path)
     },
-    isMounted: () => true,
-    local: false,
-  }).toCommandIO()
+    rename: dbxRename,
+    copy: dbxCopy,
+    create: dbxCreate,
+  },
+  isMounted: () => true,
+  local: false,
+}).toCommandIO()

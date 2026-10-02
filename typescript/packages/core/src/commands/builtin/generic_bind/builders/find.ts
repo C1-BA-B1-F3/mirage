@@ -20,7 +20,7 @@ import type { Accessor } from '../../../../accessor/base.ts'
 import type { CommandFnResult, CommandOpts } from '../../../config.ts'
 import { type Builder, type CommandIO, overlaidStat, resolveGlobOf } from '../adapter.ts'
 
-export const FIND_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'find',
   fn: async (ops, accessor, paths, texts, opts) => {
     const idx = opts.index ?? undefined

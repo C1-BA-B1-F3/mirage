@@ -15,7 +15,7 @@
 import { xxdGeneric } from '../../generic/xxd.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const XXD_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'xxd',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

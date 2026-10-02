@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RAMAccessor } from '../accessor/ram.ts'
-import { RAM_IO } from '../commands/builtin/ram/io.ts'
+import { IO } from '../commands/builtin/ram/io.ts'
 import { writeBytes } from '../core/ram/write.ts'
 import { MountMode, PathSpec } from '../types.ts'
 import { eacces } from '../utils/errors.ts'
@@ -13,9 +13,9 @@ import type { ReadOps } from './types.ts'
 
 const ENC = new TextEncoder()
 const READ: ReadOps<RAMAccessor> = {
-  readdir: RAM_IO.readdir,
-  readBytes: RAM_IO.readBytes,
-  stat: RAM_IO.stat,
+  readdir: IO.readdir,
+  readBytes: IO.readBytes,
+  stat: IO.stat,
 }
 const PATH = new PathSpec({
   virtual: '/nested/data/a.txt',

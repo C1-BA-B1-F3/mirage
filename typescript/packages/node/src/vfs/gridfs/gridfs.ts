@@ -25,7 +25,7 @@ import { GRIDFS_COMMANDS } from '../../commands/builtin/gridfs/index.ts'
 
 import { GRIDFS_OPS } from '../../ops/gridfs/index.ts'
 import { redactConfig, type GridFSConfig, type GridFSConfigRedacted } from './config.ts'
-import { GRIDFS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { buildDeltaHook } from '../../core/gridfs/watch.ts'
 
@@ -43,7 +43,7 @@ export class GridFSVFS extends BaseVFS {
   // stat and read both stamp str(file_id), so the gate compares like
   // with like.
   override readonly readRevalidatable: boolean = true
-  override readonly prompt: string = GRIDFS_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: GridFSConfig
   override readonly accessor: GridFSAccessor
 

@@ -16,9 +16,9 @@ import type { DropboxAccessor } from '../../../accessor/dropbox.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { DROPBOX_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const DROPBOX_COMMANDS: readonly RegisteredCommand[] = makeGenericCommands<DropboxAccessor>(
   VFSName.DROPBOX,
-  DROPBOX_IO,
+  IO,
 )

@@ -1,4 +1,4 @@
-export const WANDB_PROMPT = `Read-only W&B experiments: /<entity>/<project>/<run-id>/ contains
+export const PROMPT = `Read-only W&B experiments: /<entity>/<project>/<run-id>/ contains
 run.json (identity, creator, sweep/group/job, tags, timestamps, notes, system metrics,
 history keys/count and file count), config.json, summary.json, history.jsonl and files/.
 Run IDs are stable; display names may repeat. history.jsonl scans unsampled history

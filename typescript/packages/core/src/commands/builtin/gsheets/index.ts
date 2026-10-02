@@ -16,14 +16,14 @@ import type { GSheetsAccessor } from '../../../accessor/gsheets.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { GSHEETS_IO } from './io.ts'
+import { IO } from './io.ts'
 import { GSHEETS_RM } from './rm.ts'
 
 // Sheets verbs and API passthroughs live in the gws CLI
 // (commands/cli/builtin/gws), installed by name; the mount only serves
 // the filesystem surface.
 export const GSHEETS_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<GSheetsAccessor>(VFSName.GSHEETS, GSHEETS_IO, {
+  ...makeGenericCommands<GSheetsAccessor>(VFSName.GSHEETS, IO, {
     overrides: new Set(['rm']),
   }),
   ...GSHEETS_RM,

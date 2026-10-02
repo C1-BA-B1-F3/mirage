@@ -15,7 +15,7 @@
 import { fileGeneric } from '../../generic/file.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const FILE_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'file',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

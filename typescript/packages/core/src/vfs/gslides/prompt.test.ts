@@ -13,11 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { GSLIDES_PROMPT, GSLIDES_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
-describe('GSLIDES_PROMPT', () => {
+describe('PROMPT', () => {
   it('renders prefix and includes buckets, structure, jq paths', () => {
-    const rendered = GSLIDES_PROMPT.replace(/\{prefix\}/g, '/gslides')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/gslides')
     expect(rendered).toContain('owned/')
     expect(rendered).toContain('shared/')
     expect(rendered).toContain('shared with you by others')
@@ -27,16 +27,16 @@ describe('GSLIDES_PROMPT', () => {
   })
 })
 
-describe('GSLIDES_WRITE_PROMPT', () => {
+describe('WRITE_PROMPT', () => {
   it('matches actual command flag signatures', () => {
-    expect(GSLIDES_WRITE_PROMPT).toContain('gws slides presentations create')
-    expect(GSLIDES_WRITE_PROMPT).toContain('--json')
-    expect(GSLIDES_WRITE_PROMPT).toContain('{"title":')
-    expect(GSLIDES_WRITE_PROMPT).toContain('gws slides --help')
+    expect(WRITE_PROMPT).toContain('gws slides presentations create')
+    expect(WRITE_PROMPT).toContain('--json')
+    expect(WRITE_PROMPT).toContain('{"title":')
+    expect(WRITE_PROMPT).toContain('gws slides --help')
   })
 
   it('documents rm', () => {
-    expect(GSLIDES_WRITE_PROMPT).toContain('rm ')
-    expect(GSLIDES_WRITE_PROMPT).toContain('.gslide.json')
+    expect(WRITE_PROMPT).toContain('rm ')
+    expect(WRITE_PROMPT).toContain('.gslide.json')
   })
 })

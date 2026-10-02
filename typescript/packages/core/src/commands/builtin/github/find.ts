@@ -22,11 +22,11 @@ import { findGeneric } from '../generic/find.ts'
 import { withPathGuards, withPolicyGuard } from '../generic_bind/adapter.ts'
 import { findWalk } from '../generic_bind/builders/find.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { GITHUB_IO } from './io.ts'
+import { IO } from './io.ts'
 import { ensureLiveTree } from '../../../core/github/tree.ts'
 
-const resolveGlob = resolveGlobOf(GITHUB_IO)
-const WALK_IO = withPolicyGuard(withPathGuards(GITHUB_IO))
+const resolveGlob = resolveGlobOf(IO)
+const WALK_IO = withPolicyGuard(withPathGuards(IO))
 
 async function findCommand(
   accessor: GitHubAccessor,

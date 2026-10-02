@@ -37,13 +37,22 @@ async def test_unlink_deletes_file(make_acc):
 
 
 @pytest.mark.asyncio
-async def test_unlink_of_directory_leaves_subtree(make_acc):
-    # The op is a blind single-key delete; the "Is a directory" refusal
-    # lives in the generic rm builder, which stats before unlinking. A
-    # directory owns no key of its own, so this must touch nothing.
+async def test_unlink_refuses_a_directory_and_leaves_its_subtree(make_acc):
+    # unlink(2) refuses a directory with EISDIR, and the op answers it
+    # itself: a guest, FUSE and ws.vfs reach it without the rm builder's
+    # stat. A directory owns no key of its own, so nothing is touched.
     acc = make_acc({"some-dir/child.txt": b"x"})
-    await unlink(acc, PathSpec.from_str_path("/some-dir"))
+    with pytest.raises(IsADirectoryError):
+        await unlink(acc, PathSpec.from_str_path("/some-dir"))
     assert acc._fake.files == {"some-dir/child.txt": b"x"}
+
+
+@pytest.mark.asyncio
+async def test_unlink_refuses_a_missing_key(make_acc):
+    # unlink(2) answers ENOENT, which the store's own delete never says.
+    acc = make_acc({})
+    with pytest.raises(FileNotFoundError):
+        await unlink(acc, PathSpec.from_str_path("/nope"))
 
 
 @pytest.mark.asyncio

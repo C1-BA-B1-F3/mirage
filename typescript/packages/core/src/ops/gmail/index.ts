@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { GMAIL_IO } from '../../commands/builtin/gmail/io.ts'
+import { IO } from '../../commands/builtin/gmail/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const GMAIL_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.GMAIL, GMAIL_IO)
+export const GMAIL_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.GMAIL, IO)

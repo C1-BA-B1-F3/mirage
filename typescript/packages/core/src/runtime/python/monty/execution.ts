@@ -22,10 +22,10 @@ import {
   type MontyModuleLike,
   type MontyPoolLike,
   type MontySessionLike,
-} from './binding.ts'
+} from './loader.ts'
 import { DEFAULT_PROG, EVAL_INTERRUPT_SECONDS, INCOMPLETE_MARKERS } from './constants.ts'
 import { displayError } from './errors.ts'
-import { MirageOSAccess } from './osaccess.ts'
+import { MontyFs } from './fs.ts'
 import type { RuntimeVFS } from '../../vfs.ts'
 
 const INTERRUPTED = Symbol('interrupted')
@@ -37,7 +37,7 @@ interface RunInterruption {
 }
 
 /**
- * Hard-stop one monty worker. The binding offers no cancel: feedRun
+ * Hard-stop one monty worker. The engine offers no cancel: feedRun
  * has no signal and session.close() waits for the in-flight turn
  * (probed live), so the only way to stop a busy guest is to kill its
  * worker process — which poisons the session (the pool discards and
@@ -186,7 +186,7 @@ export class MontyExecution {
         if (stream === 'stderr') err.push(text)
         else out.push(text)
       },
-      os: new MirageOSAccess(module, {}, vfs).handle,
+      os: new MontyFs(module, {}, vfs).handle,
     }
     const enc = new TextEncoder()
     // One-shot evals get the quickjs-style 10s bound (the policy layer
@@ -308,7 +308,7 @@ export class MontyExecution {
         if (stream === 'stderr') err.push(text)
         else out.push(text)
       },
-      os: new MirageOSAccess(module, args.env, vfs).handle,
+      os: new MontyFs(module, args.env, vfs).handle,
     }
     try {
       await session.feedRun(code, options)

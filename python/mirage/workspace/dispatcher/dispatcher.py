@@ -54,6 +54,7 @@ from mirage.types import (
 )
 from mirage.utils.errors import (
     MISS_ERRORS,
+    eisdir,
     eloop,
     enoent,
     no_mount,
@@ -67,6 +68,8 @@ from mirage.utils.remnants import remove_remnants, visible_below
 from mirage.workspace.dispatcher.constants import (
     DISPATCH_READ_OPS,
     DISPATCH_WRITE_OPS,
+    ENTRY_CREATE_OPS,
+    FILE_CREATE_OPS,
     HIDDEN_CREATE_OPS,
     LINK_ENTRY_OPS,
     NAMESPACE_TABLE_OPS,
@@ -342,9 +345,15 @@ class Dispatcher:
         # A `.` or `..` resolves against the directory it sits in, so
         # every name in front of one has to be a directory: `virtual`
         # simplified the dots away and reaches `f` through a missing
-        # `nope/..`, the typed spelling (`dotted`) does not.
+        # `nope/..`, the typed spelling (`dotted`) does not. A trailing
+        # slash is part of that spelling: `x/` must be a directory, so a
+        # create of one is EISDIR before anything is looked up.
+        if op in FILE_CREATE_OPS and (path.dotted or "").endswith("/"):
+            raise eisdir(path)
         follow = self._namespace.follow
-        refusal = await dot_refusal(self._walk_stat, path, follow)
+        refusal = await dot_refusal(
+            self._walk_stat, path, follow, op in ENTRY_CREATE_OPS
+        )
         if refusal is None and op == "rename" and isinstance(dst, PathSpec):
             refusal = await dot_refusal(self._walk_stat, dst, follow)
         if refusal is not None:
@@ -1301,6 +1310,9 @@ class Dispatcher:
         if self._namespace.is_link(path.virtual) or not mount.supports_op(
             "setattr", path.virtual
         ):
+            # No backend inode answers for the path here, so nothing
+            # would refuse a missing one: the overlay would stamp it.
+            await self._xattr_target(mount, path)
             return await self._overlay_setattr(path, kwargs)
         residual = await mount.execute_op("setattr", path.virtual, **kwargs)
         applied = [

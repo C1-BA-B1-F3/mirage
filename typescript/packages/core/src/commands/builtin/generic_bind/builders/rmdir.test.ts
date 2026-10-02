@@ -20,7 +20,7 @@ import { materialize } from '../../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../../types.ts'
 import { eacces, enoent } from '../../../../utils/errors.ts'
 import type { CommandIO } from '../adapter.ts'
-import { RMDIR_BUILDER } from './rmdir.ts'
+import { BUILDER } from './rmdir.ts'
 
 const DEC = new TextDecoder()
 const INDEX = new RAMIndexCacheStore()
@@ -56,7 +56,7 @@ function ops(removed?: string[]): CommandIO {
 }
 
 async function rmdir(io: CommandIO, paths: string[]): Promise<[number, string]> {
-  const result = await RMDIR_BUILDER.fn(
+  const result = await BUILDER.fn(
     io,
     {} as Accessor,
     paths.map((p) => PathSpec.fromStrPath(p)),

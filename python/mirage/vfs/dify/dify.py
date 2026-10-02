@@ -30,13 +30,4 @@ class DifyVFS(BaseVFS):
         return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
-        redacted = ["api_key"]
-        config = self.config.model_dump()
-        if config.get("api_key") is not None:
-            config["api_key"] = "<REDACTED>"
-        return {
-            "type": self.name,
-            "needs_override": True,
-            "redacted_fields": redacted,
-            "config": config,
-        }
+        return self.config_state(self.config, needs_override=True)

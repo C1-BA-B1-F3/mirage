@@ -30,7 +30,7 @@ async function* emailReadStream(
   yield await emailRead(accessor, path, index)
 }
 
-export const EMAIL_IO: CommandIO<EmailAccessor> = new VFSAdapter<EmailAccessor>({
+export const IO: CommandIO<EmailAccessor> = new VFSAdapter<EmailAccessor>({
   read: { readdir: emailReaddir, readBytes: emailRead, stat: emailStat },
   native: { readStream: emailReadStream },
   isMounted: () => true,

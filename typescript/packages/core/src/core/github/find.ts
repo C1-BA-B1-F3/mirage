@@ -39,6 +39,14 @@ export function find(
   path: PathSpec,
   options: FindOptions = {},
 ): Promise<string[]> {
+  // A git tree carries no timestamp, so every entry's mtime is unknown, which
+  // -mtime excludes: nothing here is ever in the window. Mirrors Python's find.
+  if (
+    (options.mtimeMin !== null && options.mtimeMin !== undefined) ||
+    (options.mtimeMax !== null && options.mtimeMax !== undefined)
+  ) {
+    return Promise.resolve([])
+  }
   const base = strip(path)
   const prefix = base === '' ? '' : `${base}/`
   const baseDepth = base === '' ? 0 : (base.match(/\//g) ?? []).length + 1

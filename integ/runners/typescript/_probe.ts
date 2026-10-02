@@ -7,9 +7,9 @@ import {
   Workspace as BrowserWorkspace,
 } from '../../../typescript/packages/browser/src/index.ts'
 import { MountMode } from '../../../typescript/packages/core/src/index.ts'
-import { OPFS_IO } from '../../../typescript/packages/browser/src/commands/builtin/opfs/io.ts'
+import { IO } from '../../../typescript/packages/browser/src/commands/builtin/opfs/io.ts'
 
-console.log('OPFS_IO.readRange defined?', OPFS_IO.readRange !== undefined)
+console.log('IO.readRange defined?', IO.readRange !== undefined)
 const restore = installFakeNavigator(() => makeMockRoot())
 const ws = new BrowserWorkspace({ '/data': new OPFSVFS() }, { mode: MountMode.WRITE })
 await ws.vfs.writeFile('/data/n.txt', '0123456789')

@@ -20,7 +20,7 @@ import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
 const ENC = new TextEncoder()
 
-export const TOUCH_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'touch',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

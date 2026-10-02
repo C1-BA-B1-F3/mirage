@@ -23,7 +23,7 @@ import type { CommandIO } from '../generic_bind/index.ts'
 
 // The history view is read-only (the recorder owns mutation), so only the
 // read ops are wired, and a stream is the whole rendered histfile.
-export const HISTORY_IO: CommandIO<HistoryAccessor> = new VFSAdapter<HistoryAccessor>({
+export const IO: CommandIO<HistoryAccessor> = new VFSAdapter<HistoryAccessor>({
   read: { readdir: historyReaddir, readBytes: historyRead, stat: historyStat },
   native: { find },
   isMounted: () => true,

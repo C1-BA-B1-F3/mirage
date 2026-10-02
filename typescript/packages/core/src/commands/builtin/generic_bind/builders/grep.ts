@@ -24,7 +24,7 @@ import { patternArg } from '../../grep_pattern.ts'
 import { grepNeedsEveryFile } from '../../grep_pushdown.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const GREP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'grep',
   read: true,
   aggregate: prefixAggregate,

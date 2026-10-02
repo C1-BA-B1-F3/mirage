@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const HF_MODELS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote Hugging Face Model. Maps model repo files (weights, configs, tokenizer) to virtual paths.
   IMPORTANT: This is a remote mount. Prefer config/tokenizer inspection over downloading full weights. Safetensors/bin files stream lazily via byte-range reads.
   Supports: ls, cat, head, tail, grep, rg, wc, find, tree, jq, stat.`

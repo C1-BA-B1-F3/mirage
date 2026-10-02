@@ -12,6 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const CHROMA_PROMPT = `Chroma is mounted as a read-only virtual filesystem backed by a ChromaDB collection.
+export const PROMPT = `Chroma is mounted as a read-only virtual filesystem backed by a ChromaDB collection.
 
 Use cat, head, tail, ls, find, tree, grep, and chroma-query to inspect indexed documents. Paths are document slugs from the collection path tree. Writes are not supported.`

@@ -16,10 +16,10 @@ import type { RAMAccessor } from '../../../accessor/ram.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { DEV_IO, DEV_STREAMING } from './io.ts'
+import { IO, DEV_STREAMING } from './io.ts'
 
 export const DEV_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<RAMAccessor>(VFSName.RAM, DEV_IO, {
+  ...makeGenericCommands<RAMAccessor>(VFSName.RAM, IO, {
     opsOverrides: { cat: DEV_STREAMING, head: DEV_STREAMING },
   }),
 ]

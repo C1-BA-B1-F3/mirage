@@ -1,10 +1,9 @@
 import { concat } from '../../../io/cachable_iterator.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import { FileType, PathSpec } from '../../../types.ts'
+import { PathSpec } from '../../../types.ts'
 import { gunzipStream } from '../../../utils/compress.ts'
 import {
   enoent,
-  enotdir,
   eloop,
   fsErrorLine,
   GzipDataError,
@@ -137,7 +136,6 @@ interface GzipOpenOptions {
   suffix?: string
   decompress?: boolean
   follow?: boolean
-  stat?: StatFn
   door?: LinkDoor | null
 }
 
@@ -171,13 +169,6 @@ export async function openGzipInput(
     }
     try {
       if (door !== null && name === path && door.vanished(name)) throw enoent(name.virtual)
-      if (
-        name.rawPath.endsWith('/') &&
-        options.stat !== undefined &&
-        (await options.stat(name)).type !== FileType.DIRECTORY
-      ) {
-        throw enotdir(name)
-      }
       // The router followed the operand itself; a retried name it never saw
       // is followed through the door.
       const reads = door !== null && link !== null && name !== path ? door.read(link) : source(name)
@@ -310,7 +301,6 @@ export async function decompressInputs(
         : await openGzipInput(operand, inPlace ? read : stream, report, {
             suffix,
             follow,
-            ...(options.stat !== undefined ? { stat: options.stat } : {}),
             door,
           })
       if (found === null && !onStdin) continue

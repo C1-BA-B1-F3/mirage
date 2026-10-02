@@ -17,7 +17,7 @@ import { resolveGlobOf } from '@struktoai/mirage-core/commands/builtin/generic_b
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { describe, expect, it } from 'vitest'
 import { HfBucketsAccessor } from '../../accessor/hf_buckets.ts'
-import { HF_BUCKETS_IO } from '../../commands/builtin/hf_buckets/io.ts'
+import { IO } from '../../commands/builtin/hf_buckets/io.ts'
 import { size, entries } from './du/index.ts'
 import { DRIVER } from './driver.ts'
 import { exists } from './exists.ts'
@@ -25,7 +25,7 @@ import { find } from './find.ts'
 import { fakeHfOperator, installFakeOperator } from './mock.ts'
 import { stat } from './stat.ts'
 
-const resolveGlob = resolveGlobOf(HF_BUCKETS_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 async function accessorWith(
   files: Record<string, string | Buffer>,

@@ -15,7 +15,7 @@
 import source from '../../../generated/pyodide.ts'
 import type { EvalStatus, EvalValue, RunArgs } from '../../types.ts'
 import type { PyodideInterface } from './loader.ts'
-import type { XattrOp } from './vfs/types.ts'
+import type { XattrOp } from './fs/types.ts'
 
 interface PyProxy {
   destroy(): void

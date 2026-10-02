@@ -26,18 +26,11 @@ import type {
   RuntimeContext,
 } from '../../types.ts'
 import { RuntimeVFS } from '../../vfs.ts'
-import { installMirageFs } from './vfs.ts'
+import { installQuickJsFs } from './fs.ts'
 import { cwdPreamble } from './execution.ts'
 import BOOTSTRAP from '../../../generated/quickjs.ts'
-import { QuickJsUnavailableError } from './errors.ts'
-import type {
-  QuickJSAsyncContext,
-  QuickJSAsyncRuntime,
-  QuickJSAsyncWASMModule,
-  QuickJSHandle,
-} from 'quickjs-emscripten'
-
-type NewAsyncModule = () => Promise<QuickJSAsyncWASMModule>
+import { loadQuickJsModule, type NewAsyncModule } from './loader.ts'
+import type { QuickJSAsyncContext, QuickJSAsyncRuntime, QuickJSHandle } from 'quickjs-emscripten'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -117,7 +110,7 @@ export class QuickJsRuntime extends JsRuntime implements Evaluator {
     try {
       this.installGlobals(ctx, args, out, err, exit)
       const vfs = context !== undefined ? RuntimeVFS.of(context) : null
-      installMirageFs(ctx, vfs)
+      installQuickJsFs(ctx, vfs)
 
       const boot = ctx.evalCode(BOOTSTRAP, 'mirage:bootstrap')
       if (boot.error) {
@@ -210,7 +203,7 @@ export class QuickJsRuntime extends JsRuntime implements Evaluator {
       // std.open/os.readdir, so a JS policy script can read mounted
       // content (the python evaluator gets this via run()'s RuntimeVFS).
       const vfs = context !== undefined ? RuntimeVFS.of(context) : null
-      installMirageFs(ctx, vfs)
+      installQuickJsFs(ctx, vfs)
       const boot = ctx.evalCode(BOOTSTRAP, 'mirage:bootstrap')
       if (boot.error) {
         boot.error.dispose()
@@ -362,18 +355,7 @@ export class QuickJsRuntime extends JsRuntime implements Evaluator {
   }
 
   private async loadModule(): Promise<NewAsyncModule> {
-    if (this.newAsyncModule !== null) return this.newAsyncModule
-    try {
-      const mod = (await import('quickjs-emscripten')) as unknown as {
-        newQuickJSAsyncWASMModule: NewAsyncModule
-      }
-      this.newAsyncModule = mod.newQuickJSAsyncWASMModule
-    } catch (err) {
-      throw new QuickJsUnavailableError(
-        "the quickjs runtime requires the 'quickjs-emscripten' package — install it to run `node`/`js`",
-        { cause: err },
-      )
-    }
+    this.newAsyncModule ??= await loadQuickJsModule()
     return this.newAsyncModule
   }
 }

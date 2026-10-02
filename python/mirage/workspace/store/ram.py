@@ -79,5 +79,11 @@ class RAMWorkspaceStateStore(WorkspaceStateStore):
         self._meta[workspace_id] = dict(fields)
         return True
 
+    async def _forget(self, workspace_id: str) -> None:
+        self._namespaces.pop(workspace_id, None)
+        self._observers.pop(workspace_id, None)
+        self._sessions.pop(workspace_id, None)
+        self._meta.pop(workspace_id, None)
+
     async def _close(self) -> None:
         pass

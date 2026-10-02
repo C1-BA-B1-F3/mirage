@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const SLACK_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   channels/
     <channel-name>__<channel-id>/
       <yyyy-mm-dd>/
@@ -45,7 +45,7 @@ export const SLACK_PROMPT = `{prefix}
   rg over files/ uses Slack's server-side file content search; works on
   PDFs, Word docs, code snippets that Slack has indexed.`
 
-export const SLACK_WRITE_PROMPT = `  Writes go through the slack CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the slack CLI if installed:
     slack send-message --channel <channel-id> --text "message"
     slack send-message --channel <channel-id> --thread-ts <ts> --text "reply"
   See slack --help for every verb (react, pins, member-info, search).`

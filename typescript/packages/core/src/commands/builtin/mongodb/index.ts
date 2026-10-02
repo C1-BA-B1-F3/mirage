@@ -18,7 +18,7 @@ import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { MONGODB_CAT } from './cat.ts'
 import { MONGODB_GREP } from './grep.ts'
-import { MONGODB_IO } from './io.ts'
+import { IO } from './io.ts'
 import { MONGODB_RG } from './rg.ts'
 import { MONGODB_TAIL } from './tail.ts'
 import { MONGODB_WC } from './wc.ts'
@@ -26,7 +26,7 @@ import { MONGODB_WC } from './wc.ts'
 const MONGODB_OVERRIDES = new Set(['cat', 'grep', 'rg', 'tail', 'wc'])
 
 export const MONGODB_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<MongoDBAccessor>(VFSName.MONGODB, MONGODB_IO, {
+  ...makeGenericCommands<MongoDBAccessor>(VFSName.MONGODB, IO, {
     overrides: MONGODB_OVERRIDES,
   }),
   ...MONGODB_CAT,

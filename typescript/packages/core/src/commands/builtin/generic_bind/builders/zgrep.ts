@@ -15,7 +15,7 @@
 import { zgrepGeneric } from '../../generic/zgrep.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const ZGREP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'zgrep',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

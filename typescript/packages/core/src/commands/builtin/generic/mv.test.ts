@@ -995,29 +995,6 @@ describe('mvGeneric trailing slash', () => {
     expect([...files.keys()].sort()).toEqual(['/a.txt', '/b.txt', '/reg'])
   })
 
-  it('reports cannot stat for a slashed file destination', async () => {
-    // `mv a.txt reg/` fails the destination's stat in GNU, and the stat
-    // itself decides here whether or not the backend's is slash-aware.
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/reg', new Uint8Array([2])],
-    ])
-    const { stat, rename } = makeBackend(files, new Set())
-    const [, io] = await mvGeneric([spec('/a.txt'), slashed('/reg')], stat, { rename }, mvFlags({}))
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("mv: cannot stat '/reg/': Not a directory\n")
-    expect([...files.keys()].sort()).toEqual(['/a.txt', '/reg'])
-  })
-
-  it('reports cannot stat for a slashed file source', async () => {
-    const files = new Map([['/reg', new Uint8Array([2])]])
-    const { stat, rename } = makeBackend(files, new Set())
-    const [, io] = await mvGeneric([slashed('/reg'), spec('/x')], stat, { rename }, mvFlags({}))
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("mv: cannot stat '/reg/': Not a directory\n")
-    expect([...files.keys()]).toEqual(['/reg'])
-  })
-
   it('reports cannot stat for a destination under a file', async () => {
     // A plain file in the destination's chain fails GNU's stat phase,
     // `cannot stat 'plain/c.txt': Not a directory`, before any rename.

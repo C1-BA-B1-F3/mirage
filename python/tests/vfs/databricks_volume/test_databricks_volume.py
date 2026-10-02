@@ -284,7 +284,7 @@ def test_vfs_state_redacts_token():
     assert state["config"]["token"] == "<REDACTED>"
     assert state["config"]["host"] is None
     assert state["config"]["catalog"] == "main"
-    assert "token" in state["redacted_fields"]
+    assert "redacted_fields" not in state
 
 
 def test_vfs_registers_ops():

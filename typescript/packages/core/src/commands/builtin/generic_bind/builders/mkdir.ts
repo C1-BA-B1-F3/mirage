@@ -154,7 +154,7 @@ export async function makeDirectory<A extends Accessor>(
   return null
 }
 
-export const MKDIR_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'mkdir',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

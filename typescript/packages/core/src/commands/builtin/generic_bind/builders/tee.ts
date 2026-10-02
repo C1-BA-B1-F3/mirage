@@ -15,7 +15,7 @@
 import { teeGeneric } from '../../generic/tee.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const TEE_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tee',
   write: true,
   fn: async (ops, accessor, paths, texts, opts) => {

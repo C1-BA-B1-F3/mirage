@@ -20,6 +20,7 @@ import type { OpKwargs } from './registry.ts'
 import type { FileStat, SetAttrFields } from '../types.ts'
 import { FileType, PathSpec } from '../types.ts'
 import { exdev, isEnotdir, isMissingPath } from '../utils/errors.ts'
+import { dottedSpelling } from '../utils/path.ts'
 import type { DispatchFn } from '../runtime/types.ts'
 import { getCurrentSession, pathAllowed } from '../context/session_context.ts'
 
@@ -211,7 +212,14 @@ export class Ops {
     const run = (): Promise<[unknown, IOResult]> => {
       seen = getCurrentSession()?.sessionId ?? null
       if (links !== null && pathAllowed(path)) followed = links.follow(path)
-      return this.dispatch(op, PathSpec.fromStrPath(followed), args, kwargs, report)
+      const spec = PathSpec.fromStrPath(followed)
+      const typed = new PathSpec({
+        virtual: spec.virtual,
+        directory: spec.directory,
+        vfsPath: spec.vfsPath,
+        dotted: dottedSpelling(path),
+      })
+      return this.dispatch(op, typed, args, kwargs, report)
     }
     let result: unknown
     let owner: MountOwner | null = null
@@ -345,8 +353,17 @@ export class Ops {
     return ((await this.through('readdir', path, [], {}, sessionId)) as string[] | null) ?? []
   }
 
-  async stat(path: string, sessionId?: string): Promise<FileStat> {
-    return (await this.through('stat', path, [], {}, sessionId)) as FileStat
+  /**
+   * One path's row. `nofollow` reports a trailing symlink itself rather
+   * than its target (lstat), so a dangling link is a name that is there.
+   */
+  async stat(
+    path: string,
+    sessionId?: string,
+    opts: { nofollow?: boolean } = {},
+  ): Promise<FileStat> {
+    const kwargs = opts.nofollow === true ? { nofollow: true } : {}
+    return (await this.through('stat', path, [], kwargs, sessionId)) as FileStat
   }
 
   // The three probes below answer "is this path there?", so only a path that

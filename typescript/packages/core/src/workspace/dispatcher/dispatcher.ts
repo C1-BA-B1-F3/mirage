@@ -72,6 +72,8 @@ import { compareCodePoints } from '../../utils/sort.ts'
 import {
   DISPATCH_READ_OPS,
   DISPATCH_WRITE_OPS,
+  ENTRY_CREATE_OPS,
+  FILE_CREATE_OPS,
   HIDDEN_CREATE_OPS,
   LINK_ENTRY_OPS,
   NAMESPACE_TABLE_OPS,
@@ -274,13 +276,16 @@ export class Dispatcher {
     // A `.` or `..` resolves against the directory it sits in, so every
     // name in front of one has to be a directory: `virtual` simplified the
     // dots away and reaches `f` through a missing `nope/..`, the typed
-    // spelling (`dotted`) does not. Mirrors Python's Dispatcher.dispatch.
+    // spelling (`dotted`) does not. A trailing slash is part of that
+    // spelling: `x/` must be a directory, so a create of one is EISDIR
+    // before anything is looked up. Mirrors Python's Dispatcher.dispatch.
+    if (FILE_CREATE_OPS.has(opName) && path.dotted?.endsWith('/') === true) throw eisdir(path)
     const renamed = opName === 'rename' && dstArg instanceof PathSpec ? dstArg : null
     if (path.dotted !== null || (renamed !== null && renamed.dotted !== null)) {
       const walkStat = dispatchStat(this.dispatch)
       const follow = (virtual: string): string => this.namespace.follow(virtual)
       const refusal =
-        (await dotRefusal(walkStat, path, follow)) ??
+        (await dotRefusal(walkStat, path, follow, ENTRY_CREATE_OPS.has(opName))) ??
         (renamed !== null ? await dotRefusal(walkStat, renamed, follow) : null)
       if (refusal !== null) throw refusal
     }
@@ -525,7 +530,7 @@ export class Dispatcher {
               runWithTimeout(
                 Promise.resolve(
                   opName === 'setattr'
-                    ? this.applySetattr(vfs, scope, p, fullKwargs)
+                    ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
                     : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
@@ -1301,12 +1306,16 @@ export class Dispatcher {
    * gates as the native half. Mirrors Python's Dispatcher._apply_setattr.
    */
   private async applySetattr(
+    mount: MountEntry,
     vfs: BaseVFS,
     scope: PathSpec,
     p: PathSpec,
     kwargs: OpKwargs,
   ): Promise<Record<string, number | string>> {
     if (this.namespace.isLink(p.virtual) || this.opsRegistry.find('setattr', vfs) === null) {
+      // No backend inode answers for the path here, so nothing would
+      // refuse a missing one: the overlay would stamp it.
+      await this.xattrTarget(mount, p)
       return this.overlaySetattr(p, kwargs)
     }
     const raw = await this.opsRegistry.call('setattr', vfs, vfs.accessor, scope, [], kwargs)

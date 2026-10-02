@@ -103,7 +103,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     limits: { fileSize: 10 * 1024 * 1024 * 1024 },
   })
   registerHealthRoutes(app, { registry, startedAt, exit: exitFn })
-  registerWorkspacesRoutes(app, { registry, snapshotRoot, stateRoot })
+  registerWorkspacesRoutes(app, { registry, snapshotRoot, stateRoot, versionBackend })
   registerVersionsRoutes(app, { registry, versionBackend })
   registerSessionsRoutes(app, { registry })
   registerAsksRoutes(app, { registry })

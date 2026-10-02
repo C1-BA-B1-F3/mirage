@@ -21,12 +21,12 @@ from typing import Any
 
 from mirage.runtime.errors import EvalError
 from mirage.runtime.python.execution import main_filename
-from mirage.runtime.python.monty.binding import pydantic_monty
 from mirage.runtime.python.monty.constants import (
     DEFAULT_PROG,
     INCOMPLETE_MARKERS,
 )
-from mirage.runtime.python.monty.osaccess import MirageOSAccess
+from mirage.runtime.python.monty.fs import MontyFs
+from mirage.runtime.python.monty.loader import pydantic_monty
 from mirage.runtime.types import EvalResult, EvalValue, RunArgs, RunResult
 from mirage.types import PathSpec
 
@@ -69,7 +69,7 @@ class MontyExecution:
         await pool.__aenter__()
         return pool
 
-    async def run(self, args: RunArgs, bridge: MirageOSAccess) -> RunResult:
+    async def run(self, args: RunArgs, fs: MontyFs) -> RunResult:
         # Execution lives in a monty worker subprocess (0.0.19 moved it
         # out of process so an interpreter crash cannot take the host
         # with it). feed_run awaits off the event loop, so the loop
@@ -110,7 +110,7 @@ class MontyExecution:
                         inputs=inputs,
                         print_callback=collector,
                         cwd=cwd,
-                        os=bridge,
+                        os=fs,
                     )
                 except asyncio.CancelledError:
                     _kill_worker(worker_pid)
@@ -141,7 +141,7 @@ class MontyExecution:
     async def eval(
         self,
         code: str,
-        bridge: MirageOSAccess,
+        fs: MontyFs,
         *,
         inputs: dict[str, EvalValue] | None = None,
         session: str | None = None,
@@ -153,7 +153,7 @@ class MontyExecution:
         straight back; a session id keeps its own worker (heap and
         namespace) alive per id, which is the console. Inputs bind as
         globals via monty's native mechanism, and the code sees
-        workspace files through the same bridge agent code uses. The
+        workspace files through the same fs agent code uses. The
         value crosses the worker boundary as a converted Monty value:
         dicts, lists, strings, numbers, bools and None arrive as their
         Python equivalents, which is every shape a policy verdict
@@ -192,7 +192,7 @@ class MontyExecution:
                 inputs=dict(inputs or {}),
                 print_callback=collector,
                 cwd=initial_cwd,
-                os=bridge,
+                os=fs,
             )
         except asyncio.CancelledError:
             # Same reclaim as run(): cancelling the await leaves the

@@ -13,9 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import errno
 import logging
-import os
 from collections.abc import Coroutine, Iterator
 from typing import Any, TypeVar
 
@@ -23,7 +21,6 @@ from mirage.concurrency.limiter import ConcurrencyLimiter
 from mirage.runtime.constants import ABSENT_PATH, LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import plan_flush
-from mirage.runtime.handles.mode import OpenMode
 from mirage.runtime.resolver import MountResolver
 from mirage.runtime.types import DispatchFn, RuntimeContext, VFSEntry, VFSStat
 from mirage.types import FileStat, PathSpec
@@ -31,6 +28,7 @@ from mirage.utils.context_scope import ContextScope
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import norm
 from mirage.utils.stat_view import (
+    DIR_MODE,
     content_size,
     device_rdev,
     is_dir,
@@ -59,15 +57,23 @@ def _listed(raw: str, links: set[str]) -> VFSEntry:
     return VFSEntry(path=raw, size=0, is_dir=raw.endswith("/"), is_link=linked)
 
 
-def _refused(code: int, kind: type[OSError], path: str) -> OSError:
-    """An open's refusal, numbered and worded the way the host's own is.
+def stat_row(fs: FileStat) -> VFSStat:
+    """Translate one mirage stat row into the struct a guest surface reads.
 
     Args:
-        code (int): the errno.
-        kind (type[OSError]): the builtin the errno maps to.
-        path (str): the path the open named.
+        fs (FileStat): the row the door answered with.
     """
-    return kind(code, os.strerror(code), path)
+    ns = mtime_ns(fs)
+    # A guest wire has no validity channel for a timestamp, so an
+    # unknown mtime and epoch zero both encode as 0 from here on.
+    return VFSStat(
+        size=content_size(fs),
+        is_dir=is_dir(fs),
+        mode=posix_mode(fs),
+        mtime_ns=0 if ns is None else ns,
+        is_link=is_link(fs),
+        rdev=device_rdev(fs),
+    )
 
 
 class RuntimeVFS:
@@ -80,7 +86,7 @@ class RuntimeVFS:
     backend, which is what lets a guest create a link or chmod a file on
     a mount whose store has neither. Encoders hold one
     of these; they never inherit it, because a monty encoder must
-    inherit the binding's own OSAccess and a wasm encoder is a table of
+    inherit the engine's own AbstractOS and a wasm encoder is a table of
     preview1 host functions.
 
     The surface is sync on purpose: guest calls arrive on a worker
@@ -191,7 +197,7 @@ class RuntimeVFS:
         that cannot serve `/` says so itself (pyodide refuses it,
         because Emscripten already owns that mountpoint) and a runtime
         with a build tree of its own keeps `/` out of its own claim
-        table (`WasmVFS._prefixes`). Deciding it here instead made
+        table (`WasmView._prefixes`). Deciding it here instead made
         `mount_of` answer None for a workspace whose only mount was the
         root one, so the routing table disagreed with the world.
         """
@@ -218,12 +224,13 @@ class RuntimeVFS:
     def serves(self, path: str) -> bool:
         """Whether the workspace answers for `path`.
 
-        A guest routes on this: a path the workspace does not serve is
-        the engine's own (monty's scratch tree). A mount serves what is
-        under it, and a namespace link serves what is reached through
-        it wherever it lives, because the dispatcher follows a link
-        outside every mount the same way. With no mounts wired there
-        is no scoping, and every path routes here.
+        A guest's content calls gate on this: monty refuses a path the
+        workspace does not serve, so it reads and writes only the view.
+        A mount serves what is under it, and a namespace link serves
+        what is reached through it wherever it lives, because the
+        dispatcher follows a link outside every mount the same way.
+        With no mounts wired there is no scoping, and every path routes
+        here.
 
         Args:
             path (str): guest-absolute virtual path.
@@ -265,7 +272,7 @@ class RuntimeVFS:
                 ``chown -h`` wrote; the dispatcher consumes the flag
                 and gates that read exactly as it gates ``readlink``.
         """
-        return self._row(self.call("stat", path, nofollow=nofollow))
+        return stat_row(self.call("stat", path, nofollow=nofollow))
 
     def stat_or_none(
         self, path: str, *, nofollow: bool = False
@@ -284,6 +291,32 @@ class RuntimeVFS:
         except ABSENT_PATH:
             return None
 
+    def view_stat(self, path: str) -> VFSStat | None:
+        """`path`'s row as a runtime may see it, or None.
+
+        Structure is open and content is not. A path in the view
+        (``serves``) answers with its mount's own row; any path the
+        workspace lists answers as a directory, so the root above nested
+        mounts and the directories above a link are directories here as
+        they are in a shell, while a withheld surface's files (history,
+        the program view) stay unseen. A file's own row decides that,
+        not its listing: the history mount lists its one file as empty
+        so a traversal never descends into it. 0 is the door's spelling
+        of an unknown mtime.
+
+        Args:
+            path (str): guest-absolute virtual path.
+        """
+        row = self.stat_or_none(path)
+        if self.serves(path):
+            if row is not None:
+                return row
+        elif row is not None and not row.is_dir:
+            return None
+        if self.listing_or_none(path) is None:
+            return None
+        return VFSStat(size=0, is_dir=True, mode=DIR_MODE, mtime_ns=0)
+
     def listing_or_none(self, path: str) -> list[VFSEntry] | None:
         """The directory's unclassified rows, or None when it is not one.
 
@@ -298,76 +331,6 @@ class RuntimeVFS:
             return self.readdir(path, classify=False)
         except ABSENT_PATH:
             return None
-
-    def open(self, path: str, mode: OpenMode) -> VFSStat | None:
-        """Apply an open's effect on the mount, before any byte moves.
-
-        One rule for every guest open, however it is spelled (a mode
-        string, preview1 oflags): a directory refuses, an exclusive
-        create refuses what exists, a missing path is created when the
-        mode creates and refused when it does not, and a truncating
-        mode empties what exists. The effect lands at open because
-        CPython's ``open('w')`` leaves an empty file behind even when
-        nothing is written; a bare open and close never flushes.
-
-        Args:
-            path (str): guest-absolute virtual path.
-            mode (OpenMode): what the open asked for.
-
-        Returns:
-            VFSStat | None: the file's row when its content survives
-            the open (a read or an append), None when it starts empty
-            (created or truncated).
-
-        Raises:
-            FileExistsError: an exclusive create found the path, a
-                dangling link included.
-            IsADirectoryError: the path is a directory, a mount's
-                implied one included.
-            FileNotFoundError: the path is missing and the mode does
-                not create.
-        """
-        # An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so
-        # a dangling one is a name that is there. A path with no row may
-        # still be a directory the mount lists, and a create there would
-        # put a file at a directory's name.
-        row = self.stat_or_none(path, nofollow=mode.exclusive)
-        if row is not None:
-            listed = row.is_dir
-        else:
-            listed = self.listing_or_none(path) is not None
-        if mode.exclusive and (row is not None or listed):
-            raise _refused(errno.EEXIST, FileExistsError, path)
-        if listed:
-            raise _refused(errno.EISDIR, IsADirectoryError, path)
-        if row is None:
-            if not mode.create:
-                raise _refused(errno.ENOENT, FileNotFoundError, path)
-            self.create(path)
-            return None
-        if mode.truncate:
-            self.truncate(path)
-            return None
-        return row
-
-    @staticmethod
-    def _row(fs: FileStat) -> VFSStat:
-        """Translate one mirage stat row into the guest-facing struct.
-
-        Args:
-            fs (FileStat): the row the door answered with.
-        """
-        ns = mtime_ns(fs)
-        # A guest wire has no validity channel for a timestamp, so an
-        # unknown mtime and epoch zero both encode as 0 from here on.
-        return VFSStat(
-            size=content_size(fs),
-            is_dir=is_dir(fs),
-            mode=posix_mode(fs),
-            mtime_ns=0 if ns is None else ns,
-            is_link=is_link(fs),
-            rdev=device_rdev(fs),
-        )
 
     def readdir(self, path: str, *, classify: bool = True) -> list[VFSEntry]:
         """List a directory as resolved entries (the TS door's shape).
@@ -452,7 +415,7 @@ class RuntimeVFS:
 
     async def _classified(self, directory: str, row: VFSEntry) -> VFSEntry:
         try:
-            st = self._row(
+            st = stat_row(
                 await self._op("stat", row.path, nofollow=row.is_link)
             )
         except ABSENT_PATH as exc:

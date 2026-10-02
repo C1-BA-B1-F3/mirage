@@ -23,7 +23,7 @@ from mirage.commands.builtin.utils.paths import (
 from mirage.context import DEFAULT_UMASK
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
-from mirage.types import FileType, PathSpec
+from mirage.types import PathSpec
 from mirage.utils.errors import (
     FS_ERRORS,
     OperationNotSupportedError,
@@ -123,12 +123,18 @@ async def handle_touch(
                 f"touch: cannot touch '{target.raw_path}': Is a directory\n"
             )
             continue
+        # `x/` is `x/.`, so touch never creates through a trailing slash:
+        # it sets times on a directory that has to be there already, and
+        # GNU words that refusal ("setting times of") differently from
+        # its create-path one ("cannot touch").
+        slashed = target.raw_path.endswith("/")
         refusal = await dot_refusal(
             partial(dispatch_stat, dispatch), target, namespace.follow
         )
         if refusal is not None:
+            action = "setting times of" if slashed else "cannot touch"
             errors.append(
-                f"touch: cannot touch '{target.raw_path}': "
+                f"touch: {action} '{target.raw_path}': "
                 f"{fs_strerror(refusal)}\n"
             )
             continue
@@ -141,23 +147,13 @@ async def handle_touch(
         )
         if resolved is None:
             continue
-        # `x/` is `x/.`, so touch never creates through a trailing slash:
-        # it sets times on a directory that has to be there already, and
-        # GNU words that refusal ("setting times of") differently from
-        # its create-path one ("cannot touch").
-        if target.raw_path.endswith("/"):
+        if slashed:
             try:
-                slashed, _ = await dispatch("stat", resolved)
+                await dispatch("stat", resolved)
             except FS_ERRORS as exc:
                 errors.append(
                     f"touch: setting times of "
                     f"'{target.raw_path}': {fs_strerror(exc)}\n"
-                )
-                continue
-            if slashed.type != FileType.DIRECTORY:
-                errors.append(
-                    f"touch: setting times of "
-                    f"'{target.raw_path}': Not a directory\n"
                 )
                 continue
         try:

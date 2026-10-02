@@ -30,7 +30,7 @@ import { patternArg } from '../../grep_pattern.ts'
 import { walkCandidates } from '../../rg_scan.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const RG_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'rg',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

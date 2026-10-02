@@ -32,7 +32,7 @@ import type {
   MongoDBConfigRedacted,
   MongoDBConfigResolved,
 } from '@struktoai/mirage-core/vfs/mongodb/config'
-import { MONGODB_PROMPT } from '@struktoai/mirage-core/vfs/mongodb/prompt'
+import { PROMPT } from '@struktoai/mirage-core/vfs/mongodb/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { MongoDBStore } from './store.ts'
@@ -66,7 +66,7 @@ export class MongoDBVFS extends BaseVFS {
     this.config = resolveMongoDBConfig(config)
     this.store = new MongoDBStore(this.config.uri)
     this.accessor = new MongoDBAccessor(this.store, this.config)
-    this.prompt = MONGODB_PROMPT.replace('{prefix}', prefix ?? '')
+    this.prompt = PROMPT.replace('{prefix}', prefix ?? '')
   }
 
   override getState(): MongoDBVFSState {

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -166,6 +167,28 @@ def test_mount_spec_fuse_unmounts_on_close(monkeypatch):
         mode=MountMode.WRITE,
     ) as ws:
         assert set(ws.fuse_mountpoints) == {"/gdocs/"}
+    assert ws.fuse_mountpoints == {}
+
+
+def test_mount_spec_fuse_unmounts_on_delete_even_when_the_drop_fails(
+    monkeypatch,
+):
+    # Delete drops the state as well, after the kernel mounts are down,
+    # and a drop that fails still lets teardown finish: a mount left up
+    # keeps a daemon process alive.
+    _fake_mount(monkeypatch)
+    ws = Workspace(
+        {"/gdocs/": Mount(RAMVFS(), backend=MountBackend.FUSE)},
+        mode=MountMode.WRITE,
+    )
+    assert set(ws.fuse_mountpoints) == {"/gdocs/"}
+
+    async def refuse(workspace_id):
+        raise RuntimeError("store on fire")
+
+    monkeypatch.setattr(ws.state_store, "drop", refuse)
+    with pytest.raises(RuntimeError, match="store on fire"):
+        asyncio.run(ws.delete())
     assert ws.fuse_mountpoints == {}
 
 

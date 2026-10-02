@@ -12,6 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { MontyUnavailableError } from './binding.ts'
-export { MirageOSAccess } from './osaccess.ts'
+export { MontyUnavailableError } from './errors.ts'
+export { MontyFs } from './fs.ts'
 export { MontyRuntime } from './runtime.ts'

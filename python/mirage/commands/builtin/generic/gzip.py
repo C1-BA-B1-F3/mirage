@@ -130,7 +130,6 @@ async def gzip(
                 suffix=suffix,
                 decompress=False,
                 follow=to_stdout or force,
-                stat=stat,
                 door=door,
             )
             if opened is None:

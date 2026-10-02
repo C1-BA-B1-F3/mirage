@@ -15,7 +15,7 @@
 import { shufGeneric } from '../../generic/shuf.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const SHUF_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'shuf',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

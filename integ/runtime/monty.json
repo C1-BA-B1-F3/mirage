@@ -96,55 +96,6 @@
       ]
     },
     {
-      "id": "ram_read",
-      "world": {
-        "runtimes": [
-          "monty",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram",
-            "files": {
-              "data.txt": "hello from ram\n"
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"from pathlib import Path; print(Path('/ram/data.txt').read_text().strip().upper())\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "HELLO FROM RAM\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "write_back",
-      "world": {
-        "runtimes": [
-          "monty",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"from pathlib import Path; Path('/ram/out.txt').write_text('written-by-python3')\" && cat /ram/out.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "written-by-python3"
-          }
-        }
-      ]
-    },
-    {
       "id": "script_argv",
       "world": {
         "runtimes": [
@@ -346,100 +297,6 @@
           "expect": {
             "exit": 0,
             "stdout": "['data.txt', 'pipe.py']\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "missing_file",
-      "world": {
-        "runtimes": [
-          "monty",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"from pathlib import Path; print(Path('/ram/nope.txt').read_text())\"",
-          "expect": {
-            "exit": 1,
-            "stderr_contains": "FileNotFoundError: [Errno 2] No such file or directory: '/ram/nope.txt'"
-          }
-        }
-      ]
-    },
-    {
-      "id": "host_fs_invisible",
-      "world": {
-        "runtimes": [
-          "monty",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"from pathlib import Path; print(Path('/etc/passwd').read_text())\"",
-          "expect": {
-            "exit": 1
-          }
-        }
-      ]
-    },
-    {
-      "id": "builtin_open",
-      "world": {
-        "runtimes": [
-          "monty",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram",
-            "files": {
-              "data.txt": "hello from ram\n"
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"print(open('/ram/data.txt').read().strip())\"",
-          "expect": {
-            "exit": 0,
-            "stdout": "hello from ram\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "builtin_open_write",
-      "world": {
-        "runtimes": [
-          "monty",
-          "workspace"
-        ],
-        "mounts": {
-          "/ram": {
-            "vfs": "ram"
-          }
-        }
-      },
-      "steps": [
-        {
-          "command": "python3 -c \"f = open('/ram/open_out.txt', 'w'); f.write('written-by-open'); f.close()\" && cat /ram/open_out.txt",
-          "expect": {
-            "exit": 0,
-            "stdout": "written-by-open"
           }
         }
       ]
@@ -886,7 +743,12 @@
       ]
     },
     {
-      "id": "fs_stat_of_a_directory_above_a_nested_mount",
+      "id": "structure_is_open_above_mounts_and_links",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
       "filesystem": {
         "monty": {
           "stat": true
@@ -915,16 +777,36 @@
           }
         },
         {
-          "command": "python3 -c \"from pathlib import Path; open('/parent/new.txt', 'w').write('s'); print(open('/parent/new.txt').read(), sorted(p.name for p in Path('/parent').iterdir()))\"",
+          "command": "python3 -c \"open('/parent/new.txt', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(sorted(p.name for p in Path('/parent').iterdir()))\"",
           "expect": {
             "exit": 0,
-            "stdout": "s ['child', 'new.txt']\n"
+            "stdout": "['child']\n"
+          }
+        },
+        {
+          "command": "ln -s /parent/child/a.txt /alias",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; a = Path('/alias'); print(a.is_symlink(), sorted(c.name for c in Path('/').iterdir() if c.name in ('alias', 'parent')), a.read_text(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True ['alias', 'parent'] a\n"
           }
         }
       ]
     },
     {
-      "id": "fs_stat_of_the_scratch_root",
+      "id": "fs_stat_of_the_root",
       "filesystem": {
         "monty": {
           "stat": true
@@ -1614,6 +1496,476 @@
           "expect": {
             "exit": 0,
             "stdout": "['item']\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "open_follows_the_shared_rule",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"open('/data/nope.txt')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "create /data/nope.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/sub')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "IsADirectoryError"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/sub', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "IsADirectoryError",
+            "ops_absent": [
+              "create /data/sub",
+              "truncate /data/sub"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/new.txt', 'w').close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/new.txt"
+            ],
+            "ops_absent": [
+              "write /data/new.txt",
+              "append /data/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/new.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/seed.txt', 'a'); f.write('more\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_absent": [
+              "truncate /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\nmore\n"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'w').close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "truncate /data/seed.txt"
+            ],
+            "ops_absent": [
+              "create /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/out.txt', 'w'); f.write('hi'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/out.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/out.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "hi"
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/log.txt', 'a'); f.write('one\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "create /data/log.txt",
+              "append /data/log.txt"
+            ]
+          },
+          "expect_on": {
+            "s3": {
+              "ops_contain": [
+                "create /data/log.txt",
+                "write /data/log.txt"
+              ]
+            }
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/log.txt', 'a'); f.write('two\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_contain": [
+              "append /data/log.txt"
+            ],
+            "ops_absent": [
+              "create /data/log.txt",
+              "truncate /data/log.txt"
+            ]
+          },
+          "expect_on": {
+            "s3": {
+              "ops_contain": [
+                "write /data/log.txt"
+              ]
+            }
+          }
+        },
+        {
+          "command": "cat /data/log.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "one\ntwo\n"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'x')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "exclusive creation mode is not supported"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'r+')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "update modes ('+') are not yet supported"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/seed.txt', 'rr')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "must have exactly one of create/read/write/append mode"
+          }
+        }
+      ]
+    },
+    {
+      "id": "content_outside_the_view_is_refused",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cat /data/a.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "a\n"
+          }
+        },
+        {
+          "command": "cat /.bash_history",
+          "expect": {
+            "exit": 0,
+            "stdout_contains": "cat /data/a.txt"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/.bash_history').read())\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "read /.bash_history"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"open('/tmp/new.txt', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "create /tmp/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/tmp/new.txt').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/etc/passwd').read_text())\"",
+          "expect": {
+            "exit": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "listing_classifies_through_stat",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c",
+          "script": "fs/py/list.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed.txt\nsub\n"
+          }
+        },
+        {
+          "command": "python3 -c",
+          "script": "fs/py/stat.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "file 5 32768\ndir 16384\nmissing\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reads_and_writes_reach_the_mount",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "lines.txt": "one\ntwo\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/data/seed.txt').read_text(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/data/seed.txt').read_bytes())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "b'seed\\n'\n"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/data/lines.txt').read().splitlines())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "['one', 'two']\n"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/data/sub/inner.txt').read(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "in\n",
+            "ops_contain": [
+              "read /data/sub/inner.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/w.txt').write_text('text')\" && cat /data/w.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "text"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/b.txt').write_bytes(b'bytes')\" && cat /data/b.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "bytes"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/data/nope.txt').read_text())\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError: [Errno 2] No such file or directory: '/data/nope.txt'"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mutations_reach_the_mount",
+      "backends": [
+        "ram",
+        "s3",
+        "redis"
+      ],
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n"
+            }
+          },
+          "/other": {
+            "vfs": "ram"
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d').mkdir(); print(Path('/data/d').is_dir())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d').mkdir()\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileExistsError"
+          }
+        },
+        {
+          "command": "echo xy > /data/d/a.txt",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d/a.txt').rename('/data/d/b.txt'); print(Path('/data/d/b.txt').stat().st_size, Path('/data/d/a.txt').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "3 False\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d').rmdir()\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "Directory not empty"
+          }
+        },
+        {
+          "command": "cat /data/d/b.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "xy\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/d/b.txt').unlink(); Path('/data/d').rmdir(); print(Path('/data/d').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('/data/zz').rename('/data/yy')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
+          }
+        },
+        {
+          "command": "echo keep > /data/cross.txt && python3 -c \"from pathlib import Path; Path('/data/cross.txt').rename('/other/cross.txt')\"",
+          "expect": {
+            "exit": 1
+          }
+        },
+        {
+          "command": "cat /data/cross.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "keep\n"
           }
         }
       ]

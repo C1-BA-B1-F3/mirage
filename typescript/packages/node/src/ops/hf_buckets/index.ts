@@ -15,10 +15,6 @@
 import { makeGenericOps } from '@struktoai/mirage-core/ops/generic/factory'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 import { VFSName } from '@struktoai/mirage-core/types'
-import { HF_BUCKETS_IO } from '../../commands/builtin/hf_buckets/io.ts'
+import { IO } from '../../commands/builtin/hf_buckets/io.ts'
 
-export const HF_BUCKETS_OPS: readonly RegisteredOp[] = makeGenericOps(
-  VFSName.HF_BUCKETS,
-  HF_BUCKETS_IO,
-  {},
-)
+export const HF_BUCKETS_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.HF_BUCKETS, IO, {})

@@ -435,20 +435,27 @@ describe('admission', () => {
     // An operand the gate judged passes whatever the rules say about it
     // (the line was admitted on it), and a grant under the asking rule
     // opens its scope to the walk.
-    new Admitted({
+    const judged = new Admitted({
       rules,
       tokens: ['grep', 'x', '/data/asked/a'],
       judged: new Set(['/data/asked/a']),
       granted: [],
       scoped: true,
-    }).check('/data/asked/a')
-    new Admitted({
+    })
+    judged.check('/data/asked/a')
+    const granted = new Admitted({
       rules,
       tokens: ['grep', '-r', 'x', '/data/asked'],
       judged: new Set(['/data/asked']),
       granted: [ask],
       scoped: true,
-    }).check('/data/asked/a')
+    })
+    granted.check('/data/asked/a')
+    // refuses answers exactly where check throws, without throwing.
+    expect(
+      ['/data', '/data/open/o', '/data/sealed/s', '/data/asked/a'].map((p) => gate.refuses(p)),
+    ).toEqual([false, false, true, true])
+    expect(judged.refuses('/data/asked/a') || granted.refuses('/data/asked/a')).toBe(false)
   })
 
   it('admit reports the grant the line runs under and its scope', async () => {

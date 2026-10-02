@@ -169,6 +169,8 @@ export interface EntryGate {
    */
   readonly granted: readonly CommandRule[]
   check(virtual: string): void
+  /** True exactly where `check` would throw, for a door that declines instead (the read cache). */
+  refuses(virtual: string): boolean
 }
 
 const MOUNT_MODE_ALIASES: Readonly<Record<string, MountMode>> = Object.freeze({

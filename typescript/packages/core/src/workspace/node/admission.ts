@@ -173,9 +173,21 @@ export class Admitted implements EntryGate {
   // Throw `PolicyDenied` when a rule in force refuses this entry for the
   // running command.
   check(virtual: string): void {
-    if (this.judged.has(norm(virtual))) return
-    const reason = ioRefusal(this.rules, this.tokens, virtual, this.granted)
+    const reason = this.refusal(virtual)
     if (reason !== null) throw new PolicyDenied(reason, virtual)
+  }
+
+  // Whether a rule in force refuses this entry for the running command,
+  // without throwing.
+  refuses(virtual: string): boolean {
+    return this.refusal(virtual) !== null
+  }
+
+  // The reason a rule in force refuses this entry, null when the line was
+  // admitted on it or nothing refuses it.
+  private refusal(virtual: string): string | null {
+    if (this.judged.has(norm(virtual))) return null
+    return ioRefusal(this.rules, this.tokens, virtual, this.granted)
   }
 }
 
@@ -262,10 +274,15 @@ export function policyScopes(
  * to it must not fire (the reason would say the path is there), an ask
  * must not be raised for it (a request would name it to the host), and
  * the line runs on to the door, which answers ENOENT like any other
- * absent path.
+ * absent path. A path the reader could not read (`unread`, as `gate`
+ * takes it) goes the same way, since the line may never name it.
  */
-function seen(session: SessionState, specs: readonly PathSpec[]): PathSpec[] {
-  return specs.filter((p) => sessionPathAllowed(session, p.virtual))
+function seen(
+  session: SessionState,
+  specs: readonly PathSpec[],
+  unread: ReadonlySet<string> = new Set(),
+): PathSpec[] {
+  return specs.filter((p) => !unread.has(p.virtual) && sessionPathAllowed(session, p.virtual))
 }
 
 /**
@@ -327,7 +344,11 @@ export function redirectPaths(
  * `admit` adds exactly those and renders.
  *
  * `intrinsic` keeps shell-provided operations subject to tool allow lists
- * even when a function shadows their policy name.
+ * even when a function shadows their policy name. `unread` holds the
+ * virtual paths a reader of the line's text cannot vouch for: what a word
+ * only the runtime expands names, or a relative word after a `cd` it
+ * could not follow. No policy is shown them; the per-command gate reads
+ * the real ones and passes none.
  */
 export async function gate(
   name: string,
@@ -340,6 +361,7 @@ export async function gate(
   stdin: ByteSource | null = null,
   redirects: readonly PathSpec[] = [],
   intrinsic = false,
+  unread: ReadonlySet<string> = new Set(),
 ): Promise<Refused | [CommandContext, Deny | Ask | null]> {
   const tool = intrinsic || isTool(name, session)
   if (tool && !listed(name, session)) {
@@ -359,8 +381,9 @@ export async function gate(
     paths: seen(
       session,
       policyScopes(name, args, operands, namespace, session.cwd, implied, redirects),
+      unread,
     ),
-    operands: seen(session, positionalScopes(name, [...args], session.cwd, [...operands])),
+    operands: seen(session, positionalScopes(name, [...args], session.cwd, [...operands]), unread),
     argv: [...args],
     cwd: session.cwd,
     registry,
@@ -399,6 +422,8 @@ export async function admit(
   claimant: Claimant | null = null,
   // Shell-provided operations keep their tool policy even if a function shadows the name.
   intrinsic = false,
+  // Paths no policy is shown, as `gate` takes them.
+  unread: ReadonlySet<string> = new Set(),
 ): Promise<Refused | Admitted> {
   const gated = await gate(
     name,
@@ -411,6 +436,7 @@ export async function admit(
     stdin,
     redirects,
     intrinsic,
+    unread,
   )
   if (!Array.isArray(gated)) return gated
   const [ctx, asked] = gated

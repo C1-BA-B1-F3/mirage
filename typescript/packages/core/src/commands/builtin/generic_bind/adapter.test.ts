@@ -28,6 +28,7 @@ import {
   withAbortGuard,
   withPolicyGuard,
   withRuleGuard,
+  withDispatchRuleGuard,
   withPathGuards,
   requireOp,
   type CommandIO,
@@ -42,6 +43,8 @@ import type { Policy } from '../../../policy/base.ts'
 import { Policies } from '../../../policy/policies.ts'
 import type { Action, OpsContext } from '../../../policy/types.ts'
 import { SessionState } from '../../../workspace/session/session.ts'
+import { IOResult } from '../../../io/types.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
 
 const accessor = {} as never
 // No namespace facts, which is what a command bound outside a workspace
@@ -318,6 +321,7 @@ describe('withRuleGuard', () => {
         asked.push(virtual)
         if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
       },
+      refuses: (virtual: string) => virtual === '/data/locked/y',
     }
     await runWithAdmission(gate, async () => {
       // The gate throws at call time, like the hidden guard, so a caller's
@@ -343,6 +347,48 @@ describe('withRuleGuard', () => {
     ])
     expect(calls).not.toContainEqual(['rename', '/data/a', '/data/locked/y'])
     expect(calls).toContainEqual(['rename', '/data/a', '/data/b'])
+  })
+})
+
+describe('withDispatchRuleGuard', () => {
+  const spec = (virtual: string): PathSpec =>
+    new PathSpec({
+      virtual,
+      directory: virtual.slice(0, virtual.lastIndexOf('/')) || '/',
+      vfsPath: virtual,
+      resolved: true,
+    })
+
+  it('marks an op with the bound gate for the door to judge', async () => {
+    const seen: [string, unknown][] = []
+    const door: DispatchFn = (op, _path, _args, kwargs) => {
+      seen.push([op, kwargs?.ruleGate])
+      return Promise.resolve([null, new IOResult()])
+    }
+    const dispatch = withDispatchRuleGuard(door)
+    // No gate bound: the op goes to the door unmarked.
+    await dispatch('read', spec('/data/f'))
+    const asked: string[] = []
+    const gate = {
+      scoped: true,
+      granted: [],
+      check: (virtual: string) => {
+        asked.push(virtual)
+      },
+      refuses: () => false,
+    }
+    await runWithAdmission(gate, async () => {
+      await dispatch('read', spec('/data/f'), [spec('/data/g')])
+      // A metadata op is never judged: deny is present and refused.
+      await dispatch('stat', spec('/data/f'))
+    })
+    expect(seen).toEqual([
+      ['read', undefined],
+      ['read', gate],
+      ['stat', undefined],
+    ])
+    // The wrapper judges nothing itself: the door does, on its own paths.
+    expect(asked).toEqual([])
   })
 })
 
@@ -986,6 +1032,7 @@ it('a missing capability obeys the rule before the mode', async () => {
       asked.push(path)
       throw eacces(path)
     },
+    refuses: () => true,
   }
   await runWithAdmission(gate, () =>
     runWithMountGate('/data', MountMode.READ, async () => {

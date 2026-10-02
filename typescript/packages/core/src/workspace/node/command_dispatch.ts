@@ -26,7 +26,7 @@ import { guardDispatch, mergeSignals } from '../abort.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import { DevVFS } from '../../vfs/dev/dev.ts'
 import { encodeText } from '../../shell/bytes.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
 import {
   getCommandName,
   getParts,
@@ -177,11 +177,13 @@ export async function executeCommand(
       // ran on the first's nod.
       const expansion = handed === undefined ? null : evaluatedFrom(node, handed)
       try {
+        // In the caller's frame, as Python's line root has one: the
+        // alias's text is the caller's own line.
         return await recurse(
           ast,
           session,
           stdinIn,
-          callStack,
+          callStack ?? new CallStack(),
           expansion === null ? undefined : { handed: expansion },
         )
       } finally {

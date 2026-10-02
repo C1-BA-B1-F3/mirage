@@ -881,6 +881,8 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.PROGRAM) {
+    // A root run in a caller's frame is the caller's own line (eval, an
+    // alias); one given none is a shell of its own.
     return executeProgram(
       recurse,
       node,
@@ -893,6 +895,7 @@ async function executeNodeBody(
       deps.handed ?? null,
       registry.decisions,
       sink ?? null,
+      callStack !== null,
     )
   }
 

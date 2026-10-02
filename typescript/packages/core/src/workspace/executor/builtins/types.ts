@@ -37,6 +37,7 @@ export type ExecuteStringFn = (
     stdin?: ByteSource | null
     signal?: AbortSignal
     sink?: JobConsole
+    callStack?: CallStack
   },
 ) => Promise<IOResult>
 

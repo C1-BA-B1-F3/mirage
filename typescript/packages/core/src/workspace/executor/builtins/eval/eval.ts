@@ -13,22 +13,31 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { ByteSource } from '../../../../io/types.ts'
+import { CallStack } from '../../../../shell/call_stack.ts'
 import type { JobConsole } from '../../../../shell/console/index.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
 
+/**
+ * Run the words as a line of the caller's own: in its frame, so `$1`,
+ * `local`, `shift` and `return` act on the function the caller is in, and
+ * a `break`, `continue` or `exit` on its loops and shell. Mirrors Python's
+ * handle_eval.
+ */
 export async function handleEval(
   executeFn: ExecuteStringFn,
   args: string[],
   session: SessionState,
   stdin: ByteSource | null = null,
   sink?: JobConsole,
+  callStack: CallStack = new CallStack(),
 ): Promise<Result> {
   const script = args.join(' ')
   const io = await executeFn(script, {
     sessionId: session.sessionId,
     stdin,
+    callStack,
     ...(sink === undefined ? {} : { sink }),
   })
   return [io.stdout, io, new ExecutionNode({ command: 'eval', exitCode: io.exitCode })]
@@ -36,5 +45,12 @@ export async function handleEval(
 
 /** The `eval` arm. */
 export async function evalBuiltin(call: BuiltinCall): Promise<Result> {
-  return handleEval(call.executeFn, [...call.argv.args], call.session, call.stdin, call.sink)
+  return handleEval(
+    call.executeFn,
+    [...call.argv.args],
+    call.session,
+    call.stdin,
+    call.sink,
+    call.callStack ?? undefined,
+  )
 }

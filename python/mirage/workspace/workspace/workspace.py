@@ -77,6 +77,7 @@ from mirage.secrets.registry import source_for
 from mirage.secrets.sources import resolve_sources
 from mirage.secrets.types import ResolvedSource
 from mirage.shell import parse
+from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import BIN_PREFIX
 from mirage.shell.job_table import ConsoleFactory, JobTable
@@ -1709,6 +1710,7 @@ class Workspace:
         routing_decision: RouteDecision | None = None,
         handed: HandOff | None = None,
         sink: JobConsole | None = None,
+        call_stack: CallStack | None = None,
     ) -> IOResult:
         """Execute a shell command in the workspace.
 
@@ -1757,6 +1759,11 @@ class Workspace:
                 were produced. Every path answers there, a refusal or a
                 syntax error included, so the result carries the exit
                 status and no output.
+            call_stack: Internal. The frames of the caller a nested line
+                runs in place of (``eval``): its commands see the
+                caller's positional parameters and locals, and an
+                ``exit``, ``return``, ``break`` or ``continue`` in it
+                unwinds into the caller instead of ending the line.
         """
         # The one cancellation seam: the whole line is one task, so a
         # cancel set while a store is still loading, a secret is still
@@ -1785,6 +1792,7 @@ class Workspace:
                         handed,
                         frame,
                         sink=sink,
+                        call_stack=call_stack,
                     ),
                 ),
                 cancel,

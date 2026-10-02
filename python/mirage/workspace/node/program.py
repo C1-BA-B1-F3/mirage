@@ -26,7 +26,7 @@ from mirage.shell.helpers import get_text
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import NodeType as NT
 from mirage.workspace.executor.builtins.exec import divert_statement
-from mirage.workspace.executor.control import UNWINDING
+from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.jobs import handle_background
 from mirage.workspace.executor.statement import (
     failed_read,
@@ -51,6 +51,7 @@ async def execute_program(
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
     sink: JobConsole | None = None,
+    inline: bool = False,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Execute program node (root / semicolon-separated).
 
@@ -62,7 +63,11 @@ async def execute_program(
     it finishes, in the order it was written, instead of the result.
     The outermost program of a session's line routes what a statement
     wrote to the session's terminal through a copy (``exec 3>&1``); a
-    nested one (``eval``, ``source``) leaves that to it.
+    nested one (``eval``, ``source``) leaves that to it. An ``inline``
+    program runs in its caller's frame (``eval``, an alias), so an
+    ``exit``, ``return``, ``break`` or ``continue`` goes on into the
+    caller, after what the program wrote; any other program is a shell
+    of its own and ends there.
     """
     # Every program loop is one parse, which is the unit bash's alias
     # rule counts in: an alias defined on this parse and row is not
@@ -88,6 +93,7 @@ async def execute_program(
             decisions,
             sink,
             session.terminal if root else None,
+            inline,
         )
     finally:
         session._parse_current = outer_parse
@@ -108,6 +114,7 @@ async def _run_program(
     decisions: Decisions | None = None,
     sink: JobConsole | None = None,
     own: StreamOwner | None = None,
+    inline: bool = False,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     children = node.children
     all_stdout: list[Any] = []
@@ -220,8 +227,6 @@ async def _run_program(
                     child, session, child_stdin, call_stack, sink=recorder
                 )
             except UNWINDING as sig:
-                if isinstance(sig, ReturnSignal) and session.source_depth <= 0:
-                    raise
                 merged_io = await land(
                     await statement_output(
                         recorder, None, IOResult(), own, sink
@@ -230,6 +235,14 @@ async def _run_program(
                     all_stdout,
                     merged_io,
                 )
+                if inline or (
+                    isinstance(sig, ReturnSignal) and session.source_depth <= 0
+                ):
+                    raise await carried(
+                        sig,
+                        async_chain(all_stdout) if all_stdout else None,
+                        merged_io,
+                    )
                 if sig.stdout:
                     all_stdout.append(sig.stdout)
                 if isinstance(sig, ExitSignal):

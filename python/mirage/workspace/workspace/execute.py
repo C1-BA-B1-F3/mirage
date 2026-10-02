@@ -25,6 +25,7 @@ from mirage.io.types import ByteSource
 from mirage.observe.context import RecordingScope
 from mirage.policy import HandOff
 from mirage.runtime.routing import RouteDecision, RouteDeny, RouteError
+from mirage.shell.call_stack import CallStack
 from mirage.shell.console import JobConsole
 from mirage.shell.constants import FORK_FAILED, FORK_FAILED_STATUS
 from mirage.shell.helpers import input_substitution_redirect
@@ -43,6 +44,7 @@ from mirage.workspace.abort import (
     StatusWriter,
     set_line_writer,
 )
+from mirage.workspace.executor.control import UNWINDING
 from mirage.workspace.executor.statement import (
     StatusSnapshot,
     record_status,
@@ -278,6 +280,7 @@ async def execute_line(
     frame: LineFrame | None = None,
     argv: tuple[str, ...] | None = None,
     sink: JobConsole | None = None,
+    call_stack: CallStack | None = None,
 ) -> IOResult:
     """The body of ``Workspace.shell``; see its docstring for the
     argument contract.
@@ -346,6 +349,7 @@ async def execute_line(
                     frame,
                     argv,
                     sink,
+                    call_stack,
                 )
                 results.append(result)
                 return result.exit_code
@@ -623,6 +627,7 @@ async def execute_line(
                 routing_decision=decision,
                 handed=handed,
                 sink=sink,
+                call_stack=call_stack,
             )
             # A record a nested line earned is the line's to report when
             # its own tree earned none (see NestedRefusal).
@@ -682,6 +687,9 @@ async def execute_line(
         # Drift and invalid routing remain the caller's errors.
         raise
     except Exception as exc:
+        if call_stack is not None and isinstance(exc, UNWINDING):
+            # A line run in its caller's frame unwinds into the caller.
+            raise
         # The fold is a failed command like any other (a SecretsError
         # folds here), so $? must report it, mirroring the TS catch.
         io = failure_result(exc, command)

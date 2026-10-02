@@ -31,8 +31,8 @@ import {
   statementStdin,
 } from './statement.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
-import { ExitSignal, PipeClosed } from '../../shell/errors.ts'
-import { carried, isUnwinding } from './control.ts'
+import { ExitSignal, PipeClosed, ReturnSignal } from '../../shell/errors.ts'
+import { BreakSignal, ContinueSignal, carried, isUnwinding } from './control.ts'
 import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
@@ -110,10 +110,13 @@ export async function handlePipe(
       } catch (error) {
         if (error instanceof PipeClosed) {
           io.exitCode = 141
-        } else if (error instanceof ExitSignal) {
-          io.exitCode = error.containedCode
+        } else if (isUnwinding(error)) {
+          // A stage is a subshell: whatever unwinds ends it there, a
+          // `return` with its status, a `break` or `continue` with 0.
+          const loop = error instanceof BreakSignal || error instanceof ContinueSignal
+          io.exitCode = loop ? 0 : ended(error)
           await pump(output, Channel.STDOUT, error.stdout)
-          await pump(output, Channel.STDERR, error.stderr)
+          await pump(output, Channel.STDERR, loop ? error.io.stderr : error.stderr)
         } else {
           output.end(error)
           throw error
@@ -240,6 +243,11 @@ export async function handlePipe(
     children: childNodes,
   })
   return [lastStdout, lastIo, execNode]
+}
+
+/** The status a subshell ends with when `exit` or `return` ends it. */
+function ended(err: ExitSignal | ReturnSignal): number {
+  return err instanceof ExitSignal ? err.containedCode : err.exitCode
 }
 
 export async function handleConnection(
@@ -387,24 +395,21 @@ export async function handleSubshell(
           executeNode(child, session, childStdin, callStack, { sink: recorder }),
         )
       } catch (err) {
-        if (!(err instanceof ExitSignal)) throw err
+        if (!(err instanceof ExitSignal || err instanceof ReturnSignal)) throw err
         // A subshell is its own shell: exit (or ${var:?}) ends the
-        // subshell only, becoming its exit status.
+        // subshell only, becoming its exit status, and so does the
+        // `return` of a function it runs in.
         mergedIo = await land(
           await statementOutput(recorder, err.stdout, new IOResult(), session.terminal, sink),
           sink,
           allStdout,
           mergedIo,
         )
-        const sigIo = new IOResult({ exitCode: err.containedCode, stderr: err.stderr })
-        mergedIo = await mergedIo.merge(sigIo)
-        mergedIo.exitCode = err.containedCode
-        recordStatus(session, err.containedCode)
-        lastExec = new ExecutionNode({
-          command: '()',
-          exitCode: err.containedCode,
-          stderr: err.stderr,
-        })
+        const status = ended(err)
+        mergedIo = await mergedIo.merge(new IOResult({ exitCode: status, stderr: err.stderr }))
+        mergedIo.exitCode = status
+        recordStatus(session, status)
+        lastExec = new ExecutionNode({ command: '()', exitCode: status, stderr: err.stderr })
         break
       }
       stdout = await finishStatement(stdout, io, session, child, childExec)

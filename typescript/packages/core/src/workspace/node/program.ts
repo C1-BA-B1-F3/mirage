@@ -28,7 +28,7 @@ import { fd0Binding, recordStatus, statementStdin } from '../executor/statement.
 import type { TSNodeLike } from '../../shell/types.ts'
 import { isFsError } from '../../utils/errors.ts'
 import { ReturnSignal } from '../../shell/errors.ts'
-import { BreakSignal, ContinueSignal } from '../executor/control.ts'
+import { BreakSignal, ContinueSignal, carried, isUnwinding } from '../executor/control.ts'
 import { divertStatement } from '../executor/builtins/exec/index.ts'
 import { type ExecuteNodeFn, handleBackground } from '../executor/jobs.ts'
 import { failedRead, land, statementOutput } from '../executor/statement.ts'
@@ -62,6 +62,11 @@ export async function executeProgram(
   // line routes what a statement wrote to the session's terminal through a
   // copy (`exec 3>&1`); a nested one (`eval`, `source`) leaves that to it.
   sink: JobConsole | null = null,
+  // An inline program runs in its caller's frame (`eval`, an alias), so an
+  // `exit`, `return`, `break` or `continue` goes on into the caller, after
+  // what the program wrote; any other program is a shell of its own and
+  // ends there.
+  inline = false,
 ): Promise<Result> {
   // Every program loop is one parse, which is the unit bash's alias rule
   // counts in: an alias defined on this parse and row is not expanded by
@@ -86,6 +91,7 @@ export async function executeProgram(
       decisions,
       sink,
       root ? session.terminal : null,
+      inline,
     )
   } finally {
     session.parseCurrent = outerParse
@@ -106,6 +112,7 @@ async function runProgram(
   decisions: Decisions | null = null,
   sink: JobConsole | null = null,
   own: StreamOwner | null = null,
+  inline = false,
 ): Promise<Result> {
   const children = node.children
   const allStdout: (ByteSource | null)[] = []
@@ -233,19 +240,17 @@ async function runProgram(
           recurse(child, session, childStdin, callStack, { sink: recorder }),
         )
       } catch (err) {
-        if (
-          err instanceof ExitSignal ||
-          err instanceof ReturnSignal ||
-          err instanceof BreakSignal ||
-          err instanceof ContinueSignal
-        ) {
-          if (err instanceof ReturnSignal && session.sourceDepth <= 0) throw err
+        if (isUnwinding(err)) {
           mergedIo = await land(
             await statementOutput(recorder, null, new IOResult(), own, sink),
             sink,
             allStdout,
             mergedIo,
           )
+          if (inline || (err instanceof ReturnSignal && session.sourceDepth <= 0)) {
+            const parts = allStdout.filter((part): part is ByteSource => part !== null)
+            throw await carried(err, parts.length > 0 ? asyncChain(parts) : null, mergedIo)
+          }
         }
         if (err instanceof ExitSignal) {
           // exit (or a fatal expansion error) ends the line: keep

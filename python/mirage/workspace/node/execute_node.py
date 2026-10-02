@@ -987,6 +987,8 @@ async def _execute_node(
 
     # ── program (root / semicolons) ─────────────
     if kind == NodeKind.PROGRAM:
+        # A root run in a caller's frame is the caller's own line (eval,
+        # an alias); one given none is a shell of its own.
         return await execute_program(
             recurse,
             node,
@@ -999,6 +1001,7 @@ async def _execute_node(
             handed,
             registry.decisions,
             sink=sink,
+            inline=call_stack is not None,
         )
 
     # ── command ─────────────────────────────────

@@ -59,6 +59,7 @@ export type ExecuteFn = (
     handed?: HandOff
     substitution?: boolean
     sink?: JobConsole
+    callStack?: CallStack
   },
 ) => Promise<IOResult>
 

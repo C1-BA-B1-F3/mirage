@@ -17,6 +17,7 @@ from typing import Any
 
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
+from mirage.shell.call_stack import CallStack
 from mirage.shell.console import JobConsole
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
@@ -29,10 +30,28 @@ async def handle_eval(
     session: SessionState,
     stdin: ByteSource | None = None,
     sink: JobConsole | None = None,
+    call_stack: CallStack | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    """Run the words as a line of the caller's own: in its frame, so
+    ``$1``, ``local``, ``shift`` and ``return`` act on the function the
+    caller is in, and a ``break``, ``continue`` or ``exit`` on its loops
+    and shell.
+
+    Args:
+        execute_fn (Callable): runs a nested line.
+        args (list[str]): the words, joined with spaces.
+        session (SessionState): shell session state.
+        stdin (ByteSource | None): the caller's standard input.
+        sink (JobConsole | None): where the line's statements write.
+        call_stack (CallStack | None): the caller's frames.
+    """
     script = " ".join(args)
     io = await execute_fn(
-        script, session_id=session.session_id, stdin=stdin, sink=sink
+        script,
+        session_id=session.session_id,
+        stdin=stdin,
+        sink=sink,
+        call_stack=call_stack,
     )
     return io.stdout, io, ExecutionNode(command="eval", exit_code=io.exit_code)
 
@@ -49,4 +68,5 @@ async def eval_builtin(call: BuiltinCall) -> Result:
         call.session,
         call.stdin,
         call.sink,
+        call.call_stack,
     )

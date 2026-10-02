@@ -78,7 +78,9 @@ dirs for ssh.
 A push to main runs every job in `.github/workflows/test_integ.yml`. A pull
 request runs only the jobs whose path filter matches a changed file; the
 filters live in that workflow's `changes` job, and `typescript-build` runs
-whenever a job that needs the built packages does.
+whenever a job that downloads the built packages does. `integ-ts` and
+`integ-shared-ts`, which finish last, build the packages in the job instead
+of waiting for it.
 
 ```mermaid
 flowchart LR

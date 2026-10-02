@@ -14,6 +14,7 @@
 
 import { isDeepStrictEqual } from 'node:util'
 import { readFileSync } from 'node:fs'
+import { setTimeout as sleep } from 'node:timers/promises'
 import {
   Workspace as NodeWorkspace,
   buildVfs as buildNodeVfs,
@@ -170,21 +171,15 @@ async function sessionPersistenceIsolation(ws: Workspace): Promise<boolean> {
   const slow = ws.shell('X=slow', { sessionId: 'slow-save' }).then(() => {
     settled = true
   })
-  let fast: Promise<unknown> | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error('session persistence did not progress'))
-    }, 5000)
+  const stalled = sleep(5000, undefined, { ref: false }).then(() => {
+    throw new Error('session persistence did not progress')
   })
+  let fast: ReturnType<Workspace['shell']> | undefined
   try {
-    await Promise.race([entered, timeout])
-    const running = ws.shell('X=fast; echo $X', { sessionId: 'fast-save' })
-    fast = running
-    const result = await Promise.race([running, timeout])
-    return result.stdoutText === 'fast\n' && !settled
+    await Promise.race([entered, stalled])
+    fast = ws.shell('X=fast; echo $X', { sessionId: 'fast-save' })
+    return (await Promise.race([fast, stalled])).stdoutText === 'fast\n' && !settled
   } finally {
-    clearTimeout(timer)
     release()
     await Promise.all([slow, fast])
     store.casSet = original

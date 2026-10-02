@@ -19,12 +19,13 @@ import os
 import time
 from collections.abc import Iterable
 from itertools import count
-from typing import Any, TypeVar
+from typing import Any
 from urllib.parse import quote, unquote
 
 import aiofiles
 import aiofiles.os
 
+from mirage.concurrency.limiter import settle
 from mirage.workspace.record.types import generation_of
 
 logger = logging.getLogger(__name__)
@@ -86,29 +87,14 @@ def _release_lock(fd: int, lock_path: str) -> None:
         )
 
 
-_T = TypeVar("_T")
-
-
-async def _settle(task: asyncio.Task[_T]) -> _T:
-    """Join lock ownership transfer despite repeated cancellation."""
-    while not task.done():
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            logger.debug(
-                "deferring cancellation until disk lock cleanup finishes"
-            )
-    return task.result()
-
-
 async def _acquire_owned(lock_path: str) -> int | None:
     task = asyncio.create_task(asyncio.to_thread(_acquire_lock, lock_path))
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
-        fd = await _settle(task)
+        fd = await settle(task)
         if fd is not None:
-            await _settle(
+            await settle(
                 asyncio.create_task(
                     asyncio.to_thread(_release_lock, fd, lock_path)
                 )
@@ -121,7 +107,7 @@ async def _release_owned(fd: int, lock_path: str) -> None:
     try:
         await asyncio.shield(task)
     except asyncio.CancelledError:
-        await _settle(task)
+        await settle(task)
         raise
 
 

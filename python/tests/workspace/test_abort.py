@@ -121,12 +121,14 @@ async def test_an_externally_cancelled_caller_gets_the_same_grace():
             finally:
                 steps.append("released")
 
+    before = asyncio.all_tasks()
     started = asyncio.get_running_loop().time()
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(run_cancellable(body(), cancel), 0.01)
     elapsed = asyncio.get_running_loop().time() - started
     assert steps == ["epilogue", "released"]
     assert ABORT_JOIN_SECONDS <= elapsed < ABORT_JOIN_SECONDS + 1
+    assert not (asyncio.all_tasks() - before)
 
 
 @pytest.mark.asyncio
@@ -159,16 +161,3 @@ async def test_a_body_that_swallows_both_cancels_is_joined_and_warned(
         "not letting CancelledError propagate" in r.getMessage()
         for r in caplog.records
     )
-
-
-@pytest.mark.asyncio
-async def test_cancellable_sleep_leaves_no_tasks_on_parent_cancel():
-    before = asyncio.all_tasks()
-    task = asyncio.create_task(
-        abort_module.cancellable_sleep(60, asyncio.Event())
-    )
-    await asyncio.sleep(0)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert not (asyncio.all_tasks() - before)

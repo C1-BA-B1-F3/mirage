@@ -58,34 +58,26 @@ async def test_cancel_waits_for_coroutine_cleanup():
 
 
 @pytest.mark.asyncio
-async def test_cancel_before_start_does_not_invoke_factory():
-    table = JobTable()
-    invoked = False
+async def test_cancel_answers_whether_the_job_ends_canceled():
+    invoked, settled = [], asyncio.Event()
 
-    async def work():
-        nonlocal invoked
-        invoked = True
-
-    job = submit(table, work)
-    assert table.cancel(job.id)
-    assert (await table.wait(job.id)).status == JobStatus.CANCELED
-    assert not invoked
-
-
-@pytest.mark.asyncio
-async def test_cancel_after_work_settles_keeps_the_result():
-    settled = asyncio.Event()
+    async def unstarted():
+        invoked.append(True)
 
     async def work():
         settled.set()
         return "value"
 
     table = JobTable()
-    job = submit(table, work)
+    early = submit(table, unstarted)
+    assert table.cancel(early.id)
+    late = submit(table, work)
     await settled.wait()
-    assert job.finished_at is None
-    assert not table.cancel(job.id)
-    finished = await table.wait(job.id)
+    assert late.finished_at is None
+    assert not table.cancel(late.id)
+    assert (await table.wait(early.id)).status == JobStatus.CANCELED
+    assert not invoked
+    finished = await table.wait(late.id)
     assert (finished.status, finished.result) == (JobStatus.DONE, "value")
 
 

@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from mirage.concurrency.limiter import settle
 from mirage.runtime.wasm.host import WasiFs, install_wasi_fs
 from mirage.runtime.wasm.vfs import WasmVFS
 
@@ -49,17 +50,10 @@ def epoch_engine() -> "wasmtime.Engine":
 
 async def _join_cancelled(task: asyncio.Task[Any]) -> None:
     """Join owned work while preserving the caller's original cancellation."""
-    while not task.done():
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            logger.debug(
-                "deferring repeated cancellation until WASM work settles"
-            )
-        except Exception:
-            break
-    if not task.cancelled() and task.exception() is not None:
-        logger.debug("WASM cleanup failed", exc_info=task.exception())
+    try:
+        await settle(task)
+    except Exception:
+        logger.debug("WASM cleanup failed", exc_info=True)
 
 
 class WasmRuntime:

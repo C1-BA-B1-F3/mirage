@@ -60,8 +60,7 @@ def test_connect_kwargs_passphrase_rides_the_identity_file():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail", [False, True])
-async def test_ssh_owns_connections_during_initialization(monkeypatch, fail):
+async def test_ssh_shares_one_connection_and_closes_it_once(monkeypatch):
     entered, release = asyncio.Event(), asyncio.Event()
     client = Mock()
 
@@ -78,15 +77,9 @@ async def test_ssh_owns_connections_during_initialization(monkeypatch, fail):
     accessor = SSHAccessor(SSHConfig(host="unused"))
     first = asyncio.create_task(accessor.sftp())
     await entered.wait()
-    if fail:
-        first.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await first
-        assert accessor._conn is None
-    else:
-        second = asyncio.create_task(accessor.sftp())
-        release.set()
-        assert await first is await second is client
+    second = asyncio.create_task(accessor.sftp())
+    release.set()
+    assert await first is await second is client
     await asyncio.gather(accessor.close(), accessor.close())
     connect.assert_awaited_once()
     conn.close.assert_called_once()
@@ -94,7 +87,7 @@ async def test_ssh_owns_connections_during_initialization(monkeypatch, fail):
 
 
 @pytest.mark.asyncio
-async def test_ssh_joins_a_failed_start_through_repeated_cancellation(
+async def test_ssh_failed_start_closes_through_repeated_cancellation(
     monkeypatch,
 ):
     entered, closing, release = (asyncio.Event() for _ in range(3))
@@ -114,7 +107,8 @@ async def test_ssh_joins_a_failed_start_through_repeated_cancellation(
     monkeypatch.setattr(
         "mirage.accessor.ssh.asyncssh.connect", AsyncMock(return_value=conn)
     )
-    task = asyncio.create_task(SSHAccessor(SSHConfig(host="unused")).sftp())
+    accessor = SSHAccessor(SSHConfig(host="unused"))
+    task = asyncio.create_task(accessor.sftp())
     await entered.wait()
     task.cancel()
     await closing.wait()
@@ -124,4 +118,7 @@ async def test_ssh_joins_a_failed_start_through_repeated_cancellation(
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await task
+    await accessor.close()
+    assert accessor._conn is None
     conn.close.assert_called_once()
+    conn.wait_closed.assert_awaited_once()

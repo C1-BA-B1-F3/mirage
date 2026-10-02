@@ -13,17 +13,15 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import logging
 from pathlib import Path
 from typing import Any
 
 import asyncssh
 
 from mirage.accessor.base import Accessor
+from mirage.concurrency.limiter import settle
 from mirage.vfs.secrets import reveal_secret
 from mirage.vfs.ssh.config import SSHConfig
-
-logger = logging.getLogger(__name__)
 
 
 def _connect_kwargs(config: SSHConfig) -> dict[str, Any]:
@@ -45,18 +43,6 @@ def _connect_kwargs(config: SSHConfig) -> dict[str, Any]:
     return kwargs
 
 
-async def _close_joined(conn: asyncssh.SSHClientConnection) -> None:
-    conn.close()
-    closing = asyncio.ensure_future(conn.wait_closed())
-    while not closing.done():
-        try:
-            await asyncio.shield(closing)
-        except asyncio.CancelledError:
-            logger.debug(
-                "deferring cancellation until the SSH connection closes"
-            )
-
-
 class SSHAccessor(Accessor):
     def __init__(self, config: SSHConfig) -> None:
         self.config = config
@@ -75,7 +61,8 @@ class SSHAccessor(Accessor):
                 try:
                     self._sftp = await conn.start_sftp_client()
                 except BaseException:
-                    await _close_joined(conn)
+                    conn.close()
+                    await settle(asyncio.ensure_future(conn.wait_closed()))
                     raise
                 self._conn = conn
             return self._sftp

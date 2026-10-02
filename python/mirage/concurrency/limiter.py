@@ -13,9 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import TypeVar, cast
+
+logger = logging.getLogger(__name__)
 
 
 class ConcurrencyLimiter:
@@ -76,3 +79,17 @@ async def bounded_map(
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
     return cast(list[_R], results)
+
+
+async def settle(task: asyncio.Future[_R]) -> _R:
+    """Wait for owned work to finish, deferring the caller's cancellation.
+
+    Args:
+        task (asyncio.Future): work that must not outlive its caller.
+    """
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            logger.debug("deferring cancellation until owned work settles")
+    return task.result()

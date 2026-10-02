@@ -1030,11 +1030,11 @@ def with_dispatch_rule_guard(dispatch: DispatchFn) -> DispatchFn:
     ``tar -cf -`` or a cross-mount ``cp -r`` reads and writes. The door
     enforces hiding, modes and pure path rules on its own but cannot
     tell which command issued an op, so the op carries the bound gate
-    as ``rule_gate`` and the door judges it on the paths it actually
-    reaches: after its own walk (a ``..`` through a missing directory,
-    a link into hidden space answer as missing first), with every link
-    above the final name followed, and the final one for an op that
-    follows it. A metadata op passes unmarked, as the slot chain lets
+    as ``rule_gate`` and the door judges it on the path as handed in and
+    the paths it actually reaches: after its own walk (a ``..`` through a
+    missing directory, a link into hidden space answer as missing first),
+    with every link above the final name followed, and the final one for
+    an op that follows it. A metadata op passes unmarked, as the slot chain lets
     ``stat`` pass.
 
     Args:

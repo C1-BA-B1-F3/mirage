@@ -242,7 +242,7 @@ def _unread_paths(
             before the command.
     """
     unread = {cwd} if lost else set()
-    read = set()
+    read: set[str] = set()
     for w in words:
         stale = w.text is None or (lost and not w.value.startswith("/"))
         (unread if stale else read).add(resolve_path(w.value, cwd))

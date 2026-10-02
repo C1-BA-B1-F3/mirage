@@ -29,6 +29,7 @@ export function isCrossMount(
   cmdName: string,
   scopes: PathSpec[],
   registry: MountRegistry,
+  flagScopes: readonly PathSpec[] = [],
 ): boolean {
   if (!CROSS_MOUNT_COMMANDS.has(cmdName) || scopes.length < 2) return false
   const mounts = new Set<string>()
@@ -38,9 +39,17 @@ export function isCrossMount(
     if (m !== null) mounts.add(m.prefix)
   }
   // A copy of a tree that holds a mount reads both filesystems, the way GNU
-  // cp -r copies across one, even from a single mount's operands.
+  // cp -r copies across one, even from a single mount's operands. Only a
+  // source counts: the destination (-t's directory, else the last operand)
+  // lands beside a mount and crosses nothing.
+  const landing = new Set(
+    (flagScopes.length > 0 ? flagScopes : scopes.slice(-1)).map((s) => s.virtual),
+  )
   return (
     mounts.size > 1 ||
-    (cmdName === 'cp' && scopes.some((s) => registry.descendantMounts(s.virtual).length > 0))
+    (cmdName === 'cp' &&
+      scopes.some(
+        (s) => !landing.has(s.virtual) && registry.descendantMounts(s.virtual).length > 0,
+      ))
   )
 }

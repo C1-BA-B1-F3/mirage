@@ -23,13 +23,13 @@ from mirage.commands.builtin.generic_bind.adapter import (
     Operation,
     bound_op,
 )
+from mirage.commands.builtin.utils.operands import mount_points
 from mirage.commands.builtin.utils.output import format_optional_records
 from mirage.commands.builtin.utils.slash_links import (
     is_slashed_link,
     rm_link_refusal,
 )
 from mirage.commands.builtin.utils.verbose import removal_lines
-from mirage.commands.builtin.utils.wrap import mount_points
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView

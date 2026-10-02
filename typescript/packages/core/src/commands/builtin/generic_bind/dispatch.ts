@@ -39,6 +39,10 @@ export function dispatchIO(dispatch: DispatchFn): CommandIO {
   }
 }
 
+function noneBelow(): string[] {
+  return []
+}
+
 /** Run the existing builder once over the full virtual namespace. Mirrors
  * Python's run_dispatch. The dispatcher lists the mounts below a directory
  * itself, so `ns` offers no descendant to avoid; where each mount begins
@@ -57,11 +61,13 @@ export async function runDispatch(
   stdin: ByteSource | null = null,
   signal?: AbortSignal,
 ): Promise<[ByteSource | null, IOResult]> {
-  const none = (): string[] => []
   const view =
     ns?.mounts === undefined
       ? ns
-      : { ...ns, mounts: { ...ns.mounts, descendants: none, visibleDescendants: none } }
+      : {
+          ...ns,
+          mounts: { ...ns.mounts, descendants: noneBelow, visibleDescendants: noneBelow },
+        }
   const result = await builder.fn(
     dispatchIO(dispatch),
     new NOOPAccessor(),

@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Awaitable
+from dataclasses import replace
 from functools import partial
 from typing import Any, Callable
 
@@ -26,9 +27,9 @@ from mirage.commands.builtin.generic.crossmount.utils import (
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.ops.types import MountView, NamespaceView
+from mirage.ops.types import LinkSubtree, MountView, NamespaceView
 from mirage.runtime.types import DispatchFn
-from mirage.types import PathSpec, PrimitiveCopy
+from mirage.types import FileStat, PathSpec, PrimitiveCopy
 
 
 async def _own_filesystem(
@@ -52,6 +53,30 @@ async def _own_filesystem(
     if path.virtual not in starts and mounts.is_root(path.virtual):
         return []
     return await readdir(path, **kwargs)
+
+
+def _own_links(
+    subtree: LinkSubtree,
+    mounts: MountView,
+    starts: set[str],
+    directory: str,
+) -> list[tuple[str, FileStat]]:
+    """The links below a directory that ``cp -x`` reaches: none under a
+    mount root its listing leaves empty, at or below the directory.
+
+    Args:
+        subtree (LinkSubtree): the namespace's link walk.
+        mounts (MountView): the mount boundaries.
+        starts (set[str]): the operands, whose own mounts are copied.
+        directory (str): the copied directory.
+    """
+    below = directory.rstrip("/") + "/"
+    rows = []
+    for virtual, stat in subtree(directory):
+        root = mounts.root_of(virtual).rstrip("/") or "/"
+        if root in starts or not f"{root}/".startswith(below):
+            rows.append((virtual, stat))
+    return rows
 
 
 async def run_cp(
@@ -81,13 +106,17 @@ async def run_cp(
     """
     fl = FlagView(flag_kwargs, spec=SPECS["cp"])
     primitives = transfer_primitives(dispatch)
+    links = ns.links if ns is not None else None
     if fl.as_bool("one_file_system") and ns is not None and ns.mounts:
+        starts = {s.virtual for s in scopes}
         primitives["readdir"] = partial(
-            _own_filesystem,
-            primitives["readdir"],
-            ns.mounts,
-            {s.virtual for s in scopes},
+            _own_filesystem, primitives["readdir"], ns.mounts, starts
         )
+        if links is not None:
+            links = replace(
+                links,
+                subtree=partial(_own_links, links.subtree, ns.mounts, starts),
+            )
     strategy = PrimitiveCopy(
         read_bytes=primitives["read_bytes"],
         write=primitives["write"],
@@ -102,13 +131,13 @@ async def run_cp(
         backend_key=storage_key,
         copies=(
             TransferLinks(
-                links=ns.links,
+                links=links,
                 dispatch=dispatch,
                 cwd=cwd,
                 relay=strategy,
                 relay_stat=primitives["stat"],
             )
-            if ns is not None and ns.links is not None
+            if links is not None
             else None
         ),
     )

@@ -288,6 +288,10 @@ async def plan_create(
             named.append((member_name(spelled, entry.kind), spelled, entry))
         for problem in scan.problems:
             shown = respell_one(problem.path, base, raw)
+            # A link followed onto another mount is a crossing too, which
+            # --one-file-system leaves unreported, as in GNU.
+            if one_file_system and problem.reason == OTHER_FILESYSTEM:
+                continue
             if problem.unreadable:
                 # A directory the walk could not open: GNU names it,
                 # keeps its entry, and fails the run.

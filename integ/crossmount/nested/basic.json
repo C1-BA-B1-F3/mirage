@@ -1076,10 +1076,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "cp -r /ghost /data/g1; find /data/g1; cp -rx /ghost /data/g2; find /data/g2; rm -r /data/g1 /data/g2",
+      "command": "ln -s g.txt /ghost/deep/gl; cp -r /ghost /data/g1; find /data/g1; cp -rx /ghost /data/g2; find /data/g2; mkdir /data/g3; cp -rx -t /data/g3 /ghost; cp -t /data/g3 /ghost/deep/g.txt; mv -t /ghost/deep /data/g3/ghost; find /data/g3 /ghost/deep; rm -r /data/g1 /data/g2 /data/g3 /ghost/deep/ghost /ghost/deep/gl",
       "expect": {
         "exit": 0,
-        "stdout": "/data/g1\n/data/g1/deep\n/data/g1/deep/g.txt\n/data/g2\n/data/g2/deep\n",
+        "stdout": "/data/g1\n/data/g1/deep\n/data/g1/deep/g.txt\n/data/g1/deep/gl\n/data/g2\n/data/g2/deep\n/data/g3\n/data/g3/g.txt\n/ghost/deep\n/ghost/deep/g.txt\n/ghost/deep/ghost\n/ghost/deep/ghost/deep\n/ghost/deep/gl\n",
         "stderr": ""
       }
     }

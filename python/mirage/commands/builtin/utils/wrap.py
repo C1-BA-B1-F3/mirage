@@ -92,27 +92,6 @@ def mount_parent_readdir(
     return listing
 
 
-def mount_points(mounts: MountView | None, directory: str) -> list[str]:
-    """The mount roots a walk of ``directory`` reaches first, sorted.
-
-    Each one is the edge of the directory's own filesystem: the roots
-    under no other visible mount below the directory, so a mount nested
-    in a mount is not one of them.
-
-    Args:
-        mounts (MountView | None): the mount boundaries.
-        directory (str): the directory walked, a virtual path.
-    """
-    if mounts is None:
-        return []
-    roots = mounts.visible_descendants(directory)
-    return sorted(
-        root
-        for root in roots
-        if not any(root.startswith(other + "/") for other in roots)
-    )
-
-
 def mount_parent_stat(
     stat: Callable[[str | PathSpec], Awaitable[FileStat]],
     mounts: MountView | None,

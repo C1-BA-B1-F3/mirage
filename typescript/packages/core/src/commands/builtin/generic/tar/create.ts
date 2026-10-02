@@ -51,8 +51,6 @@ export interface CreateDeps {
   directories?: readonly PathSpec[]
   links?: LinkView | null
   mounts?: MountView | null
-  // --one-file-system, asked for, so a mount left out goes unreported, as
-  // in GNU.
   oneFileSystem?: boolean
 }
 
@@ -236,6 +234,9 @@ export async function planCreate(
     })
     for (const problem of scan.problems) {
       const shown = respellOne(problem.path, base, raw)
+      // A link followed onto another mount is a crossing too, which
+      // --one-file-system leaves unreported, as in GNU.
+      if (deps.oneFileSystem === true && problem.reason === OTHER_FILESYSTEM) continue
       if (problem.unreadable === true) {
         // A directory the walk could not open: GNU names it, keeps its
         // entry, and fails the run.

@@ -18,14 +18,14 @@ import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
 import { concat } from '../../io/cachable_iterator.ts'
 import { CommandTimeoutError } from '../../commands/errors.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
 import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { ExitSignal, ReturnSignal } from '../../shell/errors.ts'
 import { isBackgrounded } from '../../shell/helpers.ts'
 import { type Job, JobStatus, type JobTable } from '../../shell/job_table/index.ts'
 import { PipeConsole } from '../../shell/console/pipe.ts'
 import { Channel, type JobConsole } from '../../shell/console/index.ts'
-import { runWithSession } from '../../context/session_context.ts'
+import { isProgramInvocation, runWithSession } from '../../context/session_context.ts'
 import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { abortable, mergeSignals } from '../abort.ts'
 import type { SessionView } from '../../ops/types.ts'
@@ -134,7 +134,9 @@ export async function handleBackground(
   decisions: Decisions | null = null,
 ): Promise<JobHandlerResult> {
   const bgSession = session.fork()
-  const bgCallStack = callStack?.fork() ?? null
+  // A job is a child shell outside every loop: `{ break; } &` in a loop
+  // refuses, as bash's does.
+  const bgCallStack = (callStack ?? new CallStack()).fork(false)
   const jobHanded =
     handed !== null && decisions !== null
       ? decisions.split(session.sessionId, handed, occurrenceOf(left, handed))
@@ -629,7 +631,7 @@ export async function handleFg(
     const running = jobs.filter((j) => j.status === JobStatus.RUNNING)
     const current = running[running.length - 1]
     if (current === undefined) {
-      const err = new TextEncoder().encode('fg: current: no such job\n')
+      const err = new TextEncoder().encode('bash: fg: current: no such job\n')
       return [
         null,
         new IOResult({ exitCode: 1, stderr: err }),
@@ -641,7 +643,7 @@ export async function handleFg(
     const raw = (parts[1] ?? '').replace(/^%+/, '')
     jobId = Number(raw)
     if (!Number.isInteger(jobId) || jobNumbered(jobs, jobId) === null) {
-      const err = new TextEncoder().encode(`fg: ${parts[1] ?? ''}: no such job\n`)
+      const err = new TextEncoder().encode(`bash: fg: ${parts[1] ?? ''}: no such job\n`)
       return [
         null,
         new IOResult({ exitCode: 1, stderr: err }),
@@ -727,12 +729,14 @@ export async function handleKill(
   let signal = KILL_SIGNALS.TERM ?? 15
   let words = parts.slice(1)
   let sawSignal = false
+  // The program (`xargs kill`) keeps its bare voice.
+  const voice = session !== null && isProgramInvocation(session) ? '' : 'bash: '
   while (words.length > 0) {
     const word = words[0] ?? ''
     let spec: string
     if (word === '-s' || word === '-n') {
       if (words.length < 2)
-        return jobResult(cmdStr, `kill: ${word}: option requires an argument\n`, 1)
+        return jobResult(cmdStr, `${voice}kill: ${word}: option requires an argument\n`, 1)
       spec = words[1] ?? ''
       words = words.slice(2)
     } else if (word === '--') {
@@ -747,7 +751,7 @@ export async function handleKill(
     } else break
     const number = signalNumber(spec)
     if (number === null)
-      return jobResult(cmdStr, `kill: ${spec}: invalid signal specification\n`, 1)
+      return jobResult(cmdStr, `${voice}kill: ${spec}: invalid signal specification\n`, 1)
     signal = number
   }
   if (words.length === 0) return jobResult(cmdStr, `${KILL_USAGE}\n`, 2)
@@ -758,7 +762,7 @@ export async function handleKill(
     const jobs = jobTable.listJobs(sid)
     const [pid, refusal] = killPid(jobs, operand)
     if (pid === null) {
-      errors.push(`kill: ${refusal}`)
+      errors.push(`${voice}kill: ${refusal}`)
       continue
     }
     let found: boolean
@@ -771,11 +775,11 @@ export async function handleKill(
       }
     } catch (err) {
       if ((err as { code?: unknown }).code !== 'EPERM') throw err
-      errors.push(`kill: (${String(pid)}) - Operation not permitted`)
+      errors.push(`${voice}kill: (${String(pid)}) - Operation not permitted`)
       continue
     }
     if (!found) {
-      errors.push(`kill: (${String(pid)}) - No such process`)
+      errors.push(`${voice}kill: (${String(pid)}) - No such process`)
       continue
     }
     signalled = true

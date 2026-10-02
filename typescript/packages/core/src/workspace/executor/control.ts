@@ -121,9 +121,11 @@ async function executeBody(
     } catch (sig) {
       if (!isUnwinding(sig)) throw sig
       // The control builtin is a statement the loop leaves through
-      // rather than closes, so its own status (0) is recorded here:
-      // bash leaves `${PIPESTATUS[@]}` at `0` after `break`.
-      if (sig instanceof BreakSignal || sig instanceof ContinueSignal) recordStatus(session, 0)
+      // rather than closes, so its own status is recorded here: bash
+      // leaves `${PIPESTATUS[@]}` at `0` after `break`.
+      if (sig instanceof BreakSignal || sig instanceof ContinueSignal) {
+        recordStatus(session, sig.io.exitCode)
+      }
       throw await carried(sig, chainNonNull(allStdout), mergedIo)
     }
   }
@@ -170,6 +172,37 @@ export async function carried(
   sig.stdout = concat([await materialize(stdout), sig.stdout ?? new Uint8Array()])
   sig.stderr = stderr
   return sig
+}
+
+/**
+ * What a child shell reports when an `Unwinding` ends it: what it wrote, its
+ * diagnostic, and its status, `exit`'s contained one, `return`'s own, or that
+ * of `break` or `continue`. Mirrors Python's ended.
+ */
+export function ended(sig: Unwinding): IOResult {
+  if (sig instanceof BreakSignal || sig instanceof ContinueSignal) {
+    return new IOResult({ stdout: sig.stdout, stderr: sig.io.stderr, exitCode: sig.io.exitCode })
+  }
+  return new IOResult({
+    stdout: sig.stdout,
+    stderr: sig.stderr.byteLength > 0 ? sig.stderr : null,
+    exitCode: sig instanceof ExitSignal ? sig.containedCode : sig.exitCode,
+  })
+}
+
+/**
+ * Take the diagnostic an `Unwinding` carries, for the redirects it was
+ * written under to route. Mirrors Python's take_stderr.
+ */
+export async function takeStderr(sig: Unwinding): Promise<Uint8Array> {
+  if (sig instanceof BreakSignal || sig instanceof ContinueSignal) {
+    const diagnostic = await materialize(sig.io.stderr)
+    sig.io.stderr = null
+    return diagnostic
+  }
+  const diagnostic = sig.stderr
+  sig.stderr = new Uint8Array()
+  return diagnostic
 }
 
 /**

@@ -1405,7 +1405,11 @@ describe('command permissions end to end', () => {
     // An unlisted tool is not a command for the session: 127 before any
     // admission hook, and every enumerator agrees.
     expect(await line(ws, 'sort /repo/d/x')).toEqual([127, '', 'sort: command not found\n'])
-    expect(await line(ws, 'type sort; echo $?')).toEqual([0, '1\n', 'type: sort: not found\n'])
+    expect(await line(ws, 'type sort; echo $?')).toEqual([
+      0,
+      '1\n',
+      'bash: type: sort: not found\n',
+    ])
     expect(await line(ws, 'command -v sort; echo $?')).toEqual([0, '1\n', ''])
     expect(await line(ws, 'which sort; echo $?')).toEqual([0, '1\n', ''])
     const [code, out] = await line(ws, 'man')
@@ -1421,7 +1425,7 @@ describe('command permissions end to end', () => {
     expect(await line(ws, 'f() { echo in-f; }; f')).toEqual([0, 'in-f\n', ''])
     expect((await line(ws, 'cat /repo/d/x'))[0]).toBe(0)
     expect(await line(ws, 'pwd')).toEqual([127, '', 'pwd: command not found\n'])
-    expect(await line(ws, 'type pwd; echo $?')).toEqual([0, '1\n', 'type: pwd: not found\n'])
+    expect(await line(ws, 'type pwd; echo $?')).toEqual([0, '1\n', 'bash: type: pwd: not found\n'])
     // `history` is a tool-tier builtin: hidden when unlisted.
     expect(await line(ws, 'history')).toEqual([127, '', 'history: command not found\n'])
   })

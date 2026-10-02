@@ -2810,7 +2810,7 @@ def test_printf_newline():
 
 def test_printf_no_args():
     stdout, io, _, _, _, _ = _exec("printf")
-    assert io.exit_code == 0
+    assert io.exit_code == 2
     assert stdout == b""
 
 

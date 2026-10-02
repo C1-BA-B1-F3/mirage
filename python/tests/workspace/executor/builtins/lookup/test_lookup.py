@@ -178,7 +178,7 @@ def test_type_not_found_warns_and_exits_1():
     out, io, _ = handle_type(["nope"], make_session(), make_registry())
     assert out is None
     assert io.exit_code == 1
-    assert io.stderr == b"type: nope: not found\n"
+    assert io.stderr == b"bash: type: nope: not found\n"
 
 
 def test_type_t_not_found_is_silent():
@@ -203,7 +203,7 @@ def test_type_path_mode_empty_for_builtin():
 def test_type_invalid_option():
     out, io, _ = handle_type(["-x", "cd"], make_session(), make_registry())
     assert io.exit_code == 2
-    assert io.stderr.startswith(b"type: -x: invalid option\n")
+    assert io.stderr.startswith(b"bash: type: -x: invalid option\n")
 
 
 @pytest.mark.parametrize("name", ["linear", "cat", "echo", "xargs"])

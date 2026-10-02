@@ -21,7 +21,12 @@ from mirage.ops.types import SessionView
 from mirage.shell.arith import evaluate_arith
 from mirage.shell.backticks import split_backtick_region
 from mirage.shell.call_stack import CallStack
-from mirage.shell.errors import ArithError, BadSubstitution, ExitSignal, named
+from mirage.shell.errors import (
+    ArithError,
+    BadSubstitution,
+    DiscardSignal,
+    named,
+)
 from mirage.shell.escapes import (
     decode_ansi_c,
     unescape_dquoted,
@@ -71,6 +76,7 @@ async def _expand_backtick_region(
     execute_fn: Callable[..., Any],
     node: TSNodeLike,
     offset: int,
+    call_stack: CallStack | None,
 ) -> str:
     """Expand a backtick region, one nested line per pair.
 
@@ -81,6 +87,7 @@ async def _expand_backtick_region(
         node (TSNodeLike): the region's node.
         offset (int): where ``raw`` starts in the node's text, in the
             parser's offsets.
+        call_stack (CallStack | None): the frames each pair runs on.
     """
     parts: list[str] = []
     for segment in split_backtick_region(raw):
@@ -95,6 +102,7 @@ async def _expand_backtick_region(
             execute_fn,
             segment.text,
             node,
+            call_stack,
             (
                 offset + byte_offset(raw, segment.start),
                 offset + byte_offset(raw, segment.end),
@@ -112,6 +120,7 @@ async def child_line(
     execute_fn: Callable[..., Any],
     text: str,
     node: Any,
+    call_stack: CallStack | None,
     span: tuple[int, int] | None = None,
 ) -> IOResult:
     """Run a substitution's line in a child shell.
@@ -122,6 +131,9 @@ async def child_line(
     The line reaches the executor unwrapped,
     under the node that named it, so the pass places its commands
     where they were typed rather than under a subshell of their own.
+    The child runs on a copy of the caller's frames: inside a function
+    it reads the function's ``$1``, ``return`` ends it, and so does a
+    ``break`` from a loop the caller is in.
 
     Args:
         session (SessionState): the parent shell's session.
@@ -129,6 +141,7 @@ async def child_line(
             executor.
         text (str): the line the substitution holds.
         node (Any): the tree-sitter node the substitution stands under.
+        call_stack (CallStack | None): the caller's frames.
         span (tuple[int, int] | None): the pair's byte span within the
             node, for a backtick region holding several.
     """
@@ -138,6 +151,7 @@ async def child_line(
         node=node,
         span=span,
         substitution=True,
+        call_stack=(call_stack or CallStack()).fork(),
     )
 
 
@@ -151,13 +165,12 @@ def _find_first(node: TSNodeLike, ntype: str) -> TSNodeLike | None:
     return None
 
 
-def arith_exit(expr: str, exc: ArithError) -> ExitSignal:
+def arith_exit(expr: str, exc: ArithError) -> DiscardSignal:
     """The fatal shape of an arithmetic expansion error.
 
-    bash aborts the whole line on a bad ``$((...))`` in a
-    non-interactive shell, exactly as it does for ``${var:?}``: the
-    command never runs, the line exits 1, and a subshell or pipeline
-    segment containing it reports 1. The old return of the expansion's
+    bash discards the rest of the line on a bad ``$((...))``: the
+    command never runs, ``$?`` is 1, and a subshell or pipeline segment
+    containing it reports 1. The old return of the expansion's
     own text printed ``$((1/0))`` with exit 0, the silent wrong answer
     the fail-loud rule forbids. The diagnostic is the expression as
     expanded (``1/0`` for ``$((1/$x))`` with ``x=0``), trimmed, in the
@@ -168,9 +181,7 @@ def arith_exit(expr: str, exc: ArithError) -> ExitSignal:
         expr (str): the expression text handed to the evaluator.
         exc (ArithError): what the evaluator refused.
     """
-    return ExitSignal(
-        1, stderr=f"bash: {expr.strip()}: {exc}\n".encode(), contained_code=1
-    )
+    return DiscardSignal(f"bash: {expr.strip()}: {exc}\n".encode())
 
 
 async def expand_arith(
@@ -637,7 +648,7 @@ async def _substitution(
         # the grammar, which merges adjacent pairs (see
         # split_backtick_region).
         return await _expand_backtick_region(
-            raw, session, execute_fn, ts_node, len(prefix.encode())
+            raw, session, execute_fn, ts_node, len(prefix.encode()), call_stack
         )
     if raw.startswith("$((") and raw.endswith("))"):
         # Inside heredoc bodies tree-sitter parses `$((expr))` as a
@@ -660,7 +671,7 @@ async def _substitution(
         return ""
     # The substitution names its own node: the nested line's
     # commands stand under it, which is where the pass placed them.
-    io = await child_line(session, execute_fn, inner, ts_node)
+    io = await child_line(session, execute_fn, inner, ts_node, call_stack)
     text = (await io.stdout_str()).rstrip("\n")
     # Record the substitution's status: an assignment-only
     # statement whose value ran substitutions reports the last

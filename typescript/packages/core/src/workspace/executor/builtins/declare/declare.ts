@@ -15,7 +15,7 @@
 import { IOResult } from '../../../../io/types.ts'
 import { functionText } from '../../../../shell/printer.ts'
 import type { TSNodeLike } from '../../../../shell/types.ts'
-import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
+import { ArithError, DiscardSignal } from '../../../../shell/errors.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
 import { buildAssocLiteral, buildIndexedLiteral, type ShellArray } from '../../../../shell/array.ts'
 import { varHidden } from '../../../../utils/hidden.ts'
@@ -96,8 +96,7 @@ export async function storeStagedArrays(
   for (const { name, append, items } of arrays) {
     if (view.isReadonly(name)) {
       if (fatal) {
-        const err = new TextEncoder().encode(`bash: ${name}: readonly variable\n`)
-        throw new ExitSignal(1, err, null, 1)
+        throw new DiscardSignal(new TextEncoder().encode(`bash: ${name}: readonly variable\n`))
       }
       return readonlyRefusal(cmd, name)
     }

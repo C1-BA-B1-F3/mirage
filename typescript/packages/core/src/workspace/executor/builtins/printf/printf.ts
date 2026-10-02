@@ -133,7 +133,7 @@ export async function handlePrintf(
     if (parsed === null) {
       // bash validates the name before formatting, so a bad name
       // suppresses the conversion errors the format would report.
-      const err = new TextEncoder().encode(`printf: \`${target}': not a valid identifier\n`)
+      const err = new TextEncoder().encode(`bash: printf: \`${target}': not a valid identifier\n`)
       return [
         null,
         new IOResult({ exitCode: 2, stderr: err }),
@@ -180,7 +180,9 @@ export async function handlePrintf(
       // ships printf as a builtin, so the builtin governs. A bare `-v` short
       // of its NAME is left to the format path, where bash's own `option
       // requires an argument` is a separate change.
-      const err = new TextEncoder().encode(`printf: -${first[1] ?? ''}: invalid option\n${USAGE}`)
+      const err = new TextEncoder().encode(
+        `bash: printf: -${first[1] ?? ''}: invalid option\n${USAGE}`,
+      )
       return [
         null,
         new IOResult({ exitCode: 2, stderr: err }),
@@ -200,17 +202,17 @@ export async function handlePrintf(
     ]
   }
   if (args.length === 0) {
-    if (target !== null) {
-      const err = new TextEncoder().encode(USAGE)
-      return [
-        null,
-        new IOResult({ exitCode: 2, stderr: err }),
-        new ExecutionNode({ command: 'printf', exitCode: 2, stderr: err }),
-      ]
-    }
-    return [new Uint8Array(), new IOResult(), new ExecutionNode({ command: 'printf', exitCode: 0 })]
+    // A format is required: bash's usage error, `printf -v x` too.
+    const err = new TextEncoder().encode(USAGE)
+    return [
+      null,
+      new IOResult({ exitCode: 2, stderr: err }),
+      new ExecutionNode({ command: 'printf', exitCode: 2, stderr: err }),
+    ]
   }
-  const [output, messages, failed, excess] = runPrintf(args[0] ?? '', args.slice(1))
+  const [output, rawMessages, failed, excess] = runPrintf(args[0] ?? '', args.slice(1))
+  const voice = isProgramInvocation(session) ? '' : 'bash: '
+  const messages = rawMessages.map((message) => voice + message)
   const errBytes = messages.length > 0 ? new TextEncoder().encode(messages.join('')) : null
   const exitCode = failed ? 1 : 0
   if (target !== null && parsed !== null) {

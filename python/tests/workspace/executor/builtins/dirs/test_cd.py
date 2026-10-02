@@ -84,7 +84,7 @@ async def test_cd_refuses_a_missing_directory_and_leaves_the_cwd_alone():
     sess = session(cwd="/data")
     _, io, node = await handle_cd(dispatch, no_mount_root, "nope", sess)
     assert io.exit_code == 1
-    assert io.stderr == b"cd: nope: No such file or directory\n"
+    assert io.stderr == b"bash: cd: nope: No such file or directory\n"
     assert node.exit_code == 1
     assert sess.cwd == "/data"
 
@@ -95,7 +95,7 @@ async def test_cd_refuses_a_regular_file():
     sess = session(cwd="/data")
     _, io, _ = await handle_cd(dispatch, no_mount_root, "f.txt", sess)
     assert io.exit_code == 1
-    assert io.stderr == b"cd: f.txt: Not a directory\n"
+    assert io.stderr == b"bash: cd: f.txt: Not a directory\n"
     assert sess.cwd == "/data"
 
 
@@ -273,5 +273,5 @@ async def test_cd_reports_eloop_on_a_symlink_cycle():
         dispatch, no_mount_root, "/a", sess, links={"/a": "/b", "/b": "/a"}
     )
     assert io.exit_code == 1
-    assert io.stderr == b"cd: /a: Too many levels of symbolic links\n"
+    assert io.stderr == b"bash: cd: /a: Too many levels of symbolic links\n"
     assert sess.cwd == "/data"

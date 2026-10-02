@@ -63,6 +63,7 @@ from mirage.shell.helpers import (
 )
 from mirage.shell.job_table import JobTable
 from mirage.shell.node_kind import NodeKind, node_kind, pipeline_transparent
+from mirage.shell.parse.names import literal_text
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import PipelineStages, Redirect, RedirectKind
 from mirage.types import PathSpec
@@ -102,6 +103,7 @@ from mirage.workspace.expand import (
 from mirage.workspace.expand.globs import glob_options, resolve_globs
 from mirage.workspace.expand.node import expand_arith
 from mirage.workspace.expand.pattern import expand_pattern
+from mirage.workspace.lookup.constants import BASH_BUILTINS
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.assignment import execute_assignment
@@ -662,7 +664,13 @@ async def _run_redirected(
         )
         return await _negated(stdout, io, exec_node, session, inner)
     expanded_redirects, pipe_node = await expand_redirects(
-        redirects, session, execute_fn, registry, call_stack, view=view
+        redirects,
+        session,
+        execute_fn,
+        registry,
+        call_stack,
+        view=view,
+        forked=_forks(command, session),
     )
     # `exec > file` with no command installs the redirects on the
     # shell for every later statement, rather than applying them to
@@ -785,6 +793,47 @@ def _is_bare_exec(command: Any) -> bool:
         len(named) == 1
         and named[0].type == NT.COMMAND_NAME
         and get_text(named[0]) == "exec"
+    )
+
+
+def _forks(command: Any, session: SessionState) -> bool:
+    """Whether bash forks to run a redirected command, so its redirects
+    expand in the child and an error there fails that command alone: a
+    subshell or a program. A builtin, a function or another compound
+    command is the shell's own, which expands its redirects itself and
+    discards the line on an error. ``command -v`` is the builtin itself;
+    ``command X`` is X with functions masked; a name only an expansion
+    spells is taken for a program.
+
+    Args:
+        command (Any): the command under the redirect, None for none.
+        session (SessionState): whose functions a name may call.
+    """
+    if command is None or command.type != NT.COMMAND:
+        return command is not None and command.type == NT.SUBSHELL
+    words = [
+        part
+        for part in get_parts(command)
+        if part.type != NT.VARIABLE_ASSIGNMENT
+    ]
+    functions = True
+    while words and get_text(words[0]) == "command":
+        words, functions = words[1:], False
+        while words and get_text(words[0]).startswith("-"):
+            option = get_text(words.pop(0))
+            if option == "--":
+                break
+            if "v" in option or "V" in option:
+                return False
+    if not words:
+        return False
+    head = words[0]
+    if head.type == NT.COMMAND_NAME and head.named_children:
+        head = head.named_children[0]
+    name = literal_text(head)
+    return name is None or (
+        name not in BASH_BUILTINS
+        and not (functions and name in session.functions)
     )
 
 
@@ -1293,19 +1342,20 @@ async def _execute_node(
             call_stack=cs,
             view=view,
         )
-        return await handle_cfor(
-            stream,
-            exprs,
-            body,
-            eval_expr,
-            session,
-            stdin,
-            cs,
-            job_table=job_table,
-            agent_id=agent_id,
-            handed=handed,
-            decisions=registry.decisions,
-        )
+        with cs.loop():
+            return await handle_cfor(
+                stream,
+                exprs,
+                body,
+                eval_expr,
+                session,
+                stdin,
+                cs,
+                job_table=job_table,
+                agent_id=agent_id,
+                handed=handed,
+                decisions=registry.decisions,
+            )
 
     # ── for / select ────────────────────────────
     if kind in (NodeKind.FOR, NodeKind.SELECT):
@@ -1337,7 +1387,24 @@ async def _execute_node(
                 options=glob_options(session),
             )
         if kind == NodeKind.SELECT:
-            return await handle_select(
+            with cs.loop():
+                return await handle_select(
+                    stream,
+                    var,
+                    classified,
+                    body,
+                    session,
+                    stdin,
+                    cs,
+                    policies=namespace.registry.policies,
+                    job_table=job_table,
+                    agent_id=agent_id,
+                    handed=handed,
+                    decisions=registry.decisions,
+                    sink=sink,
+                )
+        with cs.loop():
+            return await handle_for(
                 stream,
                 var,
                 classified,
@@ -1350,28 +1417,27 @@ async def _execute_node(
                 agent_id=agent_id,
                 handed=handed,
                 decisions=registry.decisions,
-                sink=sink,
             )
-        return await handle_for(
-            stream,
-            var,
-            classified,
-            body,
-            session,
-            stdin,
-            cs,
-            policies=namespace.registry.policies,
-            job_table=job_table,
-            agent_id=agent_id,
-            handed=handed,
-            decisions=registry.decisions,
-        )
 
     # ── while / until ───────────────────────────
     if kind in (NodeKind.WHILE, NodeKind.UNTIL):
         condition, body = get_while_parts(node)
         if kind == NodeKind.UNTIL:
-            return await handle_until(
+            with cs.loop():
+                return await handle_until(
+                    stream,
+                    condition,
+                    body,
+                    session,
+                    stdin,
+                    cs,
+                    job_table=job_table,
+                    agent_id=agent_id,
+                    handed=handed,
+                    decisions=registry.decisions,
+                )
+        with cs.loop():
+            return await handle_while(
                 stream,
                 condition,
                 body,
@@ -1383,18 +1449,6 @@ async def _execute_node(
                 handed=handed,
                 decisions=registry.decisions,
             )
-        return await handle_while(
-            stream,
-            condition,
-            body,
-            session,
-            stdin,
-            cs,
-            job_table=job_table,
-            agent_id=agent_id,
-            handed=handed,
-            decisions=registry.decisions,
-        )
 
     # ── case ────────────────────────────────────
     if kind == NodeKind.CASE:

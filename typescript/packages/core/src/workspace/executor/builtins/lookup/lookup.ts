@@ -23,9 +23,12 @@ import { TYPE_OPTIONS, TYPE_USAGE, WHICH_OPTIONS, WHICH_USAGE } from './constant
 import { NameKind } from './types.ts'
 import type { BuiltinCall, Result } from '../types.ts'
 
-/** The refusal shape both builtins use for an unknown option. */
-function optionError(cmd: string, bad: string, usage: string): Result {
-  const err = new TextEncoder().encode(`${cmd}: ${bad}: invalid option\n${usage}`)
+/**
+ * The refusal shape both builtins use for an unknown option; `voice` is
+ * `bash: ` for `type`, a builtin, and empty for `which`, a program.
+ */
+function optionError(cmd: string, bad: string, usage: string, voice = ''): Result {
+  const err = new TextEncoder().encode(`${voice}${cmd}: ${bad}: invalid option\n${usage}`)
   return [
     null,
     new IOResult({ exitCode: 2, stderr: err }),
@@ -53,7 +56,7 @@ export function handleType(
   registry: MountRegistry,
 ): Result {
   const scan = scanOptions(args, TYPE_OPTIONS)
-  if (scan.bad !== null) return optionError('type', scan.bad, TYPE_USAGE)
+  if (scan.bad !== null) return optionError('type', scan.bad, TYPE_USAGE, 'bash: ')
   const enc = new TextEncoder()
   const mode = lastOf(scan.letters, 'tpP')
   const allMode = scan.letters.includes('a')
@@ -70,7 +73,7 @@ export function handleType(
     const kinds = locations(name, session, registry, allMode, hidden)
     if (kinds.length === 0) {
       allFound = false
-      if (mode === null) errLines.push(`type: ${name}: not found\n`)
+      if (mode === null) errLines.push(`bash: type: ${name}: not found\n`)
       continue
     }
     if (mode === 't') outLines.push(...kinds.map((kind) => `${kind}\n`))

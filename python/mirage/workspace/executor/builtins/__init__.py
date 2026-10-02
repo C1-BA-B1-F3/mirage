@@ -30,7 +30,6 @@ if TYPE_CHECKING:
         handle_false,
         handle_return,
         handle_true,
-        loop_levels,
     )
     from mirage.workspace.executor.builtins.declare import (
         handle_declare_functions,
@@ -182,7 +181,6 @@ _EXPORTS: dict[str, tuple[str, ...]] = {
         "handle_false",
         "handle_return",
         "handle_true",
-        "loop_levels",
     ),
     "mirage.workspace.executor.builtins.declare": (
         "handle_declare_functions",
@@ -262,7 +260,6 @@ __all__ = [
     "note_local_array",
     "handle_xargs",
     "interpret_escapes",
-    "loop_levels",
 ]
 
 

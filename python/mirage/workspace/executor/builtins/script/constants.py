@@ -13,9 +13,10 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 # GNU prints the refusal and the usage line together, both under the
-# builtin's own name, and exits 2 without ending the script.
+# builtin's own name as typed (`source` or `.`), and exits 2 without
+# ending the script.
 SOURCE_USAGE = (
-    "filename argument required\nsource: usage: source filename [arguments]"
+    "filename argument required\n{name}: usage: {name} filename [arguments]"
 )
 
 # Startup letters bash has that `set` does not. `c` takes the program

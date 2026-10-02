@@ -2667,7 +2667,7 @@
           "expect": {
             "value": {
               "exit_code": 0,
-              "stdout": "kill: (PID) - Operation not permitted\n",
+              "stdout": "bash: kill: (PID) - Operation not permitted\n",
               "stderr": ""
             }
           },

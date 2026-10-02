@@ -37,7 +37,6 @@ from mirage.shell.descriptors import (
     bad_descriptor_line,
     unsupported_descriptor,
 )
-from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import get_redirects
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import Redirect, RedirectKind, TSNodeLike
@@ -154,10 +153,6 @@ async def _install_descriptor(
     if redirect.kind == RedirectKind.AMBIGUOUS:
         word = target.raw_path if isinstance(target, PathSpec) else str(target)
         return f"{word}: ambiguous redirect\n".encode()
-    if redirect.kind == RedirectKind.UNEXPANDED and isinstance(
-        target, ExitSignal
-    ):
-        return target.stderr
     if redirect.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
         text = str(target) + (
             "\n" if redirect.kind == RedirectKind.HERESTRING else ""

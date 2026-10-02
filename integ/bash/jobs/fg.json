@@ -30,7 +30,7 @@
       "command": "fg 2>&1; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "fg: current: no such job\nrc=1\n",
+        "stdout": "bash: fg: current: no such job\nrc=1\n",
         "stderr": ""
       }
     },

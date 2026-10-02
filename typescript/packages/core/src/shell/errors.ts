@@ -55,6 +55,11 @@ export class ExitSignal extends Error {
   // exits 127 on a fatal expansion error but a subshell wrapping one
   // returns 1; `exit N` uses N in both positions (the default).
   readonly containedCode: number
+  // The id of the command whose own words were being expanded when it was
+  // raised. bash expands a simple command's words before it applies the
+  // command's redirects, so that diagnostic goes around them; any other
+  // goes through the redirects it was written under.
+  expanding: number | null = null
 
   constructor(
     exitCode = 0,
@@ -68,6 +73,21 @@ export class ExitSignal extends Error {
     this.stderr = stderr
     this.stdout = stdout
     this.containedCode = containedCode ?? exitCode
+  }
+}
+
+/**
+ * An error that discards the rest of the line: bash's `DISCARD`. A bad
+ * substitution, an arithmetic or assignment error, a write the shell refuses:
+ * the command never runs, and neither do the statements after it on its line,
+ * but the next line does, with `$?` at 1. The line loop of a shell, of `eval`
+ * and of `source` resumes there; a child shell ends on it with status 1, and
+ * so does `set -e`. Mirrors Python's mirage.shell.errors.DiscardSignal.
+ */
+export class DiscardSignal extends ExitSignal {
+  constructor(stderr: Uint8Array = new Uint8Array()) {
+    super(1, stderr, null, 1)
+    this.name = 'DiscardSignal'
   }
 }
 
@@ -89,14 +109,13 @@ export class UnboundVariable extends ExitSignal {
  * of the expansion it was running: the whole word, a double-quoted part's
  * inside, an operator's word, an arithmetic expression, a heredoc's body.
  * Each level the error leaves renames it (`within`) until one of those fixes
- * the name. Fatal with status 1, as `$((1/0))` is, and contained the same
- * way. Mirrors Python's mirage.shell.errors.BadSubstitution.
+ * the name. Mirrors Python's mirage.shell.errors.BadSubstitution.
  */
-export class BadSubstitution extends ExitSignal {
+export class BadSubstitution extends DiscardSignal {
   private fixed = false
 
   constructor(text: string) {
-    super(1, new Uint8Array(), null, 1)
+    super()
     this.name = 'BadSubstitution'
     this.within(text)
   }
@@ -131,7 +150,7 @@ export async function named<T>(word: string, pending: Promise<T>): Promise<T> {
  */
 export class ReturnSignal extends Error {
   readonly exitCode: number
-  readonly stderr: Uint8Array
+  stderr: Uint8Array
   readonly stdout: ByteSource | null
   constructor(
     exitCode: number,

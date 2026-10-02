@@ -45,12 +45,7 @@ from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.exec import divert_statement
-from mirage.workspace.executor.control import (
-    UNWINDING,
-    BreakSignal,
-    ContinueSignal,
-    carried,
-)
+from mirage.workspace.executor.control import UNWINDING, carried, ended
 from mirage.workspace.executor.jobs import handle_background, pump
 from mirage.workspace.executor.statement import (
     carry_status,
@@ -107,7 +102,7 @@ async def handle_pipe(
                 cmd,
                 child,
                 input_stream,
-                call_stack.fork() if call_stack is not None else None,
+                (call_stack or CallStack()).fork(),
                 sink=output,
             )
             await pump(output, Channel.STDOUT, stdout)
@@ -115,14 +110,11 @@ async def handle_pipe(
         except PipeClosed:
             io.exit_code = 141
         except UNWINDING as sig:
-            # A stage is a subshell: whatever unwinds ends it there, a
-            # `return` with its status, a `break` or `continue` with 0.
-            if isinstance(sig, (BreakSignal, ContinueSignal)):
-                stderr, io.exit_code = sig.io.stderr, 0
-            else:
-                stderr, io.exit_code = sig.stderr, _ended(sig)
-            await pump(output, Channel.STDOUT, sig.stdout)
-            await pump(output, Channel.STDERR, stderr)
+            # A stage is a subshell: whatever unwinds ends it there.
+            unwound = ended(sig)
+            io.exit_code = unwound.exit_code
+            await pump(output, Channel.STDOUT, unwound.stdout)
+            await pump(output, Channel.STDERR, unwound.stderr)
         except BaseException as error:
             output.end(error)
             raise
@@ -222,15 +214,6 @@ async def handle_pipe(
     return last_stdout, last_io, exec_node
 
 
-def _ended(sig: ExitSignal | ReturnSignal) -> int:
-    """The status a subshell ends with when ``exit`` or ``return`` ends it.
-
-    Args:
-        sig (ExitSignal | ReturnSignal): what unwound to the subshell.
-    """
-    return sig.contained_code if isinstance(sig, ExitSignal) else sig.exit_code
-
-
 async def handle_connection(
     execute_node,
     left: TSNodeLike,
@@ -322,6 +305,9 @@ async def handle_subshell(
     """
     saved = session.snapshot()
     session._line_open = True
+    # A child shell: `shift` or `set --` in it leaves the caller's
+    # parameters alone, and it runs in none of the caller's loops.
+    call_stack = (call_stack or CallStack()).fork(loops=False)
     try:
         all_stdout: list[Any] = []
         merged_io = IOResult()
@@ -401,7 +387,7 @@ async def handle_subshell(
                     all_stdout,
                     merged_io,
                 )
-                status = _ended(sig)
+                status = ended(sig).exit_code
                 sig_io = IOResult(exit_code=status, stderr=sig.stderr or None)
                 merged_io = await merged_io.merge(sig_io)
                 merged_io.exit_code = status

@@ -847,7 +847,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "source: : No such file or directory\n"
+        "stderr": "bash: : No such file or directory\n"
       }
     },
     {

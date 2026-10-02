@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mirage.commands.errors import CommandTimeoutError
+from mirage.context import program_invocation
 from mirage.io import IOResult
 from mirage.io.async_line_iterator import SharedInput
 from mirage.io.stream import close_quietly
@@ -139,7 +140,9 @@ async def handle_background(
     still holds.
     """
     bg_session = session.fork()
-    bg_call_stack = call_stack.fork() if call_stack is not None else None
+    # A job is a child shell outside every loop: `{ break; } &` in a
+    # loop refuses, as bash's does.
+    bg_call_stack = (call_stack or CallStack()).fork(loops=False)
     job_handed = (
         decisions.split(
             session.session_id, handed, occurrence_of(left, handed)
@@ -718,7 +721,7 @@ async def handle_fg(
     if len(parts) <= 1:
         running = [j for j in jobs if j.status == JobStatus.RUNNING]
         if not running:
-            err = b"fg: current: no such job\n"
+            err = b"bash: fg: current: no such job\n"
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
@@ -730,14 +733,14 @@ async def handle_fg(
         try:
             job_id = int(raw)
         except ValueError:
-            err = f"fg: {parts[1]}: no such job\n".encode()
+            err = f"bash: fg: {parts[1]}: no such job\n".encode()
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
                 ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
             )
         if _job_numbered(jobs, job_id) is None:
-            err = f"fg: {parts[1]}: no such job\n".encode()
+            err = f"bash: fg: {parts[1]}: no such job\n".encode()
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
@@ -840,12 +843,17 @@ async def handle_kill(
     signal = _KILL_SIGNALS["TERM"]
     words = parts[1:]
     saw_signal = False
+    voice = (
+        "" if session is not None and program_invocation(session) else "bash: "
+    )
     while words:
         word = words[0]
         if word in ("-s", "-n"):
             if len(words) < 2:
                 return _job_result(
-                    cmd_str, f"kill: {word}: option requires an argument\n", 1
+                    cmd_str,
+                    f"{voice}kill: {word}: option requires an argument\n",
+                    1,
                 )
             spec, words = words[1], words[2:]
         elif word == "--":
@@ -860,7 +868,9 @@ async def handle_kill(
         number = _signal_number(spec)
         if number is None:
             return _job_result(
-                cmd_str, f"kill: {spec}: invalid signal specification\n", 1
+                cmd_str,
+                f"{voice}kill: {spec}: invalid signal specification\n",
+                1,
             )
         signal = number
     if not words:
@@ -872,7 +882,7 @@ async def handle_kill(
         jobs = job_table.list_jobs(sid)
         pid, refusal = _kill_pid(jobs, operand)
         if pid is None:
-            errors.append(f"kill: {refusal}")
+            errors.append(f"{voice}kill: {refusal}")
             continue
         try:
             if signal == 0:
@@ -883,10 +893,10 @@ async def handle_kill(
                 if found and job is not None:
                     await job_table.kill(job.id, sid)
         except PermissionError:
-            errors.append(f"kill: ({pid}) - Operation not permitted")
+            errors.append(f"{voice}kill: ({pid}) - Operation not permitted")
             continue
         if not found:
-            errors.append(f"kill: ({pid}) - No such process")
+            errors.append(f"{voice}kill: ({pid}) - No such process")
             continue
         signalled = True
     code = 0 if signalled else 1

@@ -13,6 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 export const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+// bash's `legal_number`: strtoimax's leading whitespace and sign, then the
+// trailing blanks bash skips itself.
+export const COUNT_WORD_RE = /^[ \t\n\v\f\r]*[+-]?[0-9]+[ \t]*$/
 
 // An assignment target with an optional subscript (`name` or `name[sub]`).
 // A subscript must be non-empty: bash rejects `a[]` as an invalid

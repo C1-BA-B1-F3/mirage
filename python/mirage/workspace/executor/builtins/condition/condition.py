@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.context import program_invocation
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
@@ -66,7 +67,12 @@ async def handle_test(
         else:
             result = await eval_cond(ctx, args)
     except CondError as err:
-        stderr = (err.message + "\n").encode()
+        # The builtin's own diagnostic is in bash's voice; the program
+        # (`find -exec test`) keeps its bare one.
+        message = err.message
+        if message.startswith(f"{name}: ") and not program_invocation(session):
+            message = f"bash: {message}"
+        stderr = (message + "\n").encode()
         if name == "[[" and err.fatal:
             # A bad [[ ]] operator is a bash PARSE error: the whole
             # input line dies, not just this command.
@@ -99,7 +105,8 @@ async def test_builtin(call: BuiltinCall) -> Result:
         if test_args and word_text(test_args[-1]) == "]":
             test_args = test_args[:-1]
         else:
-            err = b"[: missing `]'\n"
+            voice = "" if program_invocation(call.session) else "bash: "
+            err = f"{voice}[: missing `]'\n".encode()
             return (
                 None,
                 IOResult(exit_code=2, stderr=err),

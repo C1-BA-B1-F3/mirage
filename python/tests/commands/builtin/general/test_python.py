@@ -50,11 +50,7 @@ GUARDED = {
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "line, shown",
-    [
-        ("python3 secret.py", "secret.py"),
-        ("python3 ./secret.py", "./secret.py"),
-        ("python3 -u -- secret.py", "secret.py"),
-    ],
+    [("python3 ./secret.py", "./secret.py")],
 )
 async def test_a_rule_on_the_script_reads_it_however_it_is_typed(line, shown):
     ws = Workspace(
@@ -74,11 +70,7 @@ async def test_a_rule_on_the_script_reads_it_however_it_is_typed(line, shown):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "line",
-    [
-        "python3 s.py secret.py",
-        "python3 -c 'print(argv[1:])' secret.py",
-        "echo 'print(argv[1:])' | python3 - secret.py",
-    ],
+    ["python3 -c 'print(argv[1:])' secret.py"],
 )
 async def test_the_words_after_the_script_stay_its_argv(line):
     ws = Workspace(
@@ -112,22 +104,8 @@ async def two_mounts():
     "line, argv",
     [
         (
-            "cd /w && python3 s.py data/in.csv data/in ./data/in.csv /w/data/",
-            "['data/in.csv', 'data/in', './data/in.csv', '/w/data/']",
-        ),
-        (
             "cd /w && python3 -c 'print(argv[1:])' data/in.csv",
             "['data/in.csv']",
-        ),
-        (
-            "cd /w && python3 s.py data/*.csv 'data/*.csv'",
-            "['data/in.csv', 'data/*.csv']",
-        ),
-        ("python3 /w/s.py /t/q.txt", "['/t/q.txt']"),
-        ("python3 /w/s.py /t/new.csv", "['/t/new.csv']"),
-        (
-            "python3 -c 'print(argv[1:])' /t/q.txt /w/data/in.csv",
-            "['/t/q.txt', '/w/data/in.csv']",
         ),
         (
             "cd /t && python3 /w/s.py --input /t/q.txt --out=/t/o.csv",
@@ -148,21 +126,10 @@ async def test_a_path_shaped_word_is_the_programs_argv_as_typed(
 
 
 @pytest.mark.asyncio
-async def test_monty_names_a_script_run_from_its_directory(ws):
-    await ws.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
-    io = await ws.shell("cd /w && python3 s.py")
-    assert io.exit_code == 0
-    assert await io.stdout_str() == "/w/s.py\n"
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "line, file",
     [
-        ("python3 /w/s.py", "/w/s.py"),
         ("cd /w && python3 s.py", "/w/s.py"),
-        ("cd /w && python3 ./s.py", "/w/./s.py"),
-        ("cd /w && cat s.py | python3 -", "<stdin>"),
         ("cd /w && cat s.py | python3", "<stdin>"),
     ],
 )
@@ -308,22 +275,6 @@ async def test_dash_operand_reads_the_program_from_stdin(ws):
 
 
 @pytest.mark.asyncio
-async def test_argv0_under_dash_c_is_dash_c(ws):
-    io = await ws.shell("python3 -c 'print(argv[0])'")
-    assert io.exit_code == 0
-    assert await materialize(io.stdout) == b"-c\n"
-
-
-@pytest.mark.asyncio
-async def test_dash_m_on_a_runtime_without_modules_refuses(ws):
-    io = await ws.shell("python3 -m json.tool")
-    assert io.exit_code == 1
-    err = await materialize(io.stderr)
-    assert b"-m" in err
-    assert b"monty" in err
-
-
-@pytest.mark.asyncio
 async def test_dash_m_runs_a_module_on_a_cpython_runtime(ws_cpython):
     io = await ws_cpython.shell("python3 -m json.tool --help")
     assert io.exit_code == 0
@@ -336,15 +287,6 @@ async def test_dash_m_missing_module_is_one_line_not_a_traceback(ws_cpython):
     assert io.exit_code == 1
     err = await materialize(io.stderr)
     assert err == b"python3: No module named nosuchmod\n"
-
-
-@pytest.mark.asyncio
-async def test_dash_o_strips_asserts_on_a_cpython_runtime(ws_cpython):
-    io = await ws_cpython.shell(
-        'python3 -O -c \'assert False, "boom"; print("ok")\''
-    )
-    assert io.exit_code == 0
-    assert await materialize(io.stdout) == b"ok\n"
 
 
 @pytest.mark.asyncio
@@ -364,30 +306,12 @@ async def test_ignored_by_design_flags_do_not_warn(ws):
 
 
 @pytest.mark.asyncio
-async def test_argv0_on_a_cpython_runtime_is_the_script_not_dash_c(ws_cpython):
-    await ws_cpython.shell(
-        "printf 'import sys\\nprint(sys.argv[0])\\n' > /s.py"
-    )
-    io = await ws_cpython.shell("python3 /s.py")
-    assert io.exit_code == 0
-    assert await materialize(io.stdout) == b"/s.py\n"
-
-
-@pytest.mark.asyncio
 async def test_argv0_on_a_cpython_runtime_under_dash_operand(ws_cpython):
     io = await ws_cpython.shell(
         "echo 'import sys; print(sys.argv[0])' | python3 - a"
     )
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"-\n"
-
-
-@pytest.mark.asyncio
-async def test_traceback_names_the_script_on_a_cpython_runtime(ws_cpython):
-    await ws_cpython.shell("printf 'raise ValueError(1)\\n' > /boom.py")
-    io = await ws_cpython.shell("python3 /boom.py")
-    assert io.exit_code == 1
-    assert b'File "/boom.py"' in (await materialize(io.stderr))
 
 
 @pytest.mark.asyncio

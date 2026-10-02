@@ -1,12 +1,20 @@
 import re
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin import grep_pushdown
 from mirage.commands.builtin.constants import PatternType
+from mirage.commands.builtin.discord.grep import grep as discord_grep
+from mirage.commands.builtin.discord.rg import rg as discord_rg
+from mirage.commands.builtin.slack.grep import grep as slack_grep
+from mirage.commands.builtin.slack.rg import rg as slack_rg
 from mirage.commands.builtin.types import RegexSyntax
+from mirage.commands.config import CommandOpts
+from mirage.core.time_range import TimeRange
 from mirage.types import PathSpec
+from mirage.utils.key_prefix import mount_key
 from mirage.vfs.types import SearchOps, SearchQuery
 
 
@@ -155,6 +163,8 @@ def test_is_literal_pattern(pattern, fixed, expected):
         ({"A": "2"}, True),
         ({"B": "2"}, True),
         ({"C": "2"}, True),
+        ({"args_I": True}, True),
+        ({"text": True}, True),
         # rg -L walks links, which no backend's search can see.
         ({"follow": True}, True),
     ],
@@ -282,6 +292,14 @@ def test_literal_pushdown_operand_adds_the_like_pattern_rule():
 
 
 EMAIL_HONORED = ("n", "args_l", "w", "o", "m")
+EMAIL_RG_HONORED = (
+    "line_number",
+    "files_with_matches",
+    "word_regexp",
+    "only_matching",
+    "max_count",
+    "line_regexp",
+)
 
 
 def test_has_search_shaping_flags_exempts_only_the_named_dests():
@@ -298,6 +316,9 @@ def test_has_search_shaping_flags_exempts_only_the_named_dests():
     # ...but never -v or -c, which need messages the search did not return.
     assert grep_pushdown.has_search_shaping_flags({"v": True}, EMAIL_HONORED)
     assert grep_pushdown.has_search_shaping_flags({"c": True}, EMAIL_HONORED)
+    assert grep_pushdown.has_search_shaping_flags(
+        {"invert_match": True}, EMAIL_RG_HONORED
+    )
 
 
 def test_honored_never_exempts_the_operand_rule():
@@ -426,3 +447,64 @@ def test_text_candidates_drops_what_a_walk_never_reads():
         "/README",
     ]
     assert grep_pushdown.text_candidates([]) == []
+
+
+SLACK_CHANNEL = ("/slack", "/channels/general__C1")
+SLACK_EMPTY = {
+    "search_messages": b'{"messages":{"matches":[]}}',
+    "search_files": b'{"files":{"matches":[]}}',
+}
+DISCORD_CHANNEL = ("/discord", "/myguild__g_123/channels/general__ch_456")
+DISCORD_EMPTY = {"search_guild": [], "list_channels": []}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cmd, path, flags, answers, read",
+    [
+        (slack_grep, SLACK_CHANNEL, {"w": True}, SLACK_EMPTY, "slack_read"),
+        (
+            slack_rg,
+            SLACK_CHANNEL,
+            {"word_regexp": True},
+            SLACK_EMPTY,
+            "slack_read",
+        ),
+        (
+            discord_grep,
+            DISCORD_CHANNEL,
+            {"w": True, "r": True},
+            DISCORD_EMPTY,
+            "discord_read",
+        ),
+        (
+            discord_rg,
+            DISCORD_CHANNEL,
+            {"word_regexp": True},
+            DISCORD_EMPTY,
+            "discord_read",
+        ),
+    ],
+)
+async def test_an_empty_search_answer_is_final(
+    cmd, path, flags, answers, read
+):
+    accessor = AsyncMock()
+    accessor.time_range = TimeRange()
+    mocks = {name: AsyncMock(return_value=v) for name, v in answers.items()}
+    mocks[read] = AsyncMock(return_value=b"")
+    prefix, rest = path
+    virtual = prefix + rest
+    spec = PathSpec(
+        vfs_path=mount_key(virtual, prefix), virtual=virtual, directory=virtual
+    )
+    with patch.dict(cmd.__wrapped__.__globals__, mocks):
+        out, io = await cmd(
+            accessor,
+            [spec],
+            ["missing"],
+            CommandOpts(index=RAMIndexCacheStore(), flags=flags),
+        )
+    assert next(iter(mocks.values())).await_count == 1
+    assert mocks[read].await_count == 0
+    assert (out, io.exit_code) == (b"", 1)

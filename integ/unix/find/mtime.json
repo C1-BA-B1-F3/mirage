@@ -23,7 +23,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -mtime +0 -o -mtime -1",
       "expect": {
@@ -47,7 +49,22 @@
         "opfs",
         "ssh",
         "box",
-        "dropbox"
+        "dropbox",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "printf hi > /data/mtprobe.txt; find /data -name mtprobe.txt -mtime -1",
       "expect": {
@@ -66,7 +83,11 @@
         "opfs",
         "ssh",
         "box",
-        "dropbox"
+        "dropbox",
+        "databricks",
+        "databricks-prefix",
+        "dropbox-root",
+        "nextcloud"
       ],
       "command": "find /data -name mtprobe.txt -mtime +5; echo code=$?",
       "expect": {
@@ -85,7 +106,22 @@
         "opfs",
         "ssh",
         "box",
-        "dropbox"
+        "dropbox",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "touch -d 2020-01-01 /data/mtprobe.txt; find /data -name mtprobe.txt -mtime +5",
       "expect": {
@@ -104,7 +140,22 @@
         "opfs",
         "ssh",
         "box",
-        "dropbox"
+        "dropbox",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "rm /data/mtprobe.txt; echo done",
       "expect": {

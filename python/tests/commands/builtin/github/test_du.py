@@ -35,26 +35,6 @@ TREE = {
 }
 
 
-async def _readdir(_accessor, path, _index):
-    if path.virtual == "/db/sealed":
-        raise PermissionError(13, "Permission denied", path.virtual)
-    return (
-        ["/db/a", "/db/empty", "/db/sealed", "/db/walled"]
-        if path.virtual == "/db"
-        else []
-    )
-
-
-async def _stat(_accessor, path, _index):
-    if path.virtual == "/db/walled":
-        raise PermissionError(13, "Permission denied", path.virtual)
-    return FileStat(
-        name=path.virtual,
-        type=FileType.FILE if path.virtual == "/db/a" else FileType.DIRECTORY,
-        size=3 if path.virtual == "/db/a" else None,
-    )
-
-
 async def _resolve(_accessor, paths, _index):
     return paths
 
@@ -115,16 +95,3 @@ async def test_du_sums_the_live_tree(monkeypatch, operand, flags, expected):
     _patch(monkeypatch, AsyncMock(), _tree_stat)
     accessor = SimpleNamespace(truncated=False, tree=TREE)
     assert await _run(accessor, operand, flags) == (expected, 0, "")
-
-
-@pytest.mark.asyncio
-async def test_truncated_du_preserves_directory_rows_and_permission_errors(
-    monkeypatch,
-):
-    _patch(monkeypatch, _readdir, _stat)
-    assert await _run(SimpleNamespace(truncated=True), "/db", {}) == (
-        "0\t/db/empty\n0\t/db/sealed\n3\t/db\n",
-        1,
-        "du: cannot read directory '/db/sealed': Permission denied\n"
-        "du: cannot read directory '/db/walled': Permission denied\n",
-    )

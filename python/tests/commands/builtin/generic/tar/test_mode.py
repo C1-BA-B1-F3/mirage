@@ -17,36 +17,21 @@ import pytest
 from mirage.commands.builtin.generic.tar.mode import is_create_mode
 
 
-def test_dash_c_and_long_create_turn_the_mode_on():
-    assert is_create_mode(("-czf", "out.tgz", "dir"))
-    assert is_create_mode(("--create", "-f", "out.tar", "dir"))
-
-
-def test_extract_and_list_stay_off():
-    assert not is_create_mode(("-xzf", "a.tgz", "./m/x.json"))
-    assert not is_create_mode(("-tzf", "a.tgz"))
-
-
-def test_only_the_first_word_may_be_a_dashless_cluster():
-    assert is_create_mode(("cf", "a.tar", "d"))
-    assert not is_create_mode(("-xf", "a.tar", "crate"))
-
-
-def test_long_options_never_read_as_clusters():
-    assert not is_create_mode(("--exclude", "c", "-xf", "a.tar"))
-
-
-def test_option_terminator_ends_the_scan():
-    # GNU reads everything after -- as an operand: `-c` and even `-C
-    # out` name members there (`tar: -C: Not found in archive`).
-    assert not is_create_mode(("-xf", "a.tar", "--", "-c"))
-    assert not is_create_mode(("-xf", "a.tar", "--", "--create"))
-    assert is_create_mode(("-cf", "a.tar", "--", "-c"))
-
-
 @pytest.mark.parametrize(
     "argv,create",
     [
+        (["-czf", "out.tgz", "dir"], True),
+        (["--create", "-f", "out.tar", "dir"], True),
+        (["-xzf", "a.tgz", "./m/x.json"], False),
+        (["-tzf", "a.tgz"], False),
+        (["cf", "a.tar", "d"], True),
+        (["-xf", "a.tar", "crate"], False),
+        (["--exclude", "c", "-xf", "a.tar"], False),
+        # GNU reads everything after -- as an operand (`tar: -C: Not
+        # found in archive`).
+        (["-xf", "a.tar", "--", "-c"], False),
+        (["-xf", "a.tar", "--", "--create"], False),
+        (["-cf", "a.tar", "--", "-c"], True),
         (["--crea", "-f", "a.tar", "d"], True),
         (["--cr=x"], True),
         # Ambiguous in tar's own table, so no mode at all.
@@ -54,5 +39,5 @@ def test_option_terminator_ends_the_scan():
         (["--get", "-f", "a.tar"], False),
     ],
 )
-def test_a_long_word_reads_as_tars_getopt_long_reads_it(argv, create):
+def test_is_create_mode_reads_argv_as_tar_does(argv, create):
     assert is_create_mode(argv) is create

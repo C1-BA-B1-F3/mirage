@@ -57,7 +57,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "(echo bgdata > /data/zjb.txt & wait) 2>/dev/null; cat /data/zjb.txt",
       "expect": {
@@ -89,7 +91,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "(cd /data && echo $(pwd) > /data/zbgc.txt & wait) 2>/dev/null; cat /data/zbgc.txt",
       "expect": {
@@ -121,7 +125,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "(echo $(cd /data) > /data/zbgn.txt & wait) 2>/dev/null; pwd",
       "expect": {

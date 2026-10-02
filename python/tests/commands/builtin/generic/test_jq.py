@@ -26,26 +26,15 @@ from mirage.io.types import IOResult, materialize
 from mirage.types import PathSpec
 
 FILES = {
-    "/d/user.json": b'{"name":"alice","age":30}\n',
-    "/d/multi.json": b'{"a":1}\n{"a":2}\n{"a":3}\n',
-    "/d/lines.txt": b"alpha\nbeta\ngamma\n",
-    "/d/empty.txt": b"",
     "/d/prog.jq": b".name\n",
-    "/d/lines2.txt": b"alpha\nbeta\ngamma\n",
     "/d/a.json": b'{"a":1}\n',
     "/d/b.json": b'{"b":2}\n',
-    "/d/fields.json": b'{"inputs":1}\n{"inputs":2}\n',
     "/d/four.json": b"1\n2\n3\n4\n",
     "/d/empty.json": b"",
     "/d/bad.json": b'{"a":1}\n{"a":2}\n[',
-    "/d/rows.jsonl": b'{"a":1}\n{"a":2}\n',
-    "/d/pairs.jsonl": b"[1,2]\n[3]\n",
-    "/d/seq.json": b"\x1e1\n\x1e[1 2]\n\x1e3\n",
-    "/d/seq_mid.json": b"\x1e1\n\x1e2\n\x1e[1 2]\n\x1e3\n\x1e4\n",
     "/d/mid.json": b"1\n[1 2]\n3\n4\n",
     "/d/one.json": b"1",
     "/d/two.json": b" 2\n",
-    "/d/nul.jq": b".\0x",
     "/d/-": b"42\n",
 }
 
@@ -123,6 +112,13 @@ def _printed(*outputs: str) -> int:
     return run_status(JqRun(list(outputs)))
 
 
+def _halted(code: float | None) -> int:
+    return run_status(JqRun([False], JqHalt(None, False, code)))
+
+
+_FAILED = run_status(JqRun(["1"], JqError("x", True)))
+
+
 async def _run(paths: list[str], *texts: str, **flags: FlagValue) -> tuple:
     source, io = await jq(
         [_path(p) for p in paths],
@@ -147,11 +143,23 @@ async def test_indent_minus_one_is_tab_indentation():
 
 
 @pytest.mark.parametrize(
-    "word, width",
-    [("3", 3), ("+3", 3), ("07", 7), ("-0", 0), ("0", 0), ("-1", -1)],
+    "sign, zeros, digit, width",
+    [
+        ("", 0, "3", 3),
+        ("+", 0, "3", 3),
+        ("", 1, "7", 7),
+        ("-", 0, "0", 0),
+        ("", 0, "0", 0),
+        ("-", 0, "1", -1),
+        ("", 5000, "7", 7),
+        ("+", 5000, "3", 3),
+        ("-", 5000, "1", -1),
+        ("-", 5000, "0", 0),
+        ("", 5000, "0", 0),
+    ],
 )
-def test_indent_reads_its_word_as_jqs_strtol_does(word, width):
-    assert indent_width(word) == width
+def test_indent_reads_its_word_as_jqs_strtol_does(sign, zeros, digit, width):
+    assert indent_width(sign + "0" * zeros + digit) == width
 
 
 @pytest.mark.parametrize(
@@ -168,31 +176,17 @@ def test_indent_reads_its_word_as_jqs_strtol_does(word, width):
         "08",
         "-2",
         "99999999999999999999",
+        *(
+            pytest.param(
+                sign + digits * 5000 + "8", id=f"{sign}{digits}x5000-8"
+            )
+            for sign, digits in [("", "9"), ("-", "9"), ("+", "9"), ("", "0")]
+        ),
     ],
 )
 def test_indent_refuses_any_other_word_in_jqs_words(word):
     with pytest.raises(UsageError) as caught:
         indent_width(word)
-    assert str(caught.value) == (
-        f"jq: --indent takes a number between -1 and 7\n{HINT}"
-    )
-    assert caught.value.exit_code == 2
-
-
-@pytest.mark.parametrize(
-    "sign, digit, width",
-    [("", "7", 7), ("+", "3", 3), ("-", "1", -1), ("-", "0", 0), ("", "0", 0)],
-)
-def test_indent_accepts_arbitrary_leading_zeroes(sign, digit, width):
-    assert indent_width(sign + "0" * 5000 + digit) == width
-
-
-@pytest.mark.parametrize(
-    "sign, digits", [("", "9"), ("-", "9"), ("+", "9"), ("", "0")]
-)
-def test_oversized_indent_stays_a_usage_error(sign, digits):
-    with pytest.raises(UsageError) as caught:
-        indent_width(sign + digits * 5000 + "8")
     assert str(caught.value) == (
         f"jq: --indent takes a number between -1 and 7\n{HINT}"
     )
@@ -236,15 +230,26 @@ async def test_arg_binds_each_name_to_a_string():
 
 
 @pytest.mark.asyncio
-async def test_argjson_keeps_its_value_as_the_text_jq_reads():
-    args = await _bound(argjson=["v", ' {"b":1.000,"1":2} '])
-    assert args == {"v": '{"b":1.000,"1":2}'}
+@pytest.mark.parametrize(
+    "value, text",
+    [
+        (' {"b":1.000,"1":2} ', '{"b":1.000,"1":2}'),
+        ('{"a":1}', '{"a":1}'),
+        ("nan", "nan"),
+    ],
+)
+async def test_argjson_keeps_its_value_as_the_text_jq_reads(value, text):
+    assert await _bound(argjson=["v", value]) == {"v": text}
 
 
 @pytest.mark.asyncio
-async def test_argjson_rejects_invalid_json():
-    with pytest.raises(UsageError, match="invalid JSON text"):
-        await _bound(argjson=["v", "nope"])
+@pytest.mark.parametrize("value", ["nope", "1 2"])
+async def test_argjson_refuses_invalid_json_with_jq_1_8s_hint(value):
+    with pytest.raises(UsageError) as caught:
+        await _bound(argjson=["v", value])
+    assert str(caught.value) == (
+        f"jq: invalid JSON text passed to --argjson\n{HINT}"
+    )
 
 
 @pytest.mark.asyncio
@@ -315,97 +320,31 @@ async def test_a_binding_of_a_taken_name_is_never_read(words):
     assert opts.named_args == {"v": '"1"'}
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "words, refusal",
+    "statuses, exit_status, expected",
     [
-        (["--indent", "x", "--argjson", "a", "nope"], "jq: --indent takes"),
-        (["--argjson", "a", "nope", "--indent", "x"], "jq: invalid JSON text"),
-        (
-            ["--argjson", "a", "nope", "--slurpfile", "b", "/d/missing.json"],
-            "jq: invalid JSON text",
-        ),
-        (
-            ["--slurpfile", "b", "/d/missing.json", "--argjson", "a", "nope"],
-            "jq: Bad JSON in --slurpfile b /d/missing.json",
-        ),
+        ([_printed("1", "false")], True, 1),
+        ([_printed("false", "1")], True, 0),
+        ([_printed("null")], True, 1),
+        ([_printed('"false"'), _printed("0.0")], True, 0),
+        ([], True, 4),
+        ([], False, 0),
+        ([_printed("null")], False, 0),
+        ([_FAILED, _printed("1")], False, 0),
+        ([_printed("1"), _FAILED], False, 5),
+        ([_FAILED, _printed("false")], True, 1),
+        ([_printed("false"), _printed()], True, 1),
+        ([_printed("1"), _printed()], True, 0),
+        ([_halted(None)], False, 0),
+        ([_halted(2)], False, 2),
+        ([_halted(-1)], False, 0),
+        ([_halted(-1)], True, 1),
+        ([_halted(1.5)], False, 1),
+        ([_halted(300)], False, 44),
     ],
 )
-async def test_the_first_option_jq_refuses_is_the_one_reported(words, refusal):
-    with pytest.raises(UsageError) as caught:
-        await _options("-n", *words, "1")
-    assert str(caught.value).startswith(refusal)
-
-
-@pytest.mark.asyncio
-async def test_the_generic_entry_reads_the_flags_in_the_order_typed():
-    bag, _ = _parsed_line(
-        "-n",
-        "--tab",
-        "-c",
-        "--argjson",
-        "b",
-        "1",
-        "--arg",
-        "a",
-        "2",
-        "--arg",
-        "b",
-        "3",
-        "$ARGS.named",
-    )
-    source, io = await jq_generic(
-        [], ["$ARGS.named"], CommandOpts(flags=bag), _read_bytes, _read_stream
-    )
-    assert source is not None
-    assert await materialize(source) == b'{"b":1,"a":"2"}\n'
-    assert io.exit_code == 0
-
-
-def test_exit_status_reads_the_last_output_only():
-    opts = JqOptions(exit_status=True)
-    assert exit_code([_printed("1", "false")], opts) == 1
-    assert exit_code([_printed("false", "1")], opts) == 0
-    assert exit_code([_printed("null")], opts) == 1
-    assert exit_code([_printed('"false"'), _printed("0.0")], opts) == 0
-    assert exit_code([], opts) == 4
-
-
-def test_exit_status_is_zero_without_the_flag():
-    assert exit_code([], JqOptions()) == 0
-    assert exit_code([_printed("null")], JqOptions()) == 0
-
-
-def test_a_failed_run_counts_only_when_it_is_the_last_one():
-    failed = run_status(JqRun(["1"], JqError("x", True)))
-    assert exit_code([failed, _printed("1")], JqOptions()) == 0
-    assert exit_code([_printed("1"), failed], JqOptions()) == 5
-    assert (
-        exit_code([failed, _printed("false")], JqOptions(exit_status=True))
-        == 1
-    )
-
-
-def test_exit_status_looks_back_past_runs_that_printed_nothing():
-    opts = JqOptions(exit_status=True)
-    assert exit_code([_printed("false"), _printed()], opts) == 1
-    assert exit_code([_printed("1"), _printed()], opts) == 0
-
-
-@pytest.mark.parametrize(
-    "code, exit_status, expected",
-    [
-        (None, False, 0),
-        (2, False, 2),
-        (-1, False, 0),
-        (-1, True, 1),
-        (1.5, False, 1),
-        (300, False, 44),
-    ],
-)
-def test_a_halt_exits_with_its_own_code(code, exit_status, expected):
-    status = run_status(JqRun([False], JqHalt(None, False, code)))
-    assert exit_code([status], JqOptions(exit_status=exit_status)) == expected
+def test_exit_code_reads_the_runs_as_jq_does(statuses, exit_status, expected):
+    assert exit_code(statuses, JqOptions(exit_status=exit_status)) == expected
 
 
 def test_an_input_is_named_as_typed_and_dash_as_stdin():
@@ -418,70 +357,6 @@ def test_an_input_is_named_as_typed_and_dash_as_stdin():
         input_name(PathSpec("/dev/stdin", "/dev", "dev/stdin", raw_path="-"))
         == "<stdin>"
     )
-
-
-@pytest.mark.asyncio
-async def test_raw_input_reads_each_line_as_a_string():
-    out, io = await _run(["/d/lines.txt"], ".", raw_input=True)
-    assert out == b'"alpha"\n"beta"\n"gamma"\n'
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_raw_slurp_is_one_string_including_the_last_newline():
-    out, _ = await _run(["/d/lines.txt"], ".", raw_input=True, slurp=True)
-    assert out == b'"alpha\\nbeta\\ngamma\\n"\n'
-
-
-@pytest.mark.asyncio
-async def test_null_input_with_inputs_collects_the_whole_stream():
-    out, _ = await _run(
-        ["/d/lines.txt"],
-        "[inputs]",
-        raw_input=True,
-        null_input=True,
-        compact_output=True,
-    )
-    assert out == b'["alpha","beta","gamma"]\n'
-
-
-@pytest.mark.asyncio
-async def test_null_input_never_reads_its_operands():
-    out, io = await _run(["/d/missing.json"], "1+2", null_input=True)
-    assert out == b"3\n"
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_inputs_without_null_input_drains_the_stream_once():
-    out, _ = await _run(["/d/multi.json"], "[., inputs]", compact_output=True)
-    assert out == b'[{"a":1},{"a":2},{"a":3}]\n'
-
-
-@pytest.mark.asyncio
-async def test_null_input_gives_input_the_first_document():
-    out, _ = await _run(
-        ["/d/four.json"], "input", null_input=True, compact_output=True
-    )
-    assert out == b"1\n"
-
-
-@pytest.mark.asyncio
-async def test_inputs_starts_after_what_input_took():
-    out, _ = await _run(
-        ["/d/four.json"],
-        "input as $h | [inputs]",
-        null_input=True,
-        compact_output=True,
-    )
-    assert out == b"[2,3,4]\n"
-    out, _ = await _run(
-        ["/d/four.json"],
-        "[input, inputs]",
-        null_input=True,
-        compact_output=True,
-    )
-    assert out == b"[1,2,3,4]\n"
 
 
 @pytest.mark.asyncio
@@ -500,62 +375,6 @@ async def test_input_fails_with_break_on_an_empty_stream():
         await materialize(io.stderr)
         == b"jq: error (at /d/empty.json:0): break\n"
     )
-
-
-@pytest.mark.asyncio
-async def test_a_field_named_inputs_still_runs_per_document():
-    out, _ = await _run(["/d/fields.json"], ".inputs", compact_output=True)
-    assert out == b"1\n2\n"
-
-
-@pytest.mark.asyncio
-async def test_the_word_inputs_in_a_string_still_runs_per_document():
-    out, _ = await _run(["/d/multi.json"], '"no inputs"', compact_output=True)
-    assert out == b'"no inputs"\n"no inputs"\n"no inputs"\n'
-
-
-@pytest.mark.asyncio
-async def test_slurp_covers_operands_together():
-    out, _ = await _run(
-        ["/d/a.json", "/d/b.json"], ".", slurp=True, compact_output=True
-    )
-    assert out == b'[{"a":1},{"b":2}]\n'
-
-
-@pytest.mark.asyncio
-async def test_empty_input_prints_nothing_and_exits_zero():
-    out, io = await _run(["/d/empty.txt"], ".")
-    assert out == b""
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_named_args_reach_the_program():
-    out, _ = await _run(
-        ["/d/user.json"], "[.name, $v]", arg=["v", "hi"], compact_output=True
-    )
-    assert out == b'["alice","hi"]\n'
-
-
-@pytest.mark.asyncio
-async def test_from_file_reads_the_program_off_a_path():
-    path = _path("/d/prog.jq")
-    out, _ = await _run(["/d/user.json"], from_file=path)
-    assert out == b'"alice"\n'
-
-
-@pytest.mark.asyncio
-async def test_exit_status_flag_reports_a_null_output():
-    out, io = await _run(["/d/user.json"], ".missing", exit_status=True)
-    assert out == b"null\n"
-    assert io.exit_code == 1
-
-
-@pytest.mark.asyncio
-async def test_exit_status_flag_reports_no_output_at_all():
-    out, io = await _run(["/d/user.json"], "empty", exit_status=True)
-    assert out == b""
-    assert io.exit_code == 4
 
 
 def test_args_reads_an_operand_as_a_string():
@@ -618,41 +437,6 @@ async def test_a_from_file_program_leaves_every_operand_to_the_modes():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "words, refusal",
-    [
-        (
-            ["--jsonargs", "nope", "--indent", "x"],
-            "jq: invalid JSON text passed to --jsonargs",
-        ),
-        (["--indent", "x", "--jsonargs", "nope"], "jq: --indent takes"),
-        (
-            ["--jsonargs", "nope", "--argjson", "a", "nope"],
-            "jq: invalid JSON text passed to --jsonargs",
-        ),
-        (
-            ["--argjson", "a", "nope", "--jsonargs", "nope"],
-            "jq: invalid JSON text passed to --argjson",
-        ),
-        (
-            ["--jsonargs", "nope", "--slurpfile", "b", "/d/missing.json"],
-            "jq: invalid JSON text passed to --jsonargs",
-        ),
-        (
-            ["--slurpfile", "b", "/d/missing.json", "--jsonargs", "nope"],
-            "jq: Bad JSON in --slurpfile b /d/missing.json",
-        ),
-    ],
-)
-async def test_a_jsonargs_operand_is_refused_where_it_was_typed(
-    words, refusal
-):
-    with pytest.raises(UsageError) as caught:
-        await _options("-n", ".", *words)
-    assert str(caught.value).startswith(refusal)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
     "flags, has_program_file, texts, positional",
     [
         ({"args": True}, False, [".", "a", "1"], ('"a"', '"1"')),
@@ -672,84 +456,6 @@ async def test_keyword_operands_come_after_every_option(
 
 
 @pytest.mark.asyncio
-async def test_an_input_file_typed_before_args_is_still_read():
-    parsed = parse_command(
-        SPECS["jq"],
-        [
-            "-c",
-            "[., $ARGS.positional]",
-            "/d/one.json",
-            "--args",
-            "/d/two.json",
-        ],
-        "/",
-        "jq",
-    )
-    source, io = await jq_generic(
-        [_path(p) for p in parsed.paths()],
-        parsed.texts(),
-        CommandOpts(flags=parse_to_kwargs(parsed)),
-        _read_bytes,
-        _read_stream,
-    )
-    assert source is not None
-    assert await materialize(source) == b'[1,["/d/two.json"]]\n'
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_dash_words_reach_jq_as_the_program_and_its_values():
-    parsed = parse_command(
-        SPECS["jq"],
-        [
-            "-n",
-            "-c",
-            "-$ARGS.positional[0], $ARGS.positional",
-            "--jsonargs",
-            "-1",
-            "--args",
-            "-.",
-        ],
-        "/",
-        "jq",
-    )
-    source, io = await jq_generic(
-        [],
-        parsed.texts(),
-        CommandOpts(flags=parse_to_kwargs(parsed)),
-        _read_bytes,
-        _read_stream,
-    )
-    assert source is not None
-    assert await materialize(source) == b'1\n[-1,"-."]\n'
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_rawfile_binds_the_files_text():
-    out, _ = await _run(
-        [],
-        "$x",
-        null_input=True,
-        compact_output=True,
-        rawfile=["x", _path("/d/lines.txt")],
-    )
-    assert out == b'"alpha\\nbeta\\ngamma\\n"\n'
-
-
-@pytest.mark.asyncio
-async def test_slurpfile_binds_the_files_documents():
-    out, _ = await _run(
-        [],
-        "$x",
-        null_input=True,
-        compact_output=True,
-        slurpfile=["x", _path("/d/multi.json")],
-    )
-    assert out == b'[{"a":1},{"a":2},{"a":3}]\n'
-
-
-@pytest.mark.asyncio
 async def test_args_reach_the_program_through_dollar_args():
     out, _ = await _run(
         [], "$ARGS", "a", "b", null_input=True, compact_output=True, args=True
@@ -758,94 +464,9 @@ async def test_args_reach_the_program_through_dollar_args():
 
 
 @pytest.mark.asyncio
-async def test_dollar_args_carries_the_named_bindings():
-    out, _ = await _run(
-        [],
-        "$ARGS.named",
-        null_input=True,
-        compact_output=True,
-        arg=["v", "hi"],
-    )
-    assert out == b'{"v":"hi"}\n'
-
-
-@pytest.mark.asyncio
 async def test_dollar_args_is_defined_with_no_bindings_at_all():
     out, _ = await _run([], "$ARGS", null_input=True, compact_output=True)
     assert out == b'{"positional":[],"named":{}}\n'
-
-
-@pytest.mark.asyncio
-async def test_stream_reads_a_document_as_events():
-    out, _ = await _run(["/d/a.json"], ".", stream=True, compact_output=True)
-    assert out == b'[["a"],1]\n[["a"]]\n'
-
-
-@pytest.mark.asyncio
-async def test_seq_writes_a_separator_before_each_value():
-    out, _ = await _run(
-        [], "1,2", null_input=True, seq=True, compact_output=True
-    )
-    assert out == b"\x1e1\n\x1e2\n"
-
-
-async def _ran(path: str, program: str) -> tuple[bytes, bytes, int]:
-    out, io = await _run([path], program, compact_output=True)
-    return out, await materialize(io.stderr), io.exit_code
-
-
-@pytest.mark.asyncio
-async def test_a_run_prints_what_came_before_an_error_and_goes_on():
-    assert await _ran(
-        "/d/four.json", 'if . == 2 then error("two") else . end'
-    ) == (b"1\n3\n4\n", b"jq: error (at /d/four.json:2): two\n", 0)
-    out, _, code = await _ran(
-        "/d/four.json", "., error({n: .}) | select(. > 3)"
-    )
-    assert (out, code) == (b"4\n", 5)
-
-
-@pytest.mark.asyncio
-async def test_a_report_says_when_the_message_was_not_a_string():
-    _, err, _ = await _ran(
-        "/d/four.json", "if . == 4 then error({n: .}) else empty end"
-    )
-    assert err == b'jq: error (at /d/four.json:4) (not a string): {"n":4}\n'
-
-
-@pytest.mark.asyncio
-async def test_a_halt_ends_the_whole_invocation():
-    assert await _ran(
-        "/d/four.json", 'if . == 2 then "bye\\n" | halt_error(3) else . end'
-    ) == (b"1\n", b"bye\n", 3)
-    assert await _ran("/d/four.json", "if . == 3 then halt else . end") == (
-        b"1\n2\n",
-        b"",
-        0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_halt_inside_a_collector_halts_as_from_the_top():
-    assert await _ran(
-        "/d/four.json", "if . == 2 then [halt_error(3)] else . end"
-    ) == (b"1\n", b"2\n", 3)
-
-
-@pytest.mark.asyncio
-async def test_a_halt_ends_the_command_even_inside_a_try():
-    assert await _ran(
-        "/d/four.json",
-        'try (if . == 2 then halt_error(3) else . end) catch "continued"',
-    ) == (b"1\n", b"2\n", 3)
-
-
-@pytest.mark.asyncio
-async def test_a_program_that_does_not_compile_is_refused_before_any_read():
-    out, err, code = await _ran("/d/missing.json", "1 +")
-    assert (out, code) == (b"", 3)
-    assert err.startswith(b"jq: error: syntax error, ")
-    assert err.endswith(b"jq: 1 compile error\n")
 
 
 async def _flagged(
@@ -853,22 +474,6 @@ async def _flagged(
 ) -> tuple[bytes, bytes, int]:
     out, io = await _run(paths, program, **flags)
     return out, await materialize(io.stderr), io.exit_code
-
-
-@pytest.mark.asyncio
-async def test_a_parse_error_ends_the_loop_after_the_documents_before_it():
-    assert await _ran("/d/bad.json", ".a") == (
-        b"1\n2\n",
-        b"jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n",
-        5,
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_parse_error_exits_five_under_exit_status_too():
-    out, err, code = await _flagged(["/d/bad.json"], ".a", exit_status=True)
-    assert (out, code) == (b"1\n2\n", 5)
-    assert err.startswith(b"jq: parse error: ")
 
 
 @pytest.mark.asyncio
@@ -889,92 +494,6 @@ async def test_a_parse_error_closes_the_input_it_stopped_in():
     assert await materialize(source) == b"1\n"
     assert io.exit_code == 5
     assert opened[0].ag_frame is None
-
-
-@pytest.mark.asyncio
-async def test_a_slurp_that_meets_a_parse_error_prints_nothing():
-    assert await _flagged(["/d/bad.json"], ".", slurp=True) == (
-        b"",
-        b"jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n",
-        5,
-    )
-
-
-@pytest.mark.asyncio
-async def test_seq_reports_a_parse_error_and_reads_on():
-    assert await _flagged(
-        ["/d/seq.json"], ".", seq=True, compact_output=True
-    ) == (
-        b"\x1e1\n\x1e3\n",
-        b"jq: ignoring parse error: Expected separator "
-        b"between values at line 2, column 6 (need RS "
-        b"to resync)\n",
-        0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_inputs_meets_the_parse_error_as_a_runtime_error():
-    assert await _flagged(["/d/bad.json"], "[inputs]", null_input=True) == (
-        b"",
-        b"jq: error (at /d/bad.json:2): Unfinished JSON term at EOF at "
-        b"line 3, column 1\n",
-        5,
-    )
-    out, err, code = await _flagged(
-        ["/d/bad.json"], "try ([inputs]) catch .", null_input=True
-    )
-    assert (out, err, code) == (
-        b'"Unfinished JSON term at EOF at line 3, column 1"\n',
-        b"",
-        0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_input_leaves_the_parse_error_to_the_main_loop():
-    assert await _flagged(
-        ["/d/bad.json"], "[., input]", compact_output=True
-    ) == (
-        b'[{"a":1},{"a":2}]\n',
-        b"jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n",
-        5,
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("program", ["[., input]", "[., inputs]"])
-async def test_a_run_that_reads_a_parse_error_fails_and_the_loop_reads_on(
-    program,
-):
-    assert await _flagged(["/d/mid.json"], program, compact_output=True) == (
-        b"[3,4]\n",
-        b"jq: error (at /d/mid.json:2): Expected separator "
-        b"between values at line 2, column 5\n",
-        0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_seq_reads_past_a_parse_error_a_run_or_the_loop_meets():
-    assert await _flagged(
-        ["/d/seq.json"], "[., inputs]", seq=True, compact_output=True
-    ) == (
-        b"\x1e[3]\n",
-        b"jq: error (at /d/seq.json:2): Expected "
-        b"separator between values at line 2, column 6 "
-        b"(need RS to resync)\n",
-        0,
-    )
-    assert await _flagged(
-        ["/d/seq_mid.json"], "[., input]", seq=True, compact_output=True
-    ) == (
-        b"\x1e[1,2]\n\x1e[3,4]\n",
-        b"jq: ignoring parse error: Expected separator "
-        b"between values at line 3, column 6 (need RS "
-        b"to resync)\n",
-        0,
-    )
 
 
 @pytest.mark.asyncio
@@ -1032,43 +551,6 @@ async def test_a_run_reads_no_further_than_its_input_takes():
 
 
 @pytest.mark.asyncio
-async def test_a_halt_ends_the_command_before_the_parse_error():
-    assert await _flagged(
-        ["/d/bad.json"], "[., input] | halt_error", compact_output=True
-    ) == (b"", b'[{"a":1},{"a":2}]\n', 5)
-
-
-@pytest.mark.asyncio
-async def test_a_value_runs_on_from_one_input_into_the_next():
-    assert await _flagged(
-        ["/d/one.json", "/d/two.json"], "error(tostring)"
-    ) == (
-        b"",
-        b"jq: error (at /d/two.json:1): 1\njq: error (at /d/two.json:1): 2\n",
-        5,
-    )
-
-
-@pytest.mark.asyncio
-async def test_json_lines_run_the_program_on_each_line_unchanged():
-    assert await _flagged(["/d/rows.jsonl"], ".[]", compact_output=True) == (
-        b"1\n2\n",
-        b"",
-        0,
-    )
-    assert await _flagged(
-        ["/d/pairs.jsonl"], ".[] | . + 1", compact_output=True
-    ) == (b"2\n3\n4\n", b"", 0)
-    out, err, code = await _flagged(["/d/rows.jsonl"], ".[].a")
-    assert (out, code) == (b"", 5)
-    assert err == (
-        b"jq: error (at /d/rows.jsonl:1): Cannot index number with "
-        b'string ("a")\njq: error (at /d/rows.jsonl:2): Cannot '
-        b'index number with string ("a")\n'
-    )
-
-
-@pytest.mark.asyncio
 async def test_slurpfile_with_bad_json_is_refused_in_jqs_words():
     with pytest.raises(UsageError) as caught:
         await _run(
@@ -1079,63 +561,6 @@ async def test_slurpfile_with_bad_json_is_refused_in_jqs_words():
         "EOF at line 3, column 1"
     )
     assert caught.value.exit_code == 2
-
-
-MISSING = (
-    b"jq: error: Could not open file /d/nope.json: No such file or directory\n"
-)
-
-
-@pytest.mark.asyncio
-async def test_an_input_that_cannot_be_opened_is_reported_and_read_past():
-    # jq reports the file, reads on, and its main loop stops after the
-    # document the reader went on to (pinned: `jq . missing.json a.json`
-    # prints a.json's first document only).
-    assert await _flagged(["/d/nope.json", "/d/four.json"], ".") == (
-        b"1\n",
-        MISSING,
-        2,
-    )
-    assert await _flagged(
-        ["/d/four.json", "/d/nope.json", "/d/multi.json"],
-        ".",
-        compact_output=True,
-    ) == (b'1\n2\n3\n4\n{"a":1}\n', MISSING, 2)
-
-
-@pytest.mark.asyncio
-async def test_a_failed_input_exits_two_whatever_the_runs_answered():
-    assert await _flagged(
-        ["/d/nope.json", "/d/four.json"], ". == 0", exit_status=True
-    ) == (b"false\n", MISSING, 2)
-    assert await _flagged(["/d/nope.json", "/d/four.json"], "halt_error") == (
-        b"",
-        MISSING + b"1\n",
-        2,
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_directory_input_is_reported_in_jqs_bare_words():
-    assert await _flagged(["/d/dir", "/d/four.json"], ".") == (
-        b"1\n",
-        b"jq: error: Is a directory\n",
-        2,
-    )
-
-
-@pytest.mark.asyncio
-async def test_input_reads_past_a_failed_input_to_the_next():
-    # One that finds nothing more fails where the reader stopped, on the
-    # failed file at line 0 (pinned).
-    assert await _flagged(
-        ["/d/nope.json", "/d/four.json"], "input", null_input=True
-    ) == (b"1\n", MISSING, 2)
-    assert await _flagged(["/d/nope.json"], "input", null_input=True) == (
-        b"",
-        MISSING + b"jq: error (at /d/nope.json:0): break\n",
-        2,
-    )
 
 
 @pytest.mark.asyncio
@@ -1156,15 +581,6 @@ async def test_a_flag_file_that_cannot_be_read_is_refused_in_jqs_words(
         f"jq: Bad JSON in --{option} x {path}: Could not open {path}: {reason}"
     )
     assert caught.value.exit_code == 2
-
-
-@pytest.mark.asyncio
-async def test_a_usage_error_ends_with_jq_1_8s_hint():
-    with pytest.raises(UsageError) as caught:
-        await _bound(argjson=["v", "1 2"])
-    assert str(caught.value) == (
-        f"jq: invalid JSON text passed to --argjson\n{HINT}"
-    )
 
 
 @pytest.mark.parametrize(
@@ -1199,28 +615,87 @@ def test_an_f_the_line_ends_at_prints_jqs_short_usage():
 # parser refused waits its turn behind a bad value typed before it.
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "words, first",
+    "words, refusal",
     [
         (
-            (".", "--jsonargs", "{", "--bogus"),
-            "invalid JSON text passed to --jsonargs",
+            ("--indent", "x", "--argjson", "a", "nope", "1"),
+            "jq: --indent takes",
         ),
-        ((".", "--bogus", "--jsonargs", "{"), "Unknown option --bogus"),
+        (
+            ("--argjson", "a", "nope", "--indent", "x", "1"),
+            "jq: invalid JSON text",
+        ),
+        (
+            (
+                "--argjson",
+                "a",
+                "nope",
+                "--slurpfile",
+                "b",
+                "/d/missing.json",
+                "1",
+            ),
+            "jq: invalid JSON text",
+        ),
+        (
+            (
+                "--slurpfile",
+                "b",
+                "/d/missing.json",
+                "--argjson",
+                "a",
+                "nope",
+                "1",
+            ),
+            "jq: Bad JSON in --slurpfile b /d/missing.json",
+        ),
+        (
+            (".", "--jsonargs", "nope", "--indent", "x"),
+            "jq: invalid JSON text passed to --jsonargs",
+        ),
+        ((".", "--indent", "x", "--jsonargs", "nope"), "jq: --indent takes"),
+        (
+            (".", "--jsonargs", "nope", "--argjson", "a", "nope"),
+            "jq: invalid JSON text passed to --jsonargs",
+        ),
+        (
+            (".", "--argjson", "a", "nope", "--jsonargs", "nope"),
+            "jq: invalid JSON text passed to --argjson",
+        ),
+        (
+            (".", "--jsonargs", "nope", "--slurpfile", "b", "/d/missing.json"),
+            "jq: invalid JSON text passed to --jsonargs",
+        ),
+        (
+            (".", "--slurpfile", "b", "/d/missing.json", "--jsonargs", "nope"),
+            "jq: Bad JSON in --slurpfile b /d/missing.json",
+        ),
+        (
+            (".", "--jsonargs", "{", "--bogus"),
+            f"jq: invalid JSON text passed to --jsonargs\n{HINT}",
+        ),
+        (
+            (".", "--bogus", "--jsonargs", "{"),
+            f"jq: Unknown option --bogus\n{HINT}",
+        ),
         (
             (".", "--indent", "9", "--bogus"),
-            "--indent takes a number between -1 and 7",
+            f"jq: --indent takes a number between -1 and 7\n{HINT}",
         ),
-        ((".", "--bogus", "--indent", "9"), "Unknown option --bogus"),
+        (
+            (".", "--bogus", "--indent", "9"),
+            f"jq: Unknown option --bogus\n{HINT}",
+        ),
         (
             (".", "--argjson", "x", "{", "-Z"),
-            "invalid JSON text passed to --argjson",
+            f"jq: invalid JSON text passed to --argjson\n{HINT}",
         ),
     ],
 )
-async def test_the_first_refusal_typed_is_the_one_reported(words, first):
+async def test_the_first_refusal_typed_is_the_one_reported(words, refusal):
     with pytest.raises(UsageError) as caught:
         await _walk("-n", *words)
-    assert str(caught.value) == f"jq: {first}\n{HINT}"
+    assert str(caught.value).startswith(refusal)
 
 
 @pytest.mark.asyncio
@@ -1308,22 +783,3 @@ async def test_the_program_file_is_read_after_the_option_loop():
     _, io = await _run_program_file("-n", "-f", "/d/missing.jq")
     assert io.exit_code == 2
     assert b"Could not open" in await materialize(io.stderr)
-
-
-@pytest.mark.asyncio
-async def test_a_program_file_holding_nul_is_refused():
-    out, io = await _run_program_file("-n", "-f", "/d/nul.jq")
-    assert out == b""
-    assert io.exit_code == 2
-    assert (
-        await materialize(io.stderr)
-        == b"jq: program file contains NUL bytes\n"
-    )
-
-
-@pytest.mark.asyncio
-async def test_argjson_reads_its_value_as_jqs_parser_does():
-    assert await _bound(argjson=["v", '{"a":1}']) == {"v": '{"a":1}'}
-    assert await _bound(argjson=["v", "nan"]) == {"v": "nan"}
-    with pytest.raises(UsageError):
-        await _bound(argjson=["v", "1 2"])

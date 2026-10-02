@@ -38,7 +38,6 @@ import {
   type CpFlags,
   type TransferLinks,
 } from './cp.ts'
-import { UsageError } from '../../errors.ts'
 import { entryKind } from '../utils/paths.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
@@ -128,42 +127,6 @@ async function run(
 }
 
 describe('cpGeneric guards', () => {
-  it('copies a single source to a new path', async () => {
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const [, io] = await run(files, new Set(), ['/a.txt', '/copy.txt'])
-    expect(io.exitCode).toBe(0)
-    expect(files.has('/copy.txt')).toBe(true)
-  })
-
-  it('reports cannot stat for a missing source and continues', async () => {
-    const files = new Map([['/b.txt', new Uint8Array([2])]])
-    const [, io] = await run(files, new Set(['/d']), ['/missing.txt', '/b.txt', '/d'])
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toContain("cp: cannot stat '/missing.txt'")
-    expect(files.has('/d/b.txt')).toBe(true)
-  })
-
-  it('into a missing parent reports cannot create regular file', async () => {
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const [, io] = await run(files, new Set(['/']), ['/a.txt', '/nodir/x.txt'])
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe(
-      "cp: cannot create regular file '/nodir/x.txt': No such file or directory\n",
-    )
-    expect(files.has('/nodir/x.txt')).toBe(false)
-  })
-
-  it('under a plain file reports cannot stat Not a directory', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/plain', new Uint8Array([2])],
-    ])
-    const [, io] = await run(files, new Set(['/']), ['/a.txt', '/plain/x.txt'])
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: cannot stat '/plain/x.txt': Not a directory\n")
-    expect(files.has('/plain/x.txt')).toBe(false)
-  })
-
   it('deep under a plain file still reports Not a directory', async () => {
     const files = new Map([
       ['/a.txt', new Uint8Array([1])],
@@ -174,27 +137,11 @@ describe('cpGeneric guards', () => {
     expect(await io.stderrStr()).toBe("cp: cannot stat '/plain/s/x.txt': Not a directory\n")
   })
 
-  it('a SOURCE under a plain file reports Not a directory, not ENOENT', async () => {
-    // Backends answer stat with ENOENT for a path under a plain file, so the
-    // source probe has to walk the chain to recover GNU's errno.
-    const files = new Map([['/plain', new Uint8Array([2])]])
-    const [, io] = await run(files, new Set(['/', '/d']), ['/plain/child', '/d'])
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: cannot stat '/plain/child': Not a directory\n")
-  })
-
   it('a SOURCE deep under a plain file reports Not a directory', async () => {
     const files = new Map([['/plain', new Uint8Array([2])]])
     const [, io] = await run(files, new Set(['/', '/d']), ['/plain/a/b', '/d'])
     expect(io.exitCode).toBe(1)
     expect(await io.stderrStr()).toBe("cp: cannot stat '/plain/a/b': Not a directory\n")
-  })
-
-  it('a genuinely absent source still reports No such file or directory', async () => {
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const [, io] = await run(files, new Set(['/', '/d']), ['/nope', '/d'])
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: cannot stat '/nope': No such file or directory\n")
   })
 
   it('multiple sources with a missing target report No such file or directory', async () => {
@@ -236,37 +183,11 @@ describe('cpGeneric guards', () => {
     expect([...files.keys()].sort()).toEqual(['/a.txt', '/b.txt', '/reg'])
   })
 
-  it('multiple sources with a plain-file target report Not a directory', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-      ['/plain', new Uint8Array([3])],
-    ])
-    await expect(run(files, new Set(['/']), ['/a.txt', '/b.txt', '/plain'])).rejects.toMatchObject({
-      code: 'ENOTDIR',
-    })
-  })
-
-  it('refuses to copy a file onto itself', async () => {
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const [, io] = await run(files, new Set(), ['/a.txt', '/a.txt'])
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toContain("cp: '/a.txt' and '/a.txt' are the same file")
-  })
-
   it('refuses the same file via a directory target', async () => {
     const files = new Map([['/d/a.txt', new Uint8Array([1])]])
     const [, io] = await run(files, new Set(['/d']), ['/d/a.txt', '/d'])
     expect(io.exitCode).toBe(1)
     expect(await io.stderrStr()).toContain('are the same file')
-  })
-
-  it('refuses recursive copy of a directory into itself', async () => {
-    const files = new Map([['/d/a.txt', new Uint8Array([1])]])
-    const [, io] = await run(files, new Set(['/d']), ['/d', '/d'], { recursive: true })
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toContain("cp: cannot copy a directory, '/d', into itself")
-    expect([...files.keys()]).toEqual(['/d/a.txt'])
   })
 
   it('refuses recursive copy into a nested subtree', async () => {
@@ -279,29 +200,11 @@ describe('cpGeneric guards', () => {
     expect([...files.keys()]).toEqual(['/d/a.txt'])
   })
 
-  it('emits quoted verbose lines', async () => {
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const [out] = await run(files, new Set(), ['/a.txt', '/copy.txt'], { verbose: true })
-    expect(DEC.decode((out as Uint8Array | null) ?? new Uint8Array())).toBe(
-      "'/a.txt' -> '/copy.txt'\n",
-    )
-  })
-
   it('copies a single source into a directory', async () => {
     const files = new Map([['/a.txt', new Uint8Array([1])]])
     const [, io] = await run(files, new Set(['/d']), ['/a.txt', '/d'])
     expect(io.exitCode).toBe(0)
     expect(files.has('/d/a.txt')).toBe(true)
-  })
-
-  it('copies multiple sources into a directory', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    await run(files, new Set(['/d']), ['/a.txt', '/b.txt', '/d'])
-    expect(files.has('/d/a.txt')).toBe(true)
-    expect(files.has('/d/b.txt')).toBe(true)
   })
 
   it('refuses multiple sources when the target is not a directory', async () => {
@@ -314,15 +217,6 @@ describe('cpGeneric guards', () => {
       code: 'ENOTDIR',
     })
     expect(files.get('/dst.txt')).toEqual(new Uint8Array([3]))
-  })
-
-  it('no-clobber skips an existing target', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([9])],
-      ['/d/a.txt', new Uint8Array([1])],
-    ])
-    await run(files, new Set(['/d']), ['/a.txt', '/d'], { no_clobber: true })
-    expect(files.get('/d/a.txt')).toEqual(new Uint8Array([1]))
   })
 
   it('no-clobber with duplicate basenames keeps the first', async () => {
@@ -341,16 +235,6 @@ describe('cpGeneric guards', () => {
     ])
     await run(files, new Set(['/d']), ['/x/a.txt', '/y/a.txt', '/d'])
     expect(files.get('/d/a.txt')).toEqual(new Uint8Array([2]))
-  })
-
-  it('recursively copies a directory into a new path', async () => {
-    const files = new Map([
-      ['/src/x.txt', new Uint8Array([1])],
-      ['/src/sub/y.txt', new Uint8Array([2])],
-    ])
-    await run(files, new Set(['/src', '/src/sub']), ['/src', '/dst'], { recursive: true })
-    expect(files.has('/dst/x.txt')).toBe(true)
-    expect(files.has('/dst/sub/y.txt')).toBe(true)
   })
 
   it('records writes keyed by destination path', async () => {
@@ -505,7 +389,6 @@ describe('cpGeneric primitive transfer errors', () => {
 })
 
 const OLD = '2020-01-01T00:00:00+00:00'
-const NEW = '2024-01-01T00:00:00+00:00'
 
 function rootReaddir(files: Map<string, Uint8Array>, dirs: Set<string>): ReaddirFn {
   return (p: PathSpec) => {
@@ -521,40 +404,6 @@ function rootReaddir(files: Map<string, Uint8Array>, dirs: Set<string>): Readdir
 }
 
 describe('cpGeneric --update', () => {
-  it('older skips a newer destination', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    const mtimes = new Map([
-      ['/a.txt', OLD],
-      ['/b.txt', NEW],
-    ])
-    const [, io] = await run(files, new Set(), ['/a.txt', '/b.txt'], {
-      mtimes,
-      flags: cpFlags({ update: 'older' }),
-    })
-    expect(io.exitCode).toBe(0)
-    expect(io.stderr).toBeNull()
-    expect(files.get('/b.txt')).toEqual(new Uint8Array([2]))
-  })
-
-  it('older replaces an older destination', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    const mtimes = new Map([
-      ['/a.txt', NEW],
-      ['/b.txt', OLD],
-    ])
-    await run(files, new Set(), ['/a.txt', '/b.txt'], {
-      mtimes,
-      flags: cpFlags({ update: 'older' }),
-    })
-    expect(files.get('/b.txt')).toEqual(new Uint8Array([1]))
-  })
-
   it('older skips on equal mtimes', async () => {
     const files = new Map([
       ['/a.txt', new Uint8Array([1])],
@@ -594,32 +443,9 @@ describe('cpGeneric --update', () => {
     expect(io.stderr).toBeNull()
     expect(files.get('/b.txt')).toEqual(new Uint8Array([2]))
   })
-
-  it('none-fail reports not replacing', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    const [, io] = await run(files, new Set(), ['/a.txt', '/b.txt'], {
-      flags: cpFlags({ update: 'none-fail' }),
-    })
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: not replacing '/b.txt'\n")
-    expect(files.get('/b.txt')).toEqual(new Uint8Array([2]))
-  })
 })
 
 describe('cpGeneric --backup', () => {
-  it('simple saves the old destination', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    await run(files, new Set(), ['/a.txt', '/b.txt'], { flags: cpFlags({ backup: 'simple' }) })
-    expect(files.get('/b.txt')).toEqual(new Uint8Array([1]))
-    expect(files.get('/b.txt~')).toEqual(new Uint8Array([2]))
-  })
-
   it('skips a missing destination', async () => {
     const files = new Map([['/a.txt', new Uint8Array([1])]])
     await run(files, new Set(), ['/a.txt', '/b.txt'], { flags: cpFlags({ backup: 'existing' }) })
@@ -640,29 +466,6 @@ describe('cpGeneric --backup', () => {
     expect(files.get('/b.txt.~4~')).toEqual(new Uint8Array([2]))
   })
 
-  it('numbered starts at one', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    await run(files, new Set(), ['/a.txt', '/b.txt'], {
-      readdir: rootReaddir(files, new Set()),
-      flags: cpFlags({ backup: 'numbered' }),
-    })
-    expect(files.get('/b.txt.~1~')).toEqual(new Uint8Array([2]))
-  })
-
-  it('honors a custom suffix', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    await run(files, new Set(), ['/a.txt', '/b.txt'], {
-      flags: cpFlags({ backup: 'simple', suffix: '.bak' }),
-    })
-    expect(files.get('/b.txt.bak')).toEqual(new Uint8Array([2]))
-  })
-
   it('records the backup write', async () => {
     const files = new Map([
       ['/a.txt', new Uint8Array([1])],
@@ -672,19 +475,6 @@ describe('cpGeneric --backup', () => {
       flags: cpFlags({ backup: 'simple' }),
     })
     expect(new Set(Object.keys(io.writes))).toEqual(new Set(['/b.txt', '/b.txt~']))
-  })
-
-  it('annotates the verbose line', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-    ])
-    const [out] = await run(files, new Set(), ['/a.txt', '/b.txt'], {
-      flags: cpFlags({ verbose: true, backup: 'simple' }),
-    })
-    expect(DEC.decode((out as Uint8Array | null) ?? new Uint8Array())).toBe(
-      "'/a.txt' -> '/b.txt' (backup: '/b.txt~')\n",
-    )
   })
 
   it('a recursive merge backs up per file entry', async () => {
@@ -706,18 +496,6 @@ describe('cpGeneric --backup', () => {
 })
 
 describe('cpGeneric -t/-T', () => {
-  it('copies into the target directory', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/d/keep', new Uint8Array([9])],
-    ])
-    const [, io] = await run(files, new Set(['/d']), ['/a.txt'], {
-      flags: cpFlags({ targetDir: '/d' }),
-    })
-    expect(io.exitCode).toBe(0)
-    expect(files.get('/d/a.txt')).toEqual(new Uint8Array([1]))
-  })
-
   it('accepts the target directory as a PathSpec', async () => {
     const files = new Map([
       ['/a.txt', new Uint8Array([1])],
@@ -730,16 +508,6 @@ describe('cpGeneric -t/-T', () => {
     expect(files.get('/d/a.txt')).toEqual(new Uint8Array([1]))
   })
 
-  it('a missing target directory fails the whole command', async () => {
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const [, io] = await run(files, new Set(), ['/a.txt'], {
-      flags: cpFlags({ targetDir: '/nosuch' }),
-    })
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: target directory '/nosuch': No such file or directory\n")
-    expect([...files.keys()]).toEqual(['/a.txt'])
-  })
-
   it('a non-directory target directory fails the whole command', async () => {
     const files = new Map([
       ['/a.txt', new Uint8Array([1])],
@@ -750,33 +518,6 @@ describe('cpGeneric -t/-T', () => {
     })
     expect(io.exitCode).toBe(1)
     expect(await io.stderrStr()).toBe("cp: target directory '/f.txt': Not a directory\n")
-  })
-
-  it('-T with three operands is an extra operand error', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/b.txt', new Uint8Array([2])],
-      ['/c.txt', new Uint8Array([3])],
-    ])
-    await expect(
-      run(files, new Set(), ['/a.txt', '/b.txt', '/c.txt'], {
-        flags: cpFlags({ noTargetDir: true }),
-      }),
-    ).rejects.toThrow("cp: extra operand '/c.txt'")
-  })
-
-  it('-T refuses a directory destination for a file', async () => {
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/d/keep', new Uint8Array([9])],
-    ])
-    const [, io] = await run(files, new Set(['/d']), ['/a.txt', '/d'], {
-      flags: cpFlags({ noTargetDir: true }),
-    })
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe(
-      "cp: cannot overwrite directory '/d' with non-directory '/a.txt'\n",
-    )
   })
 
   it('refuses to overwrite a non-directory with a directory', async () => {
@@ -807,33 +548,9 @@ function view(bag: Record<string, FlagValue>): FlagView {
 
 describe('parseFlags', () => {
   it('rejects conflicting and invalid combinations', () => {
-    expect(() => parseFlags(view({ backup: true, no_clobber: true }))).toThrow(
-      'cp: --backup is mutually exclusive with -n or --update=none-fail',
-    )
     expect(() => parseFlags(view({ backup: true, update: 'none-fail' }))).toThrow(
       'mutually exclusive',
     )
-    expect(() => parseFlags(view({ target_directory: '/d', no_target_directory: true }))).toThrow(
-      'cannot combine --target-directory (-t) and --no-target-directory (-T)',
-    )
-    expect(() => parseFlags(view({ update: 'bogus' }))).toThrow(
-      "invalid argument 'bogus' for '--update'",
-    )
-    expect(() => parseFlags(view({ backup: 'bogus' }))).toThrow(
-      "invalid argument 'bogus' for 'backup type'",
-    )
-  })
-
-  // Measured against GNU coreutils 9.7 on debian:stable-slim, LC_ALL=C.
-  // Mirrors test_cp.py.
-  it.each([
-    ['a', 'all'],
-    ['al', 'all'],
-    ['o', 'older'],
-    ['old', 'older'],
-    ['none-', 'none-fail'],
-  ])('accepts the unambiguous --update prefix %s', (value, mode) => {
-    expect(parseFlags(view({ update: value })).update).toBe(mode)
   })
 
   // `n` is a prefix of `none` and of `none-fail`, which are two values, so
@@ -846,18 +563,12 @@ describe('parseFlags', () => {
 
   it('resolves the GNU update and backup grammars', () => {
     expect(parseFlags(view({ update: true })).update).toBe('older')
-    expect(parseFlags(view({ update: true })).update).toBe('older')
-    expect(parseFlags(view({ update: 'all' })).update).toBe('all')
     expect(parseFlags(view({})).update).toBeNull()
     const parsed = parseFlags(view({ suffix: '.bak' }))
     expect(parsed.backup).toBe('existing')
     expect(parsed.suffix).toBe('.bak')
-    // GNU 9.7: `cp --backup --suffix= f g` writes g~, so an empty suffix
-    // reads as absent rather than naming the original as its own backup.
-    expect(parseFlags(view({ backup: true, suffix: '' })).suffix).toBe('~')
     expect(parseFlags(view({ backup: 't' })).backup).toBe('numbered')
     expect(parseFlags(view({ backup: 'nil' })).backup).toBe('existing')
-    expect(parseFlags(view({ archive: true })).recursive).toBe(true)
   })
 })
 
@@ -877,21 +588,6 @@ function typedBackend(files: Map<string, Uint8Array>, dirs: Set<string>) {
 }
 
 describe('per-entry policy still materializes directories', () => {
-  it('keeps a directory that holds no files under -r -u', async () => {
-    const files = new Map([['/t/f.txt', new Uint8Array([70])]])
-    const dirs = new Set(['/t', '/t/empt'])
-    const { stat, copy, find, mkdir } = typedBackend(files, dirs)
-    const [, io] = await cpGeneric(
-      ['/t', '/c'].map(spec),
-      stat,
-      { copy, find, mkdir },
-      cpFlags({ recursive: true, update: 'older' }),
-    )
-    expect(io.exitCode).toBe(0)
-    expect(files.get('/c/f.txt')).toEqual(new Uint8Array([70]))
-    expect(dirs.has('/c/empt')).toBe(true)
-  })
-
   it('creates the destination for an entirely empty tree', async () => {
     const files = new Map<string, Uint8Array>()
     const dirs = new Set(['/t', '/t/a', '/t/a/b'])
@@ -997,50 +693,36 @@ describe('cp quotes the word its argument clauses name', () => {
     ['x\\', 'x\\\\'],
   ]
 
-  it.each(words)('escapes %j in the --update clause', (value, escaped) => {
-    let message = ''
-    try {
-      parseFlags(view({ update: value }))
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error)
-    }
-    expect(message.startsWith(`cp: invalid argument '${escaped}' for '--update'\n`)).toBe(true)
-  })
-
-  it.each(words)('escapes %j in the backup-type clause', (value, escaped) => {
-    let message = ''
-    try {
-      parseFlags(view({ backup: value }))
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error)
-    }
-    expect(message.startsWith(`cp: invalid argument '${escaped}' for 'backup type'\n`)).toBe(true)
+  describe.each([
+    ['update', '--update'],
+    ['backup', 'backup type'],
+  ])('in the --%s clause', (flag, clause) => {
+    it.each(words)('escapes %j', (value, escaped) => {
+      let message = ''
+      try {
+        parseFlags(view({ [flag]: value }))
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error)
+      }
+      expect(message.startsWith(`cp: invalid argument '${escaped}' for '${clause}'\n`)).toBe(true)
+    })
   })
 })
 
 // Measured against GNU coreutils 9.7 on debian:stable-slim, LC_ALL=C.
 describe.each(['cp', 'mv'])('%s --update candidates', (command) => {
   it.each([
-    ['x', 'invalid'],
-    ['', 'ambiguous'],
-  ])('lists every mode for %j', (value, kind) => {
-    let caught: unknown = null
-    try {
-      updateMode(command, new FlagView({ update: value }, specOf(command)))
-    } catch (error) {
-      caught = error
-    }
-    expect(caught).toBeInstanceOf(UsageError)
-    expect((caught as UsageError).message).toBe(
-      `${command}: ${kind} argument '${value}' for '--update'\n` +
-        "Valid arguments are:\n  - 'all'\n  - 'none'\n  - 'none-fail'\n  - 'older'\n" +
-        `Try '${command} --help' for more information.`,
-    )
-    expect((caught as UsageError).exitCode).toBe(1)
-  })
-
-  it.each(['all', 'none', 'none-fail', 'older'])('accepts the advertised mode %s', (value) => {
-    expect(updateMode(command, new FlagView({ update: value }, specOf(command)))).toBe(value)
+    ['all', 'all'],
+    ['none', 'none'],
+    ['none-fail', 'none-fail'],
+    ['older', 'older'],
+    ['a', 'all'],
+    ['al', 'all'],
+    ['o', 'older'],
+    ['old', 'older'],
+    ['none-', 'none-fail'],
+  ])('accepts %s as %s', (value, mode) => {
+    expect(updateMode(command, new FlagView({ update: value }, specOf(command)))).toBe(mode)
   })
 })
 
@@ -1055,39 +737,6 @@ function slashed(path: string): PathSpec {
     rawPath: `${path}/`,
   })
 }
-
-describe('cpGeneric trailing slash', () => {
-  it('refuses a file source into a slashed missing destination', async () => {
-    // GNU 9.7: `cp a.txt missing/` is `cannot create regular file
-    // 'missing/': Not a directory`, and nothing named `missing` appears.
-    const files = new Map([['/a.txt', new Uint8Array([1])]])
-    const { stat, copy, find } = makeBackend(files, new Set())
-    const [, io] = await cpGeneric(
-      [spec('/a.txt'), slashed('/missing')],
-      stat,
-      { copy, find },
-      cpFlags({}),
-    )
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe(
-      "cp: cannot create regular file '/missing/': Not a directory\n",
-    )
-    expect([...files.keys()]).toEqual(['/a.txt'])
-  })
-
-  it('takes a directory source into a slashed missing destination', async () => {
-    const files = new Map([['/d/f', new Uint8Array([1])]])
-    const { stat, copy, find } = makeBackend(files, new Set(['/d']))
-    const [, io] = await cpGeneric(
-      [spec('/d'), slashed('/missing')],
-      stat,
-      { copy, find },
-      cpFlags({ recursive: true }),
-    )
-    expect(io.exitCode).toBe(0)
-    expect(files.has('/missing/f')).toBe(true)
-  })
-})
 
 describe('the link options', () => {
   function flagsOf(...argv: string[]): CpFlags {

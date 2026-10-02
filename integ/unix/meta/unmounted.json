@@ -295,7 +295,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "mkdir -p /data/unmz && echo x > /data/unmz/src.txt && cp /data/unmz/src.txt /unmounted/out.txt",
       "expect": {

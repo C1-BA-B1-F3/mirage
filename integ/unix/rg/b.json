@@ -370,7 +370,43 @@
         "A",
         "B"
       ],
-      "note": "ripgrep prints the invalid byte raw; the battery compares a replacing decode, so it reads as U+FFFD here (conformance/cases/rg.json pins the byte)"
+      "note": "ripgrep prints the invalid byte raw; the battery compares a replacing decode, so it reads as U+FFFD here (rg_bn_context_prints_the_raw_byte pins the byte through od)"
+    },
+    {
+      "id": "rg_bn_context_prints_the_raw_byte",
+      "seq": 14102401,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'one\\n\\377\\ntwo abc\\nthree\\n' > /data/cfrgb.bin; rg -bn -A1 -B1 abc /data/cfrgb.bin | od -An -tx1; echo rc=${PIPESTATUS[0]}; rm -f /data/cfrgb.bin",
+      "expect": {
+        "exit": 0,
+        "stdout": " 32 2d 34 2d ff 0a 33 3a 36 3a 74 77 6f 20 61 62\n 63 0a 34 2d 31 34 2d 74 68 72 65 65 0a\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b",
+        "n",
+        "A",
+        "B"
+      ]
     }
   ]
 }

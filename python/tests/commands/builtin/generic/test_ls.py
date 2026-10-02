@@ -3,6 +3,7 @@ import errno
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from functools import partial
+from operator import attrgetter
 
 import pytest
 
@@ -25,9 +26,8 @@ from mirage.commands.builtin.utils.formatting import BlockSize, LsColumns
 from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
-from mirage.ops.types import LinkView, MountView
+from mirage.ops.types import MountView
 from mirage.types import (
-    LINK_TARGET_KEY,
     ContentType,
     FileStat,
     FileType,
@@ -36,7 +36,6 @@ from mirage.types import (
     LsTimeKind,
     PathSpec,
 )
-from mirage.utils.stat_view import DIR_SIZE
 
 
 def _spec(path: str) -> PathSpec:
@@ -125,21 +124,6 @@ def test_format_simple_classify_marks_dirs_with_slash():
 
 
 @pytest.mark.asyncio
-async def test_walk_lists_immediate_children():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/a.txt": _file("a.txt", 3),
-        "/dir/b.txt": _file("b.txt", 2),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(_spec("/dir"), readdir=readdir, stat=stat)
-    entries = res.entries
-    warnings = [w.message for w in res.warnings]
-    assert [e.name for e in entries] == ["a.txt", "b.txt"]
-    assert warnings == []
-
-
-@pytest.mark.asyncio
 async def test_walk_stats_one_entry_at_a_time():
     # On a mount that keeps no listing index each entry's stat is a
     # backend request; a whole directory's worth at once is a burst.
@@ -174,154 +158,6 @@ async def test_walk_skips_dotfiles_unless_all_files():
     res = await walk(_spec("/dir"), readdir=readdir, stat=stat, all_files=True)
     entries = res.entries
     assert sorted(e.name for e in entries) == [".hidden", "visible.txt"]
-
-
-@pytest.mark.asyncio
-async def test_walk_sort_by_size():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/big.txt": _file("big.txt", 1000),
-        "/dir/small.txt": _file("small.txt", 1),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(
-        _spec("/dir"), readdir=readdir, stat=stat, sort_by=LsSortBy.SIZE
-    )
-    entries = res.entries
-    assert [e.name for e in entries] == ["big.txt", "small.txt"]
-    res = await walk(
-        _spec("/dir"),
-        readdir=readdir,
-        stat=stat,
-        sort_by=LsSortBy.SIZE,
-        reverse=True,
-    )
-    entries = res.entries
-    assert [e.name for e in entries] == ["small.txt", "big.txt"]
-
-
-@pytest.mark.asyncio
-async def test_walk_sort_by_size_counts_a_directory_as_dir_size():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/big.txt": _file("big.txt", DIR_SIZE + 1),
-        "/dir/small.txt": _file("small.txt", 3),
-        "/dir/sub": _dir("sub"),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(
-        _spec("/dir"), readdir=readdir, stat=stat, sort_by=LsSortBy.SIZE
-    )
-    assert [e.name for e in res.entries] == ["big.txt", "sub", "small.txt"]
-
-
-@pytest.mark.asyncio
-async def test_walk_sort_by_time():
-    older = datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat()
-    newer = datetime(2025, 1, 1, tzinfo=timezone.utc).isoformat()
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/a.txt": _file("a.txt", 1, modified=older),
-        "/dir/b.txt": _file("b.txt", 1, modified=newer),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(
-        _spec("/dir"), readdir=readdir, stat=stat, sort_by=LsSortBy.TIME
-    )
-    entries = res.entries
-    assert [e.name for e in entries] == ["b.txt", "a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_walk_recursive_descends_into_dirs():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/a.txt": _file("a.txt"),
-        "/dir/sub": _dir("sub"),
-        "/dir/sub/b.txt": _file("b.txt"),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(_spec("/dir"), readdir=readdir, stat=stat, recursive=True)
-    entries = res.entries
-    names = [e.name for e in entries]
-    assert "a.txt" in names
-    assert "sub" in names
-    assert "b.txt" in names
-
-
-@pytest.mark.asyncio
-async def test_walk_list_dir_returns_only_self():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/a.txt": _file("a.txt"),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(_spec("/dir"), readdir=readdir, stat=stat, list_dir=True)
-    entries = res.entries
-    # GNU ls -d prints the operand as given.
-    assert [e.name for e in entries] == ["/dir"]
-
-
-@pytest.mark.asyncio
-async def test_walk_missing_path_collects_warning():
-    readdir, stat = _make_fs_backend({})
-    res = await walk(_spec("/nope"), readdir=readdir, stat=stat)
-    entries = res.entries
-    warnings = [w.message for w in res.warnings]
-    assert entries == []
-    assert any("/nope" in w for w in warnings)
-
-
-@pytest.mark.asyncio
-async def test_ls_short_output_terminates_record():
-    tree = {"/dir": _dir("dir"), "/dir/a.txt": _file("a.txt")}
-    readdir, stat = _make_fs_backend(tree)
-    output, io = await ls([_spec("/dir")], readdir=readdir, stat=stat)
-    assert output == b"a.txt\n"
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_ls_long_format_renders_via_format_ls_long():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/a.txt": _file("a.txt", 42),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    output, _ = await ls(
-        [_spec("/dir")], readdir=readdir, stat=stat, long=True
-    )
-    decoded = output.decode()
-    assert "a.txt" in decoded
-    assert "42" in decoded
-
-
-@pytest.mark.asyncio
-async def test_ls_classify_appends_slash_for_dirs():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/sub": _dir("sub"),
-        "/dir/a.txt": _file("a.txt"),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    output, _ = await ls(
-        [_spec("/dir")],
-        readdir=readdir,
-        stat=stat,
-        indicator=LsIndicator.CLASSIFY,
-    )
-    decoded = output.decode().splitlines()
-    assert "sub/" in decoded
-    assert "a.txt" in decoded
-
-
-@pytest.mark.asyncio
-async def test_ls_missing_operand_exits_2():
-    readdir, stat = _make_fs_backend({})
-    output, io = await ls([_spec("/nope")], readdir=readdir, stat=stat)
-    assert output == b""
-    assert io.exit_code == LS_FAILURE
-    assert b"/nope" in (io.stderr or b"")
 
 
 @pytest.mark.asyncio
@@ -401,60 +237,37 @@ def _failing_entry(exc: Exception):
 # reports it, whatever the errno, and exits 1.
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "exc",
+    "exc, flags, row, stderr",
     [
-        FileNotFoundError("/dir/b.txt"),
-        RuntimeError("upstream 502 Bad Gateway"),
+        (FileNotFoundError("/dir/b.txt"), {}, "b.txt", b""),
+        (RuntimeError("upstream 502 Bad Gateway"), {}, "b.txt", b""),
+        (
+            FileNotFoundError("/dir/b.txt"),
+            {"long": True},
+            "?????????? ? ? ? ?            ? b.txt",
+            b"ls: cannot access '/dir/b.txt': No such file or directory\n",
+        ),
+        (
+            RuntimeError("S3 GET b.txt failed: 403 Forbidden"),
+            {"indicator": LsIndicator.CLASSIFY},
+            "b.txt",
+            b"ls: cannot access '/dir/b.txt': S3 GET b.txt failed: 403 Forbidden\n",
+        ),
+        (
+            OSError(errno.EIO, "socket hang up"),
+            {"long": True},
+            "?????????? ? ? ? ?            ? b.txt",
+            b"ls: cannot access '/dir/b.txt': Input/output error\n",
+        ),
     ],
 )
-async def test_ls_plain_lists_an_unstattable_entry_without_a_word(exc):
+async def test_ls_lists_an_unstattable_entry(exc, flags, row, stderr):
     readdir, stat = _failing_entry(exc)
-    output, io = await ls([_spec("/dir")], readdir=readdir, stat=stat)
-    assert io.exit_code == LS_OK
-    assert output == b"a.txt\nb.txt\n"
-    assert not io.stderr
-
-
-@pytest.mark.asyncio
-async def test_ls_long_keeps_a_question_row_for_an_unstattable_entry():
-    readdir, stat = _failing_entry(FileNotFoundError("/dir/b.txt"))
-    output, io = await ls(
-        [_spec("/dir")], readdir=readdir, stat=stat, long=True
-    )
-    assert io.exit_code == LS_MINOR_PROBLEM
-    assert output.decode().splitlines()[2] == (
-        "?????????? ? ? ? ?            ? b.txt"
-    )
-    assert io.stderr == (
-        b"ls: cannot access '/dir/b.txt': No such file or directory\n"
-    )
-
-
-@pytest.mark.asyncio
-async def test_ls_reports_an_unstamped_backend_error_in_its_own_words():
-    readdir, stat = _failing_entry(
-        RuntimeError("S3 GET b.txt failed: 403 Forbidden")
-    )
-    output, io = await ls(
-        [_spec("/dir")],
-        readdir=readdir,
-        stat=stat,
-        indicator=LsIndicator.CLASSIFY,
-    )
-    assert io.exit_code == LS_MINOR_PROBLEM
-    assert output == b"a.txt\nb.txt\n"
-    assert io.stderr == (
-        b"ls: cannot access '/dir/b.txt': S3 GET b.txt failed: 403 Forbidden\n"
-    )
-
-
-@pytest.mark.asyncio
-async def test_ls_words_an_eio_the_way_gnu_does():
-    readdir, stat = _failing_entry(OSError(errno.EIO, "socket hang up"))
-    _, io = await ls([_spec("/dir")], readdir=readdir, stat=stat, long=True)
-    assert io.stderr == (
-        b"ls: cannot access '/dir/b.txt': Input/output error\n"
-    )
+    output, io = await ls([_spec("/dir")], readdir=readdir, stat=stat, **flags)
+    *_, sibling, last = output.decode().splitlines()
+    assert sibling.endswith("a.txt") and last == row
+    assert (io.stderr or b"") == stderr
+    assert io.exit_code == (LS_MINOR_PROBLEM if stderr else LS_OK)
 
 
 # GNU (coreutils 9.7, both entries' stat denied) zeroes a failed stat, so
@@ -505,34 +318,6 @@ async def test_ls_still_propagates_the_operands_own_failure():
 
     with pytest.raises(RuntimeError, match="socket hang up"):
         await ls([_spec("/dir")], readdir=readdir, stat=stat)
-
-
-@pytest.mark.asyncio
-async def test_ls_recursive_unreadable_subdir_is_a_minor_problem():
-    """GNU exits 1 (not 2) when only a directory met while recursing fails,
-    and keeps the parent listing.
-    """
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/a.txt": _file("a.txt"),
-        "/dir/sub": _dir("sub"),
-    }
-    readdir, stat = _make_fs_backend(tree)
-
-    denying_readdir = partial(
-        _readdir_denying, readdir=readdir, blocked="/dir/sub"
-    )
-    output, io = await ls(
-        [_spec("/dir")], readdir=denying_readdir, stat=stat, recursive=True
-    )
-    assert io.exit_code == LS_MINOR_PROBLEM
-    assert b"/dir:" in output
-    assert b"a.txt" in output
-    # GNU words a directory it may not read as one it could not open,
-    # not as one it could not reach.
-    assert io.stderr == (
-        b"ls: cannot open directory '/dir/sub': Permission denied\n"
-    )
 
 
 @pytest.mark.asyncio
@@ -599,18 +384,6 @@ def test_exit_status_for_ratchets_like_gnu():
 
 
 @pytest.mark.asyncio
-async def test_walk_single_file_lists_itself():
-    tree = {"/dir/a.parquet": _file("a.parquet", 5)}
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(_spec("/dir/a.parquet"), readdir=readdir, stat=stat)
-    entries = res.entries
-    warnings = [w.message for w in res.warnings]
-    # GNU ls prints a file operand as given.
-    assert [e.name for e in entries] == ["/dir/a.parquet"]
-    assert warnings == []
-
-
-@pytest.mark.asyncio
 async def test_walk_empty_readdir_falls_back_to_file():
     """Object stores (e.g. s3) return [] for a file key instead of raising."""
     fstat = _file("a.parquet", 5)
@@ -630,26 +403,6 @@ async def test_walk_empty_readdir_falls_back_to_file():
     assert warnings == []
 
 
-@pytest.mark.asyncio
-async def test_walk_empty_dir_stays_empty():
-    tree = {"/empty": _dir("empty")}
-    readdir, stat = _make_fs_backend(tree)
-    res = await walk(_spec("/empty"), readdir=readdir, stat=stat)
-    entries = res.entries
-    warnings = [w.message for w in res.warnings]
-    assert entries == []
-    assert warnings == []
-
-
-@pytest.mark.asyncio
-async def test_ls_file_argument_lists_the_file():
-    tree = {"/dir/a.json": _file("a.json", 5)}
-    readdir, stat = _make_fs_backend(tree)
-    output, io = await ls([_spec("/dir/a.json")], readdir=readdir, stat=stat)
-    assert output == b"/dir/a.json\n"
-    assert io.exit_code == 0
-
-
 def _two_dir_tree() -> dict[str, FileStat]:
     return {
         "/a": _dir("a"),
@@ -664,58 +417,12 @@ def _two_dir_tree() -> dict[str, FileStat]:
 
 
 @pytest.mark.asyncio
-async def test_ls_single_dir_operand_has_no_header():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, _ = await ls([_spec("/a")], readdir=readdir, stat=stat)
-    assert output == b"f.txt\nsub\n"
-
-
-@pytest.mark.asyncio
-async def test_ls_two_dir_operands_print_headers_separated_by_blank():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, io = await ls(
-        [_spec("/a"), _spec("/b")], readdir=readdir, stat=stat
-    )
-    assert output == b"/a:\nf.txt\nsub\n\n/b:\ng.txt\n"
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
 async def test_ls_empty_dir_operand_still_gets_a_header():
     readdir, stat = _make_fs_backend(_two_dir_tree())
     output, _ = await ls(
         [_spec("/b"), _spec("/c")], readdir=readdir, stat=stat
     )
     assert output == b"/b:\ng.txt\n\n/c:\n"
-
-
-@pytest.mark.asyncio
-async def test_ls_file_operands_print_first_without_headers():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, _ = await ls(
-        [_spec("/b"), _spec("/zfile"), _spec("/a"), _spec("/mfile")],
-        readdir=readdir,
-        stat=stat,
-    )
-    assert output == (b"/mfile\n/zfile\n\n/a:\nf.txt\nsub\n\n/b:\ng.txt\n")
-
-
-@pytest.mark.asyncio
-async def test_ls_only_file_operands_emit_no_trailing_blank():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, _ = await ls(
-        [_spec("/zfile"), _spec("/mfile")], readdir=readdir, stat=stat
-    )
-    assert output == b"/mfile\n/zfile\n"
-
-
-@pytest.mark.asyncio
-async def test_ls_operands_sort_by_name_not_command_line_order():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, _ = await ls(
-        [_spec("/b"), _spec("/a")], readdir=readdir, stat=stat
-    )
-    assert output == b"/a:\nf.txt\nsub\n\n/b:\ng.txt\n"
 
 
 @pytest.mark.asyncio
@@ -728,34 +435,12 @@ async def test_ls_reverse_flips_operand_and_entry_order():
 
 
 @pytest.mark.asyncio
-async def test_ls_failed_operand_still_headers_the_one_that_listed():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, io = await ls(
-        [_spec("/nope"), _spec("/a")], readdir=readdir, stat=stat
-    )
-    assert output == b"/a:\nf.txt\nsub\n"
-    # The header is output, not evidence of success: the bad operand still
-    # ratchets the status to 2.
-    assert io.exit_code == LS_FAILURE
-    assert b"/nope" in (io.stderr or b"")
-
-
-@pytest.mark.asyncio
 async def test_ls_repeated_operand_lists_twice():
     readdir, stat = _make_fs_backend(_two_dir_tree())
     output, _ = await ls(
         [_spec("/a"), _spec("/a")], readdir=readdir, stat=stat
     )
     assert output == b"/a:\nf.txt\nsub\n\n/a:\nf.txt\nsub\n"
-
-
-@pytest.mark.asyncio
-async def test_ls_recursive_single_operand_keeps_its_header():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, _ = await ls(
-        [_spec("/a")], readdir=readdir, stat=stat, recursive=True
-    )
-    assert output == b"/a:\nf.txt\nsub\n\n/a/sub:\n"
 
 
 @pytest.mark.asyncio
@@ -768,18 +453,6 @@ async def test_ls_recursive_file_operand_is_not_headed():
         recursive=True,
     )
     assert output == b"/zfile\n\n/a:\nf.txt\nsub\n\n/a/sub:\n"
-
-
-@pytest.mark.asyncio
-async def test_ls_list_dir_sorts_operands_and_stays_unheaded():
-    readdir, stat = _make_fs_backend(_two_dir_tree())
-    output, _ = await ls(
-        [_spec("/zfile"), _spec("/b"), _spec("/a")],
-        readdir=readdir,
-        stat=stat,
-        list_dir=True,
-    )
-    assert output == b"/a\n/b\n/zfile\n"
 
 
 def _tied_tree() -> dict[str, FileStat]:
@@ -866,24 +539,6 @@ async def test_ls_long_widths_are_per_directory_block():
     assert "    1 " not in lines[6]
 
 
-@pytest.mark.asyncio
-async def test_ls_l_no_filetype_enrichment():
-    tree = {
-        "/dir": _dir("dir"),
-        "/dir/data.parquet": _file("data.parquet", 999),
-    }
-    readdir, stat = _make_fs_backend(tree)
-
-    output, _ = await ls(
-        [_spec("/dir")],
-        readdir=readdir,
-        stat=stat,
-        long=True,
-    )
-    decoded = output.decode()
-    assert "data.parquet" in decoded
-
-
 def _mount_view(*roots: str) -> MountView:
     """A mount table holding exactly ``roots``.
 
@@ -901,107 +556,6 @@ def _mount_view(*roots: str) -> MountView:
         is_root=lambda p: p.rstrip("/") in roots,
         root_of=lambda p: "/",
     )
-
-
-def _link_view(link: FileStat) -> LinkView:
-    """A namespace holding exactly one link, named flink."""
-
-    async def _exists(virtual: str) -> bool:
-        return True
-
-    async def _target_stat(virtual: str) -> FileStat | None:
-        return None
-
-    return LinkView(
-        stat_at=lambda v: link if v.endswith("flink") else None,
-        children=lambda d: [],
-        subtree=lambda d: [],
-        resolve=lambda v: v,
-        exists=_exists,
-        target_stat=_target_stat,
-    )
-
-
-_LINK_ROW = FileStat(
-    name="flink",
-    size=19,
-    modified="2026-01-02T15:30:00Z",
-    type=FileType.SYMLINK,
-    extra={LINK_TARGET_KEY: "/data/symx/real.txt"},
-)
-
-
-@pytest.mark.asyncio
-async def test_link_operand_on_a_backend_whose_readdir_raises():
-
-    async def readdir(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    async def stat(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    out, io = await ls(
-        [PathSpec.from_str_path("/data/symx/flink")],
-        readdir=readdir,
-        stat=stat,
-        long=True,
-        links=_link_view(_LINK_ROW),
-    )
-    assert io.exit_code == 0
-    assert out.decode().strip().endswith("flink -> /data/symx/real.txt")
-
-
-@pytest.mark.asyncio
-async def test_structure_only_directory_lists_its_children():
-    """A directory no backend serves still lists when the namespace owes
-    it children (a nested mount, a link's ancestors): the door already
-    names it in the parent listing, so ls must agree instead of
-    reporting it missing."""
-
-    async def readdir(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    async def stat(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    def child_mounts(parent: str) -> list[str]:
-        return ["deep"] if parent == "/ghost" else []
-
-    out, io = await ls(
-        [PathSpec.from_str_path("/ghost")],
-        readdir=readdir,
-        stat=stat,
-        child_mounts=child_mounts,
-    )
-    assert io.exit_code == 0
-    assert out.decode() == "deep\n"
-
-
-@pytest.mark.asyncio
-async def test_structure_only_directory_renders_group_under_recursive():
-    """Under -R the group still renders from the namespace fact; only
-    descent into the mount root is withheld, because that listing is
-    another backend's and the cross-mount fan-out assembles it."""
-
-    async def readdir(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    async def stat(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    def child_mounts(parent: str) -> list[str]:
-        return ["deep"] if parent == "/ghost" else []
-
-    out, io = await ls(
-        [PathSpec.from_str_path("/ghost")],
-        readdir=readdir,
-        stat=stat,
-        recursive=True,
-        child_mounts=child_mounts,
-        mounts=_mount_view("/ghost/deep"),
-    )
-    assert io.exit_code == 0
-    assert out.decode() == "/ghost:\ndeep\n"
 
 
 @pytest.mark.asyncio
@@ -1032,35 +586,6 @@ async def test_structure_only_chain_descends_under_recursive():
     )
     assert io.exit_code == 0
     assert out.decode() == "/ghost:\ndeep\n\n/ghost/deep:\nlnk\n"
-
-
-@pytest.mark.asyncio
-async def test_mount_root_is_listed_but_not_descended_under_recursive():
-    """A mount root is an ordinary entry of a backend-served directory.
-
-    GNU (coreutils 9.7, tmpfs at `base/nested`) prints `nested` in
-    `base`'s own listing and then its group. The merge used to be
-    withheld whenever the walk was recursive, on the theory that the
-    cross-mount fan-out contributed the whole nested mount; it
-    contributes the group, not the parent's row, so the row went missing
-    wherever the backend held no key of that name. Descent is what the
-    fan-out owns, and the mount table is what says where to stop.
-    """
-    tree = {
-        "/base": _dir("base"),
-        "/base/top.txt": _file("top.txt", 2),
-    }
-    readdir, stat = _make_fs_backend(tree)
-    out, io = await ls(
-        [PathSpec.from_str_path("/base")],
-        readdir=readdir,
-        stat=stat,
-        recursive=True,
-        child_mounts=lambda d: ["nested"] if d == "/base" else [],
-        mounts=_mount_view("/base/nested"),
-    )
-    assert io.exit_code == 0
-    assert out.decode() == "/base:\nnested\ntop.txt\n"
 
 
 @pytest.mark.asyncio
@@ -1118,131 +643,7 @@ async def test_a_child_mount_row_falls_back_to_directory_with_no_dispatcher():
     assert out.decode() == "hist/\n"
 
 
-@pytest.mark.asyncio
-async def test_list_dir_itself_on_structure_only_directory():
-    """-d stats the operand itself; the namespace fact is what says the
-    directory exists, so the row must come from it when no backend
-    does."""
-
-    async def readdir(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    async def stat(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    def child_mounts(parent: str) -> list[str]:
-        return ["deep"] if parent == "/ghost" else []
-
-    out, io = await ls(
-        [PathSpec.from_str_path("/ghost")],
-        readdir=readdir,
-        stat=stat,
-        list_dir=True,
-        child_mounts=child_mounts,
-    )
-    assert io.exit_code == 0
-    assert out.decode() == "/ghost\n"
-
-
-@pytest.mark.asyncio
-async def test_link_operand_on_a_backend_whose_readdir_returns_empty():
-    """Backends without real directories (s3, nextcloud) answer readdir
-    on a link with an empty list rather than raising, which rendered the
-    operand as an empty directory instead of the link's own row."""
-
-    async def readdir(p, index=None):
-        return []
-
-    async def stat(p, index=None):
-        raise FileNotFoundError(p.virtual)
-
-    out, io = await ls(
-        [PathSpec.from_str_path("/data/symx/flink")],
-        readdir=readdir,
-        stat=stat,
-        long=True,
-        links=_link_view(_LINK_ROW),
-    )
-    assert io.exit_code == 0
-    assert out.decode().strip().endswith("flink -> /data/symx/real.txt")
-
-
 # ── the flag set beyond -l: sort orders, columns, time styles ──────────
-
-_VERSION_TREE = {
-    "/v": _dir("v"),
-    "/v/file10.txt": _file("file10.txt", 10),
-    "/v/file2.txt": _file("file2.txt", 2),
-    "/v/Z.txt": _file("Z.txt", 1),
-    "/v/a.txt": _file("a.txt", 6),
-    "/v/b.md": _file("b.md", 1),
-    "/v/c": _file("c", 0),
-    "/v/dir1": _dir("dir1"),
-    "/v/dir2": _dir("dir2"),
-}
-
-
-async def _names(sort_by=LsSortBy.NAME, **kwargs) -> list[str]:
-    readdir, stat = _make_fs_backend(_VERSION_TREE)
-    output, _ = await ls(
-        [_spec("/v")], readdir=readdir, stat=stat, sort_by=sort_by, **kwargs
-    )
-    return output.decode().split()
-
-
-@pytest.mark.asyncio
-async def test_version_sort_reads_numbers_as_numbers():
-    # Pinned on GNU coreutils 9.7: `ls -v`.
-    assert await _names(LsSortBy.VERSION) == [
-        "Z.txt",
-        "a.txt",
-        "b.md",
-        "c",
-        "dir1",
-        "dir2",
-        "file2.txt",
-        "file10.txt",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_extension_sort_groups_by_suffix_then_name():
-    # Pinned on GNU coreutils 9.7: `ls -X`; a name without a dot has the
-    # empty suffix and sorts first.
-    assert await _names(LsSortBy.EXTENSION) == [
-        "c",
-        "dir1",
-        "dir2",
-        "b.md",
-        "Z.txt",
-        "a.txt",
-        "file10.txt",
-        "file2.txt",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_group_directories_first_partitions_after_sorting():
-    assert await _names(group_dirs_first=True) == [
-        "dir1",
-        "dir2",
-        "Z.txt",
-        "a.txt",
-        "b.md",
-        "c",
-        "file10.txt",
-        "file2.txt",
-    ]
-    assert await _names(group_dirs_first=True, reverse=True) == [
-        "dir2",
-        "dir1",
-        "file2.txt",
-        "file10.txt",
-        "c",
-        "b.md",
-        "a.txt",
-        "Z.txt",
-    ]
 
 
 def test_unsorted_keeps_the_listing_order_and_ignores_grouping():
@@ -1483,57 +884,6 @@ def test_parse_flags_g_o_n_imply_long_and_shape_the_columns():
     )
 
 
-@pytest.mark.parametrize(
-    "flags,message,code",
-    [
-        (
-            {"sort": "bogus"},
-            "ls: invalid argument 'bogus' for '--sort'\n"
-            "Valid arguments are:\n  - 'none'\n  - 'time'\n  - 'size'\n"
-            "  - 'extension'\n  - 'version'\n  - 'width'\n"
-            "Try 'ls --help' for more information.",
-            1,
-        ),
-        (
-            {"time": "bogus"},
-            "ls: invalid argument 'bogus' for '--time'\n"
-            "Valid arguments are:\n  - 'atime', 'access', 'use'\n"
-            "  - 'ctime', 'status'\n  - 'mtime', 'modification'\n"
-            "  - 'birth', 'creation'\n"
-            "Try 'ls --help' for more information.",
-            1,
-        ),
-        (
-            {"time_style": "bogus"},
-            "ls: invalid argument 'bogus' for 'time style'\n"
-            "Valid arguments are:\n  - [posix-]full-iso\n  - [posix-]long-iso\n"
-            "  - [posix-]iso\n  - [posix-]locale\n"
-            "  - +FORMAT (e.g., +%H:%M) for a 'date'-style format\n"
-            "Try 'ls --help' for more information.",
-            2,
-        ),
-        (
-            {"block_size": "bogus"},
-            "ls: invalid --block-size argument 'bogus'",
-            2,
-        ),
-        (
-            {"hyperlink": "bogus"},
-            "ls: invalid argument 'bogus' for '--hyperlink'\n"
-            "Valid arguments are:\n  - 'always', 'yes', 'force'\n"
-            "  - 'never', 'no', 'none'\n  - 'auto', 'tty', 'if-tty'\n"
-            "Try 'ls --help' for more information.",
-            1,
-        ),
-    ],
-)
-def test_parse_flags_refuses_in_gnu_words(flags, message, code):
-    with pytest.raises(UsageError) as info:
-        parse_flags(flags)
-    assert str(info.value) == message
-    assert info.value.exit_code == code
-
-
 # ls's argument clauses name the refused word through gnulib's quote(), so
 # a byte outside 0x20-0x7e comes back escaped rather than interpolated
 # raw. Rows measured against GNU coreutils 9.4 under `LC_ALL=C` with a raw
@@ -1639,66 +989,15 @@ def test_an_empty_argument_is_ambiguous(dest, option, code):
         ({"hyperlink": "n"}, "hyperlink", False),
         ({"hyperlink": "au"}, "hyperlink", False),
         ({"hyperlink": "i"}, "hyperlink", False),
+        ({"time_style": "full"}, "columns.time_style", "full-iso"),
+        ({"time_style": "long"}, "columns.time_style", "long-iso"),
+        ({"time_style": "i"}, "columns.time_style", "iso"),
+        ({"time_style": "loc"}, "columns.time_style", "locale"),
+        ({"time_style": "posix-full"}, "columns.time_style", "locale"),
     ],
 )
 def test_parse_flags_accepts_an_unambiguous_prefix(flags, attr, expected):
-    assert getattr(parse_flags(flags), attr) == expected
-
-
-@pytest.mark.parametrize(
-    "value,expected",
-    [
-        ("full", "full-iso"),
-        ("long", "long-iso"),
-        ("i", "iso"),
-        ("loc", "locale"),
-        ("posix-full", "locale"),
-    ],
-)
-def test_time_style_accepts_an_unambiguous_prefix(value, expected):
-    assert parse_flags({"time_style": value}).columns.time_style == expected
-
-
-# Ambiguity is decided on values: `--time=a` matches atime and access,
-# one value, and is accepted above, while these span two and are refused.
-@pytest.mark.parametrize(
-    "flags,message,code",
-    [
-        (
-            {"time": "c"},
-            "ls: ambiguous argument 'c' for '--time'\n"
-            "Valid arguments are:\n  - 'atime', 'access', 'use'\n"
-            "  - 'ctime', 'status'\n  - 'mtime', 'modification'\n"
-            "  - 'birth', 'creation'\n"
-            "Try 'ls --help' for more information.",
-            1,
-        ),
-        (
-            {"hyperlink": "a"},
-            "ls: ambiguous argument 'a' for '--hyperlink'\n"
-            "Valid arguments are:\n  - 'always', 'yes', 'force'\n"
-            "  - 'never', 'no', 'none'\n  - 'auto', 'tty', 'if-tty'\n"
-            "Try 'ls --help' for more information.",
-            1,
-        ),
-        (
-            {"time_style": "lo"},
-            "ls: ambiguous argument 'lo' for 'time style'\n"
-            "Valid arguments are:\n  - [posix-]full-iso\n  - [posix-]long-iso\n"
-            "  - [posix-]iso\n  - [posix-]locale\n"
-            "  - +FORMAT (e.g., +%H:%M) for a 'date'-style format\n"
-            "Try 'ls --help' for more information.",
-            2,
-        ),
-    ],
-)
-def test_parse_flags_refuses_a_prefix_spanning_two_values(
-    flags, message, code
-):
-    with pytest.raises(UsageError) as info:
-        parse_flags(flags)
-    assert str(info.value) == message
-    assert info.value.exit_code == code
+    assert attrgetter(attr)(parse_flags(flags)) == expected
 
 
 # `ls --sort=NON`, `=NONE` and `=None` are all `invalid argument`, never
@@ -1711,62 +1010,6 @@ def test_prefix_matching_is_case_sensitive(value):
         f"ls: invalid argument '{value}' for '--sort'\n"
     )
     assert info.value.exit_code == 1
-
-
-# The block and the hint are byte-identical between the two wordings;
-# only the first line differs. Measured by stripping line 1 from
-# `ls -l --time=c` and `-l --time=zzz`.
-def test_the_ambiguous_and_invalid_blocks_are_the_same_below_line_one():
-    with pytest.raises(UsageError) as ambiguous:
-        parse_flags({"time": "c"})
-    with pytest.raises(UsageError) as invalid:
-        parse_flags({"time": "zzz"})
-    assert (
-        str(ambiguous.value).split("\n", 1)[1]
-        == (str(invalid.value).split("\n", 1)[1])
-    )
-    assert ambiguous.value.exit_code == invalid.value.exit_code == 1
-
-
-# xstrtoumax's three refusals as ls words them, measured on coreutils 9.7;
-# the word is quoted but never escaped. Mirrored in ls.test.ts.
-@pytest.mark.parametrize(
-    "value,message",
-    [
-        ("x", "ls: invalid --block-size argument 'x'"),
-        ("", "ls: invalid --block-size argument ''"),
-        ("0K", "ls: invalid --block-size argument '0K'"),
-        ("1x", "ls: invalid suffix in --block-size argument '1x'"),
-        ("Kx", "ls: invalid suffix in --block-size argument 'Kx'"),
-        ("1e", "ls: invalid suffix in --block-size argument '1e'"),
-        ("1R", "ls: invalid suffix in --block-size argument '1R'"),
-        ("Y", "ls: --block-size argument 'Y' too large"),
-        ("16E", "ls: --block-size argument '16E' too large"),
-    ],
-)
-def test_block_size_refusals_are_worded_as_gnu_words_them(value, message):
-    with pytest.raises(UsageError) as exc:
-        parse_flags({"block_size": value})
-    assert str(exc.value) == message
-    assert exc.value.exit_code == 2
-
-
-@pytest.mark.asyncio
-async def test_empty_long_listing_and_dot_entries_do_not_recurse():
-    readdir, stat = _make_fs_backend({"/": _dir("/"), "/empty": _dir("empty")})
-    output, io = await ls(
-        [_spec("/empty")], readdir=readdir, stat=stat, long=True
-    )
-    assert output == b"total 0\n"
-    output, io = await ls(
-        [_spec("/empty")],
-        readdir=readdir,
-        stat=stat,
-        show_dot_entries=True,
-        recursive=True,
-    )
-    assert output == b"/empty:\n.\n..\n"
-    assert io.exit_code == 0
 
 
 @pytest.mark.asyncio

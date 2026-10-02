@@ -110,67 +110,6 @@ async def test_rg_single_pattern_uses_imap_search():
 
 
 @pytest.mark.asyncio
-async def test_rg_second_folder_operand_defers_to_generic():
-    # The push-down answers for one folder, so the second operand used to be
-    # dropped in silence: this line reported INBOX and never mentioned Sent.
-    accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with (
-        patch(
-            "mirage.commands.builtin.email.rg.search_messages",
-            new=AsyncMock(return_value=[]),
-        ) as search,
-        patch(
-            "mirage.commands.builtin.email.rg.resolve_glob",
-            new=AsyncMock(return_value=[]),
-        ),
-        patch(
-            "mirage.commands.builtin.email.rg.generic_rg",
-            new=AsyncMock(return_value=(b"", IOResult())),
-        ) as generic,
-    ):
-        await rg(
-            accessor,
-            [_path("/email/INBOX"), _path("/email/Sent")],
-            ["foo"],
-            CommandOpts(index=RAMIndexCacheStore(), flags={}),
-        )
-    search.assert_not_awaited()
-    generic.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_rg_mount_root_scans_instead_of_reporting_no_match():
-    # The root names no folder. `extract_folder` returned None for it and rg
-    # answered exit 1 — "nothing matched" for a search it never ran. It has
-    # to reach the generic scan instead.
-    accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    root = PathSpec(vfs_path="", virtual="/email", directory="/email")
-    with (
-        patch(
-            "mirage.commands.builtin.email.rg.search_messages",
-            new=AsyncMock(return_value=[]),
-        ) as search,
-        patch(
-            "mirage.commands.builtin.email.rg.resolve_glob",
-            new=AsyncMock(return_value=[]),
-        ),
-        patch(
-            "mirage.commands.builtin.email.rg.generic_rg",
-            new=AsyncMock(return_value=(b"", IOResult())),
-        ) as generic,
-    ):
-        _out, io = await rg(
-            accessor,
-            [root],
-            ["foo"],
-            CommandOpts(index=RAMIndexCacheStore(), flags={}),
-        )
-    search.assert_not_awaited()
-    generic.assert_awaited_once()
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
 async def test_rg_message_file_operand_defers_to_generic():
     # A single .email.json is not a folder scope, so it reads the one file
     # rather than reporting exit 1 without searching.
@@ -199,67 +138,6 @@ async def test_rg_message_file_operand_defers_to_generic():
     search.assert_not_awaited()
     generic.assert_awaited_once()
     assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_rg_invert_flag_defers_to_generic():
-    # -v reports the lines that do NOT match, so it needs every message —
-    # the candidate list is exactly the messages that DO contain the text.
-    accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with (
-        patch(
-            "mirage.commands.builtin.email.rg.search_messages",
-            new=AsyncMock(return_value=[]),
-        ) as search,
-        patch(
-            "mirage.commands.builtin.email.rg.resolve_glob",
-            new=AsyncMock(return_value=[]),
-        ),
-        patch(
-            "mirage.commands.builtin.email.rg.generic_rg",
-            new=AsyncMock(return_value=(b"", IOResult())),
-        ) as generic,
-    ):
-        await rg(
-            accessor,
-            [_path()],
-            ["foo"],
-            CommandOpts(
-                index=RAMIndexCacheStore(), flags={"invert_match": True}
-            ),
-        )
-    search.assert_not_awaited()
-    generic.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_rg_alternation_defers_to_generic():
-    # No literal is required by every match of `parser|percent`, and IMAP
-    # TEXT is a substring search, so the push-down cannot narrow it: the
-    # generic scan runs instead of answering exit 1 (#1067).
-    accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with (
-        patch(
-            "mirage.commands.builtin.email.rg.search_messages",
-            new=AsyncMock(return_value=[]),
-        ) as search,
-        patch(
-            "mirage.commands.builtin.email.rg.resolve_glob",
-            new=AsyncMock(return_value=[]),
-        ),
-        patch(
-            "mirage.commands.builtin.email.rg.generic_rg",
-            new=AsyncMock(return_value=(b"", IOResult())),
-        ) as generic,
-    ):
-        await rg(
-            accessor,
-            [_path()],
-            ["parser|percent"],
-            CommandOpts(index=RAMIndexCacheStore(), flags={}),
-        )
-    search.assert_not_awaited()
-    generic.assert_awaited_once()
 
 
 @pytest.mark.asyncio

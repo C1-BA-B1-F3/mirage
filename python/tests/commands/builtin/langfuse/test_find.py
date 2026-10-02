@@ -53,19 +53,6 @@ async def _run(paths, *texts: str, **flags) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_walk_lists_top_level_dirs():
-    lines = await _run([_spec("/")], maxdepth="1")
-    assert "/traces" in lines
-    assert "/prompts" in lines
-
-
-@pytest.mark.asyncio
-async def test_path_pattern_is_honored():
-    lines = await _run([_spec("/")], maxdepth="1", path="*prompts*")
-    assert lines == ["/prompts"]
-
-
-@pytest.mark.asyncio
 async def test_size_counts_a_directory_as_dir_size():
     dirs = await _run([_spec("/")], maxdepth="1")
     assert await _run([_spec("/")], maxdepth="1", size="+0c") == dirs

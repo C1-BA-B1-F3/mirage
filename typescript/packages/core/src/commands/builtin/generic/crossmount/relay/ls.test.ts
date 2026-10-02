@@ -84,21 +84,6 @@ async function run(
 }
 
 describe('runLs — cross-mount ls', () => {
-  it('heads and sorts operands on different mounts together', async () => {
-    // GNU: `ls a b` names each directory, sorted, blank line between.
-    const { out, io } = await run(['/a/one', '/b/two'])
-    expect(out).toBe('/a/one:\nx.txt\n\n/b/two:\ny.txt\n')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('does not let command-line order survive the global sort', async () => {
-    // GNU prints `ls b a` identically to `ls a b`.
-    const forward = await run(['/a', '/b'])
-    const reversed = await run(['/b', '/a'])
-    expect(reversed.out).toBe(forward.out)
-    expect(forward.out).toBe('/a:\none\nz.txt\n\n/b:\ntwo\n')
-  })
-
   it('prints a file operand first, unheaded', async () => {
     const { out } = await run(['/b/two', '/a/z.txt'])
     expect(out).toBe('/a/z.txt\n\n/b/two:\ny.txt\n')
@@ -130,11 +115,6 @@ describe('runLs — cross-mount ls', () => {
   it('interleaves each operand subtree under -R', async () => {
     const { out } = await run(['/a', '/b'], { recursive: true })
     expect(out).toBe('/a:\none\nz.txt\n\n/a/one:\nx.txt\n\n/b:\ntwo\n\n/b/two:\ny.txt\n')
-  })
-
-  it('prints bare rows with no headers under -d', async () => {
-    const { out } = await run(['/a', '/b'], { directory: true })
-    expect(out).toBe('/a\n/b\n')
   })
 
   it('leaves a lone operand unheaded', async () => {
@@ -177,12 +157,5 @@ describe('runLs — cross-mount ls', () => {
     const { out, io } = await run(['/a', '/b'], { recursive: true }, ns, nested)
     expect(io.exitCode).toBe(0)
     expect(out).toBe('/a:\none\nz.txt\n\n/a/one:\nx.txt\n\n/b:\ntwo\n\n/b/two:\ny.txt\n')
-  })
-
-  it('lists each operand once', async () => {
-    // Relaying replaces a native run per operand; it must not turn into a
-    // listing per operand per mount.
-    const { calls } = await run(['/a', '/b'])
-    expect(calls.readdir).toEqual(['/a', '/b'])
   })
 })

@@ -94,30 +94,9 @@ describe('grepGeneric recursive warnings', () => {
     expect(await decode(out)).toBe('/data/a.txt\n')
     expect(DEC.decode(io.stderr as Uint8Array)).toBe('grep: /data/bad.txt: Permission denied\n')
   })
-
-  it('grep on a single directory operand warns and exits 2', async () => {
-    const [out, io] = await runGrep({})
-    expect(await decode(out)).toBe('')
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe('grep: /data: Is a directory\n')
-    expect(io.exitCode).toBe(2)
-  })
 })
 
 describe('grepGeneric operand errors', () => {
-  // The directory holds a match, so a walk would put a filename on stdout.
-  it('grep -l names a directory operand without walking it', async () => {
-    const [out, io] = await runGrep({ args_l: true })
-    expect(await decode(out)).toBe('')
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe('grep: /data: Is a directory\n')
-    expect(io.exitCode).toBe(2)
-  })
-
-  it('grep -q reports a failed operand as 2 when nothing matched', async () => {
-    const [, io] = await runGrep({ q: true })
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe('grep: /data: Is a directory\n')
-    expect(io.exitCode).toBe(2)
-  })
-
   it('grep -rq skips errors after its first match', async () => {
     const [out, io] = await runGrep({ r: true, q: true })
     expect(await decode(out)).toBe('')

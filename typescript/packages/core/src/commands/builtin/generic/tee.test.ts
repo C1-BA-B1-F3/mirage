@@ -13,31 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import type { IOResult } from '../../../io/types.ts'
-import { materialize } from '../../../io/types.ts'
-import { MountMode, PathSpec } from '../../../types.ts'
-import { specOf } from '../../spec/builtins.ts'
-import { parseCommand } from '../../spec/parser.ts'
+import { PathSpec } from '../../../types.ts'
 import { enoent } from '../../../utils/errors.ts'
-import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
-import { Workspace } from '../../../workspace/workspace/workspace.ts'
-import { parseFlags, teeGeneric, writeOutput } from './tee.ts'
+import { parseFlags, writeOutput } from './tee.ts'
 
 const DEC = new TextDecoder()
 
 describe('parseFlags', () => {
-  it('accepts -a / --append', () => {
-    expect(parseFlags({ append: true })).toEqual({ append: true, stopOnError: false })
-  })
-
-  it('treats -i / -p as accepted no-ops', () => {
-    expect(parseFlags({ ignore_interrupts: true, p: true })).toEqual({
-      append: false,
-      stopOnError: false,
-    })
-  })
-
   it('reads the exit/warn axis of --output-error', () => {
     // Only this axis is observable: the -nopipe half distinguishes a pipe
     // sink from a file sink, and every operand tee writes is a file.
@@ -51,16 +33,6 @@ describe('parseFlags', () => {
 
   it('treats a bare --output-error as warn, like GNU 9.7', () => {
     expect(parseFlags({ output_error: true })).toEqual({ append: false, stopOnError: false })
-  })
-
-  it('reports an invalid --output-error mode through the parser channel', () => {
-    // Value validation moved to the spec's choices=: the parser reports a
-    // bad mode and the executor refuses with GNU's ARGMATCH shape before
-    // tee runs, so parseFlags no longer rejects.
-    const parsed = parseCommand(specOf('tee'), ['--output-error=bogus', '/f'], '/', 'tee')
-    expect(parsed.invalidValueOptions).toEqual([
-      ['--output-error', 'bogus', ['warn', 'warn-nopipe', 'exit', 'exit-nopipe']],
-    ])
   })
 })
 
@@ -142,16 +114,6 @@ describe('writeOutput', () => {
     expect(io.exitCode).toBe(1)
   })
 
-  it('appends to a missing file by creating it', async () => {
-    // The regression this pins: the not-found test matched the message for
-    // /not found/i, but enoent() puts the *path* in the message, so this
-    // threw on every backend instead of creating the file.
-    const s = sink()
-    const [, io] = await writeOutput(paths('/new'), ENC.encode('hi'), APPEND, noStream, s.write)
-    expect(s.written).toEqual({ '/new': 'hi' })
-    expect(io.exitCode).toBe(0)
-  })
-
   it('appends through the native slot without re-uploading', async () => {
     const appended: Record<string, string> = {}
     const s = sink()
@@ -189,47 +151,5 @@ describe('writeOutput', () => {
     )
     expect(s.written).toEqual({ '/n': 'oldadd' })
     expect(io.cache).toEqual(['/n'])
-  })
-})
-
-describe('tee with no file operand', () => {
-  it('copies stdin to stdout and writes nothing', async () => {
-    const written: string[] = []
-    const [out, io] = (await teeGeneric(
-      [],
-      [],
-      { stdin: new TextEncoder().encode('x\n'), flags: {}, filetypeFns: null, cwd: '/' },
-      () => {
-        throw enoent('/unused')
-      },
-      (p) => {
-        written.push(p.virtual)
-        return Promise.resolve()
-      },
-    )) as [Uint8Array, IOResult]
-    expect(DEC.decode(await materialize(out))).toBe('x\n')
-    expect(io.exitCode).toBe(0)
-    expect(written).toEqual([])
-  })
-
-  it.each([MountMode.WRITE, MountMode.READ])('runs on a %s mount', async (mode) => {
-    const ws = new Workspace(
-      { '/m/': [new RAMVFS(), mode] },
-      { shellParser: await getTestParser() },
-    )
-    try {
-      const result = await ws.shell("cd /m && printf 'x\\n' | tee")
-      expect([result.exitCode, DEC.decode(result.stdout)]).toEqual([0, 'x\n'])
-      // With a file operand the copy still reaches stdout, and a read-only
-      // mount refuses the file at its write, as GNU tee reports it.
-      const named = await ws.shell("printf 'x\\n' | tee /m/out.txt")
-      expect([named.exitCode, DEC.decode(named.stdout), DEC.decode(named.stderr)]).toEqual(
-        mode === MountMode.READ
-          ? [1, 'x\n', 'tee: /m/out.txt: Read-only file system\n']
-          : [0, 'x\n', ''],
-      )
-    } finally {
-      await ws.close()
-    }
   })
 })

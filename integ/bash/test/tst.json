@@ -907,7 +907,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "printf '' > /data/zte.txt; [ -s /data/zte.txt ]; echo $?; rm /data/zte.txt",
       "expect": {
@@ -939,7 +941,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "ln -s /data/a.txt /data/ztl && [ -L /data/ztl ] && [ -e /data/ztl ] && [ ! -L /data/a.txt ]; echo $?; rm /data/ztl",
       "expect": {
@@ -971,7 +975,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "ln -s /data/znope /data/ztd; [ -L /data/ztd ]; echo $?; [ -e /data/ztd ]; echo $?; rm /data/ztd",
       "expect": {
@@ -1003,7 +1009,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "printf 'x\\n' > /data/ztx.txt; chmod +x /data/ztx.txt; [ -x /data/ztx.txt ]; echo $?; rm /data/ztx.txt",
       "expect": {

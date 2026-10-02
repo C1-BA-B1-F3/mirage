@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qb64 && printf 'abcdefghij' > /data/qb64/b.txt && base64 -w 4 /data/qb64/b.txt",
       "expect": {

@@ -61,7 +61,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -maxdepth 0",
       "expect": {
@@ -94,7 +96,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data -maxdepth 0 -delete; echo rc=$?; ls /data/f4/sub1",
       "expect": {

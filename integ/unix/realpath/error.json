@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qrp && printf 'x' > /data/qrp/sh.txt && realpath -m /data/qrp/no/../sh.txt; realpath /data/qrp/no/../sh.txt /data/qrp/sh.txt/.. /data/qrp/no/x; realpath -e /data/qrp/no/../sh.txt",
       "expect": {

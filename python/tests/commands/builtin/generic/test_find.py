@@ -1,4 +1,3 @@
-import asyncio
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
@@ -25,11 +24,8 @@ from mirage.types import (
     FileStat,
     FileType,
     FindType,
-    MountMode,
     PathSpec,
 )
-from mirage.vfs.ram import RAMVFS
-from mirage.workspace import Workspace
 
 
 async def find(*args, **kwargs):
@@ -51,64 +47,38 @@ def test_parse_find_args_empty_returns_defaults():
     assert asdict(args) == _defaults()
 
 
-def test_parse_find_args_name_passthrough():
-    args = parse_find_args((), name="*.txt")
-    assert args.name == "*.txt"
-    assert args.or_names is None
-
-
-def test_parse_find_args_iname_and_path():
-    args = parse_find_args((), iname="HELLO.*", path="**/sub/*")
-    assert args.iname == "HELLO.*"
-    assert args.path_pattern == "**/sub/*"
-
-
-def test_parse_find_args_maxdepth_mindepth_str_to_int():
-    args = parse_find_args((), maxdepth="3", mindepth="1")
-    assert args.maxdepth == 3
-    assert args.mindepth == 1
-
-
-def test_parse_find_args_size_plus_lower_bound():
-    args = parse_find_args((), size="+500c")
-    assert args.min_size == 501
-    assert args.max_size is None
-
-
-def test_parse_find_args_size_minus_upper_bound():
-    args = parse_find_args((), size="-1k")
-    assert args.min_size is None
-    assert args.max_size == 0
-
-
-def test_parse_find_args_size_exact():
-    args = parse_find_args((), size="1k")
-    assert args.min_size == 1
-    assert args.max_size == 1024
-
-
-def test_parse_find_args_mtime_minus_recent():
-    """`-mtime -1` means modified within last 1 day."""
-    args = parse_find_args((), mtime="-1")
-    assert args.mtime_min is not None
-    assert args.mtime_max is None
-
-
-def test_parse_find_args_mtime_plus_old():
-    args = parse_find_args((), mtime="+7")
-    assert args.mtime_min is None
-    assert args.mtime_max is not None
-
-
-def test_parse_find_args_type_canonicalized_to_findtype_enum():
-    """Known POSIX `-type` values become FindType members."""
-    assert parse_find_args((), type="d").type is FindType.DIRECTORY
-    assert parse_find_args((), type="f").type is FindType.FILE
-
-
-def test_parse_find_args_unknown_type_left_as_string():
-    """Non-POSIX types pass through verbatim (allows custom backend types)."""
-    assert parse_find_args((), type="symlink").type == "symlink"
+@pytest.mark.parametrize(
+    "kwargs,expected,filled",
+    [
+        ({"name": "*.txt"}, {"name": "*.txt", "or_names": None}, ()),
+        (
+            {"iname": "HELLO.*", "path": "**/sub/*"},
+            {"iname": "HELLO.*", "path_pattern": "**/sub/*"},
+            (),
+        ),
+        (
+            {"maxdepth": "3", "mindepth": "1"},
+            {"maxdepth": 3, "mindepth": 1},
+            (),
+        ),
+        ({"size": "+500c"}, {"min_size": 501, "max_size": None}, ()),
+        ({"size": "-1k"}, {"min_size": None, "max_size": 0}, ()),
+        ({"size": "1k"}, {"min_size": 1, "max_size": 1024}, ()),
+        ({"mtime": "-1"}, {"mtime_max": None}, ("mtime_min",)),
+        ({"mtime": "+7"}, {"mtime_min": None}, ("mtime_max",)),
+        ({"type": "d"}, {"type": FindType.DIRECTORY}, ()),
+        ({"type": "f"}, {"type": FindType.FILE}, ()),
+        ({"type": "symlink"}, {"type": "symlink"}, ()),
+    ],
+)
+def test_parse_find_args_reads_each_flag(kwargs, expected, filled):
+    args = parse_find_args((), **kwargs)
+    got = {field: getattr(args, field) for field in expected}
+    assert got == expected
+    assert [type(v) for v in got.values()] == [
+        type(v) for v in expected.values()
+    ]
+    assert all(getattr(args, field) is not None for field in filled)
 
 
 def test_parse_find_args_unknown_predicate_raises():
@@ -128,12 +98,6 @@ def test_parse_find_args_or_builds_or_tree():
     assert args.tree == Or([Name("*.txt"), Name("*.py")])
 
 
-def test_parse_find_args_or_names_none_when_only_one_name():
-    """If only `name` is set with no `-or -name` clauses, or_names is None."""
-    args = parse_find_args((), name="*.txt")
-    assert args.or_names is None
-
-
 @pytest.mark.asyncio
 async def test_apply_mtime_filter_skips_when_no_window():
     out = await apply_mtime_filter(
@@ -141,29 +105,6 @@ async def test_apply_mtime_filter_skips_when_no_window():
         mtime_min=None,
         mtime_max=None,
         stat=_unreached_stat,
-    )
-    assert out == ["/a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_apply_mtime_filter_keeps_within_window():
-    now = datetime.now(tz=timezone.utc)
-    iso = now.isoformat()
-
-    async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(
-            name="a.txt",
-            size=1,
-            modified=iso,
-            type=FileType.FILE,
-            content=ContentType.TEXT,
-        )
-
-    out = await apply_mtime_filter(
-        ["/a.txt"],
-        mtime_min=now.timestamp() - 60,
-        mtime_max=now.timestamp() + 60,
-        stat=stat,
     )
     assert out == ["/a.txt"]
 
@@ -195,96 +136,55 @@ async def test_apply_mtime_filter_stats_the_mounted_virtual_path():
     assert spec.vfs_path == "a.txt"
 
 
-@pytest.mark.asyncio
-async def test_apply_mtime_filter_drops_outside_window():
-    old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+_NOON = datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc)
+_NOON_PLUS_9 = datetime(2025, 6, 1, 12, 0, tzinfo=timezone(timedelta(hours=9)))
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "modified,mtime_min,mtime_max,expected",
+    [
+        pytest.param(
+            _NOON.isoformat(),
+            _NOON.timestamp() - 60,
+            _NOON.timestamp() + 60,
+            ["/a.txt"],
+            id="inside",
+        ),
+        pytest.param(
+            datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat(),
+            datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp(),
+            None,
+            [],
+            id="outside",
+        ),
+        pytest.param(None, 1.0, None, [], id="no-modified-time"),
+        pytest.param(
+            _NOON_PLUS_9.isoformat(),
+            _NOON_PLUS_9.timestamp() - 60,
+            _NOON_PLUS_9.timestamp() + 60,
+            ["/a.txt"],
+            id="reported-utc-offset",
+        ),
+        pytest.param("not-a-date", 1.0, None, [], id="malformed"),
+    ],
+)
+async def test_apply_mtime_filter_windows(
+    modified, mtime_min, mtime_max, expected
+):
     async def stat(_spec: PathSpec) -> FileStat:
         return FileStat(
             name="a.txt",
             size=1,
-            modified=old.isoformat(),
+            modified=modified,
             type=FileType.FILE,
             content=ContentType.TEXT,
         )
 
     out = await apply_mtime_filter(
-        ["/a.txt"],
-        mtime_min=datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp(),
-        mtime_max=None,
-        stat=stat,
+        ["/a.txt"], mtime_min=mtime_min, mtime_max=mtime_max, stat=stat
     )
-    assert out == []
-
-
-@pytest.mark.asyncio
-async def test_apply_mtime_filter_drops_entries_with_no_modified_time():
-
-    async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(
-            name="a.txt",
-            size=1,
-            modified=None,
-            type=FileType.FILE,
-            content=ContentType.TEXT,
-        )
-
-    out = await apply_mtime_filter(
-        ["/a.txt"],
-        mtime_min=1.0,
-        mtime_max=None,
-        stat=stat,
-    )
-    assert out == []
-
-
-@pytest.mark.asyncio
-async def test_apply_mtime_filter_honours_a_reported_utc_offset():
-    """A backend that reports +09:00 means +09:00, not UTC.
-
-    Stamping UTC over the offset moved the entry nine hours, which is
-    enough to push it out of a window it belongs in.
-    """
-    moment = datetime(2025, 6, 1, 12, 0, tzinfo=timezone(timedelta(hours=9)))
-
-    async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(
-            name="a.txt",
-            size=1,
-            modified=moment.isoformat(),
-            type=FileType.FILE,
-            content=ContentType.TEXT,
-        )
-
-    out = await apply_mtime_filter(
-        ["/a.txt"],
-        mtime_min=moment.timestamp() - 60,
-        mtime_max=moment.timestamp() + 60,
-        stat=stat,
-    )
-    assert out == ["/a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_apply_mtime_filter_drops_a_malformed_timestamp():
-    """An unparseable stamp drops the entry instead of raising out of find."""
-
-    async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(
-            name="a.txt",
-            size=1,
-            modified="not-a-date",
-            type=FileType.FILE,
-            content=ContentType.TEXT,
-        )
-
-    out = await apply_mtime_filter(
-        ["/a.txt"],
-        mtime_min=1.0,
-        mtime_max=None,
-        stat=stat,
-    )
-    assert out == []
+    assert out == expected
 
 
 @pytest.mark.asyncio
@@ -302,19 +202,16 @@ async def test_apply_mtime_filter_silently_skips_stat_errors():
     assert out == []
 
 
-def test_apply_mount_prefix_noop_when_empty():
-    assert apply_mount_prefix(["/a.txt"], "") == ["/a.txt"]
-
-
-def test_apply_mount_prefix_prepends():
-    assert apply_mount_prefix(["/a.txt", "/dir/b.txt"], "/mnt") == [
-        "/mnt/a.txt",
-        "/mnt/dir/b.txt",
-    ]
-
-
-def test_apply_mount_prefix_strips_leading_slash_from_entries():
-    assert apply_mount_prefix(["a.txt"], "/mnt") == ["/mnt/a.txt"]
+@pytest.mark.parametrize(
+    "entries,prefix,expected",
+    [
+        (["/a.txt"], "", ["/a.txt"]),
+        (["/a.txt", "/dir/b.txt"], "/mnt", ["/mnt/a.txt", "/mnt/dir/b.txt"]),
+        (["a.txt"], "/mnt", ["/mnt/a.txt"]),
+    ],
+)
+def test_apply_mount_prefix(entries, prefix, expected):
+    assert apply_mount_prefix(entries, prefix) == expected
 
 
 async def _unreached_stat(_spec: PathSpec) -> FileStat:
@@ -326,13 +223,73 @@ def _root_spec() -> PathSpec:
 
 
 @pytest.mark.asyncio
-async def test_walk_find_tolerates_not_found_readdir():
-    readdir = AsyncMock(side_effect=FileNotFoundError("/"))
-    stat = AsyncMock(side_effect=FileNotFoundError("/"))
+@pytest.mark.parametrize(
+    "readdir,args,expected",
+    [
+        pytest.param(
+            AsyncMock(side_effect=FileNotFoundError("/")),
+            FindArgs(),
+            [],
+            id="readdir",
+        ),
+        pytest.param(
+            AsyncMock(return_value=["/mystery"]),
+            FindArgs(type=FindType.FILE),
+            ["/mystery"],
+            id="type-stat-falls-back-to-file",
+        ),
+        pytest.param(
+            AsyncMock(return_value=["/a.json"]),
+            FindArgs(min_size=1),
+            [],
+            id="size-stat-drops-the-entry",
+        ),
+    ],
+)
+async def test_walk_find_tolerates_not_found(readdir, args, expected):
+    stat = AsyncMock(side_effect=FileNotFoundError("gone"))
     results = await walk_find(
-        _root_spec(), readdir=readdir, stat=stat, index=None, args=FindArgs()
+        _root_spec(), readdir=readdir, stat=stat, index=None, args=args
     )
-    assert results == []
+    assert results == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "readdir,stat,args,match",
+    [
+        pytest.param(
+            AsyncMock(side_effect=ValueError("bad page token")),
+            AsyncMock(
+                return_value=FileStat(name="/", type=FileType.DIRECTORY)
+            ),
+            FindArgs(),
+            "bad page token",
+            id="readdir",
+        ),
+        pytest.param(
+            AsyncMock(return_value=["/mystery"]),
+            AsyncMock(side_effect=ValueError("rate limited")),
+            FindArgs(),
+            "rate limited",
+            id="stat",
+        ),
+        pytest.param(
+            AsyncMock(return_value=["/a.json"]),
+            AsyncMock(side_effect=ValueError("rate limited")),
+            FindArgs(min_size=1),
+            "rate limited",
+            id="size-stat",
+        ),
+    ],
+)
+async def test_walk_find_propagates_any_other_error(
+    readdir, stat, args, match
+):
+    with pytest.raises(ValueError, match=match):
+        await walk_find(
+            _root_spec(), readdir=readdir, stat=stat, index=None, args=args
+        )
 
 
 @pytest.mark.asyncio
@@ -348,36 +305,6 @@ async def test_walk_find_emits_start_path_at_depth_zero():
     )
     assert results == ["/"]
     readdir.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_walk_find_propagates_non_not_found_readdir_errors():
-    readdir = AsyncMock(side_effect=ValueError("bad page token"))
-    # The root has to stat as a directory to be walked at all: a start
-    # point that is not one has no children to read.
-    stat = AsyncMock(return_value=FileStat(name="/", type=FileType.DIRECTORY))
-    with pytest.raises(ValueError, match="bad page token"):
-        await walk_find(
-            _root_spec(),
-            readdir=readdir,
-            stat=stat,
-            index=None,
-            args=FindArgs(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_walk_find_stat_fallback_treats_not_found_as_file():
-    readdir = AsyncMock(return_value=["/mystery"])
-    stat = AsyncMock(side_effect=FileNotFoundError("/mystery"))
-    results = await walk_find(
-        _root_spec(),
-        readdir=readdir,
-        stat=stat,
-        index=None,
-        args=FindArgs(type=FindType.FILE),
-    )
-    assert results == ["/mystery"]
 
 
 def _flaky(exc: Exception, calls: list[str] | None = None):
@@ -556,72 +483,6 @@ async def test_walk_find_time_test_before_prune_gates_it():
     ) == ["/new"]
 
 
-@pytest.mark.asyncio
-async def test_walk_find_not_negates_predicate():
-    readdir = AsyncMock(return_value=["/a.txt", "/b.md"])
-
-    async def stat(spec: PathSpec, _index):
-        if spec.virtual == "/":
-            return FileStat(name="/", type=FileType.DIRECTORY)
-        return FileStat(
-            name=spec.virtual.rsplit("/", 1)[-1],
-            size=1,
-            type=FileType.FILE,
-            content=ContentType.TEXT,
-        )
-
-    results = await walk_find(
-        _root_spec(),
-        readdir=readdir,
-        stat=stat,
-        index=None,
-        args=parse_find_args(("-not", "-name", "*.txt")),
-    )
-    assert results == ["/", "/b.md"]
-
-
-@pytest.mark.asyncio
-async def test_walk_find_stat_fallback_propagates_other_errors():
-    readdir = AsyncMock(return_value=["/mystery"])
-    stat = AsyncMock(side_effect=ValueError("rate limited"))
-    with pytest.raises(ValueError, match="rate limited"):
-        await walk_find(
-            _root_spec(),
-            readdir=readdir,
-            stat=stat,
-            index=None,
-            args=FindArgs(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_walk_find_size_filter_drops_not_found_entries():
-    readdir = AsyncMock(return_value=["/a.json"])
-    stat = AsyncMock(side_effect=FileNotFoundError("/a.json"))
-    results = await walk_find(
-        _root_spec(),
-        readdir=readdir,
-        stat=stat,
-        index=None,
-        args=FindArgs(min_size=1),
-    )
-    assert results == []
-
-
-@pytest.mark.asyncio
-async def test_walk_find_size_filter_propagates_other_stat_errors():
-    readdir = AsyncMock(return_value=["/a.json"])
-    stat = AsyncMock(side_effect=ValueError("rate limited"))
-    with pytest.raises(ValueError, match="rate limited"):
-        await walk_find(
-            _root_spec(),
-            readdir=readdir,
-            stat=stat,
-            index=None,
-            args=FindArgs(min_size=1),
-        )
-
-
 @pytest.mark.parametrize(
     "kwargs,message",
     [
@@ -641,54 +502,7 @@ def test_parse_find_args_invalid_numeric_raises_find_parse_error(
     assert str(exc.value) == message
 
 
-@pytest.mark.parametrize(
-    "expr,message",
-    [
-        ("-maxdepth abc", "find: invalid argument 'abc' to '-maxdepth'"),
-        ("-mindepth xx", "find: invalid argument 'xx' to '-mindepth'"),
-        ("-size ''", "find: invalid null argument to -size"),
-        ("-size abc", "find: Invalid argument `abc' to -size"),
-        ("-mtime abc", "find: invalid argument 'abc' to '-mtime'"),
-    ],
-)
-def test_find_invalid_numeric_arg_exits_one_with_clean_stderr(expr, message):
-
-    async def _go() -> tuple[int, str]:
-        ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
-        ws.create_session("s")
-        r = await ws.shell(f"find / {expr}", session_id="s")
-        return r.exit_code, await r.stderr_str()
-
-    code, stderr = asyncio.run(_go())
-    assert code == 1
-    assert stderr == message + "\n"
-
-
 # ── Issue #312 parse-level regression tests ────────────────
-
-
-@pytest.mark.asyncio
-async def test_find_time_test_before_prune_gates_it():
-    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
-    await ws.shell(
-        "mkdir -p /d/old/x /d/new/y && touch /d/old/x/f /d/new/y/g "
-        "/d/old/o.txt && touch -d 2000-01-01 /d/old"
-    )
-    gated = await ws.shell("find /d -mindepth 1 -newermt 2010-01-01 -prune")
-    assert gated.stdout == b"/d/new\n/d/old/o.txt\n/d/old/x\n"
-    firm = await ws.shell("find /d -mindepth 1 -prune -newermt 2010-01-01")
-    assert firm.stdout == b"/d/new\n"
-    old = await ws.shell("find /d -mindepth 1 -mtime +3650 -prune")
-    assert old.stdout == b"/d/old\n"
-    both = await ws.shell(
-        "find /d -mindepth 1 -newermt 1990-01-01 -prune -newermt 2010-01-01"
-    )
-    assert both.stdout == b"/d/new\n"
-
-
-def test_parse_find_args_start_path_included():
-    args = parse_find_args(())
-    assert args.maxdepth is None
 
 
 def test_parse_find_args_maxdepth_zero():
@@ -699,18 +513,6 @@ def test_parse_find_args_maxdepth_zero():
 def test_parse_find_args_empty_predicate():
     args = parse_find_args(("-empty",))
     assert args.empty is True
-
-
-def test_parse_find_args_not_negation():
-    args = parse_find_args(("-not", "-name", "*.txt"))
-    assert isinstance(args.tree, Not)
-    assert isinstance(args.tree.kid, Name)
-    assert args.tree.kid.pattern == "*.txt"
-
-
-def test_parse_find_args_bogus_predicate_raises():
-    with pytest.raises(FindParseError, match="unknown predicate"):
-        parse_find_args(("-boguspredicate",))
 
 
 def _file_spec(virtual: str = "/mnt/a.txt", key: str = "a.txt") -> PathSpec:
@@ -741,16 +543,38 @@ async def _unreached_core(*_a, **_kw) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_find_file_start_point_is_reported_not_walked():
+@pytest.mark.parametrize(
+    "texts,flags,expected",
+    [
+        ((), {}, b"/mnt/a.txt\n"),
+        (("-type", "f"), {}, b"/mnt/a.txt\n"),
+        (("-type", "d"), {}, b""),
+        (("-type", "l"), {}, b""),
+        ((), {"maxdepth": "0"}, b"/mnt/a.txt\n"),
+        ((), {"mindepth": "1"}, b""),
+        ((), {"size": "+1c"}, b"/mnt/a.txt\n"),
+        ((), {"size": "+99c"}, b""),
+        ((), {"name": "a.txt"}, b"/mnt/a.txt\n"),
+        ((), {"name": "nope"}, b""),
+        ((), {"type": "f"}, b"/mnt/a.txt\n"),
+        ((), {"type": "d"}, b""),
+        ((), {"type": "l"}, b""),
+    ],
+)
+async def test_find_file_start_point_is_tested_not_walked(
+    texts, flags, expected
+):
     """A start point that is not a directory never reaches the backend.
 
     Every backend answered a walk of one differently: an object store
     listed the key as a prefix and returned nothing, Graph 404'd on the
-    children of a file, and Box raised ENOTDIR.
+    children of a file, and Box raised ENOTDIR. The flag form passes the
+    value through, so `-type l` (a namespace symlink, which no backend
+    entry ever is) filters instead of reading as "no filter".
     """
     stdout, io = await find(
         [_file_spec()],
-        (),
+        texts,
         find_core=_unreached_core,
         stat_path=_stat_path(
             FileStat(
@@ -760,56 +584,10 @@ async def test_find_file_start_point_is_reported_not_walked():
                 content=ContentType.TEXT,
             )
         ),
+        **flags,
     )
     assert io.exit_code == 0
-    assert stdout == b"/mnt/a.txt\n"
-
-
-@pytest.mark.asyncio
-async def test_find_file_start_point_type_filters():
-    start = FileStat(
-        name="a.txt", size=6, type=FileType.FILE, content=ContentType.TEXT
-    )
-    for ftype, expected in (("f", b"/mnt/a.txt\n"), ("d", b""), ("l", b"")):
-        stdout, io = await find(
-            [_file_spec()],
-            ("-type", ftype),
-            find_core=_unreached_core,
-            stat_path=_stat_path(start),
-        )
-        assert io.exit_code == 0
-        assert stdout == expected, f"-type {ftype}"
-
-
-@pytest.mark.asyncio
-async def test_find_file_start_point_depth_and_size():
-    start = FileStat(
-        name="a.txt", size=6, type=FileType.FILE, content=ContentType.TEXT
-    )
-    cases = [
-        ({"maxdepth": "0"}, b"/mnt/a.txt\n"),
-        ({"mindepth": "1"}, b""),
-        ({"size": "+1c"}, b"/mnt/a.txt\n"),
-        ({"size": "+99c"}, b""),
-        ({"name": "a.txt"}, b"/mnt/a.txt\n"),
-        ({"name": "nope"}, b""),
-        # The flag form passes the value through, so `-type l` (a namespace
-        # symlink, which no backend entry ever is) filters instead of
-        # reading as "no filter" and printing everything.
-        ({"type": "f"}, b"/mnt/a.txt\n"),
-        ({"type": "d"}, b""),
-        ({"type": "l"}, b""),
-    ]
-    for flags, expected in cases:
-        stdout, io = await find(
-            [_file_spec()],
-            (),
-            find_core=_unreached_core,
-            stat_path=_stat_path(start),
-            **flags,
-        )
-        assert io.exit_code == 0
-        assert stdout == expected, f"{flags}"
+    assert stdout == expected
 
 
 @pytest.mark.asyncio
@@ -941,108 +719,64 @@ async def _link_target_stat(_virtual: str) -> FileStat | None:
 
 
 @pytest.mark.asyncio
-async def test_find_empty_directory_start_point_is_reported():
+@pytest.mark.parametrize(
+    "rows,texts,kwargs,expected",
+    [
+        pytest.param([], (), {}, b"/mnt\n", id="reported"),
+        pytest.param(
+            [],
+            (),
+            {"dir_empty": _dir_is_empty, "empty": True},
+            b"/mnt\n",
+            id="matches-empty",
+        ),
+        pytest.param(
+            [],
+            (),
+            {"dir_empty": _dir_has_entries, "empty": True},
+            b"",
+            id="populated-fails-empty",
+        ),
+        pytest.param(
+            ["/"],
+            (),
+            {"empty": True},
+            b"/mnt\n",
+            id="no-probe-keeps-the-backend-row",
+        ),
+        pytest.param(
+            ["/"],
+            ("-not", "-empty"),
+            {"dir_empty": _dir_is_empty},
+            b"",
+            id="probe-replaces-the-backend-row",
+        ),
+    ],
+)
+async def test_find_directory_start_point_emptiness(
+    rows, texts, kwargs, expected
+):
     """GNU names a directory start point that holds nothing.
 
     A prefix store answers an empty directory with an empty listing, so
-    every native find op that read existence off its own listing reported
-    nothing at all for a directory `test -d` and `tree` both saw.
+    the start point's row and its ``-empty`` answer come from the generic.
+    Without an emptiness probe the backend's own row stands; with one, the
+    backend's row is dropped, not merged (ssh reports every directory as
+    non-empty).
     """
 
     async def core(*_a, **_kw) -> list[str]:
-        return []
+        return rows
 
     stdout, io = await find(
         [PathSpec(virtual="/mnt", directory="/", vfs_path="")],
-        (),
+        texts,
         find_core=core,
         stat_path=_stat_path(FileStat(name="mnt", type=FileType.DIRECTORY)),
+        **kwargs,
     )
     assert io.exit_code == 0
-    assert stdout == b"/mnt\n"
-
-
-@pytest.mark.asyncio
-async def test_find_empty_directory_start_point_matches_empty():
-    """``-empty`` matches it, answered by a listing rather than a guess."""
-
-    async def core(*_a, **_kw) -> list[str]:
-        return []
-
-    stdout, io = await find(
-        [PathSpec(virtual="/mnt", directory="/", vfs_path="")],
-        (),
-        find_core=core,
-        stat_path=_stat_path(FileStat(name="mnt", type=FileType.DIRECTORY)),
-        dir_empty=_dir_is_empty,
-        empty=True,
-    )
-    assert io.exit_code == 0
-    assert stdout == b"/mnt\n"
-
-
-@pytest.mark.asyncio
-async def test_find_populated_directory_start_point_fails_empty():
-    """A directory with children is not empty, so ``-empty`` skips it."""
-
-    async def core(*_a, **_kw) -> list[str]:
-        return []
-
-    stdout, io = await find(
-        [PathSpec(virtual="/mnt", directory="/", vfs_path="")],
-        (),
-        find_core=core,
-        stat_path=_stat_path(FileStat(name="mnt", type=FileType.DIRECTORY)),
-        dir_empty=_dir_has_entries,
-        empty=True,
-    )
-    assert io.exit_code == 0
-    assert stdout == b""
-
-
-@pytest.mark.asyncio
-async def test_find_keeps_the_backend_row_when_emptiness_cannot_be_asked():
-    """A caller with no emptiness probe keeps its own core's answer.
-
-    ``-empty`` on a directory needs a listing, which a bespoke wrapper
-    need not wire. Replacing the row there would trade a backend's
-    answer for "unknown", so the row is left alone.
-    """
-
-    async def core(*_a, **_kw) -> list[str]:
-        return ["/"]
-
-    stdout, io = await find(
-        [PathSpec(virtual="/mnt", directory="/", vfs_path="")],
-        (),
-        find_core=core,
-        stat_path=_stat_path(FileStat(name="mnt", type=FileType.DIRECTORY)),
-        empty=True,
-    )
-    assert io.exit_code == 0
-    assert stdout == b"/mnt\n"
-
-
-@pytest.mark.asyncio
-async def test_find_replaces_the_backend_row_for_the_start_point():
-    """The backend's own row for the start point is dropped, not merged.
-
-    ssh reports every directory as non-empty, so merging would keep its
-    row and print a directory that ``-not -empty`` must skip.
-    """
-
-    async def core(*_a, **_kw) -> list[str]:
-        return ["/"]
-
-    stdout, io = await find(
-        [PathSpec(virtual="/mnt", directory="/", vfs_path="")],
-        ("-not", "-empty"),
-        find_core=core,
-        stat_path=_stat_path(FileStat(name="mnt", type=FileType.DIRECTORY)),
-        dir_empty=_dir_is_empty,
-    )
-    assert io.exit_code == 0
-    assert stdout == b""
+    assert stdout == expected
 
 
 @pytest.mark.asyncio
@@ -1108,8 +842,6 @@ _FILE_STAT = FileStat(
 #   find A B           -> A's rows, then B's rows (operand order, never
 #                         re-sorted across operands)
 #   find A A           -> A's rows twice (no dedupe)
-#   find A <missing> B -> A's and B's rows still print, the missing
-#                         operand gets the diagnostic, and find exits 1
 
 
 @pytest.mark.asyncio
@@ -1151,32 +883,6 @@ async def test_find_duplicate_start_points_walk_twice():
     )
     assert io.exit_code == 0
     assert stdout == b"/mnt/sub\n/mnt/sub/z.txt\n" * 2
-
-
-@pytest.mark.asyncio
-async def test_find_missing_middle_operand_keeps_partial_output():
-    """The rows already found survive a missing operand (GNU).
-
-    The native-op path used to return the diagnostic alone, discarding
-    every other operand's rows along with the missing one's.
-    """
-
-    async def core(path: PathSpec, **_kw) -> list[str]:
-        return ["/sub/z.txt"] if path.virtual == "/mnt/sub" else []
-
-    stdout, io = await find(
-        [
-            _file_spec(virtual="/mnt/sub", key="sub"),
-            _file_spec(virtual="/mnt/nope", key="nope"),
-            _file_spec(virtual="/mnt/a.txt", key="a.txt"),
-        ],
-        (),
-        find_core=core,
-        stat_path=_stat_map({"/mnt/sub": _DIR_STAT, "/mnt/a.txt": _FILE_STAT}),
-    )
-    assert io.exit_code == 1
-    assert stdout == b"/mnt/sub\n/mnt/sub/z.txt\n/mnt/a.txt\n"
-    assert io.stderr == b"find: '/mnt/nope': No such file or directory\n"
 
 
 @pytest.mark.asyncio

@@ -305,6 +305,43 @@
       "flags": [
         "number"
       ]
+    },
+    {
+      "id": "split_suffix_start_values_quote_their_bytes",
+      "seq": 14102801,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "mkdir -p /data/cfsplit; printf 'hello\\nworld\\nfoo\\nbar\\nbaz\\n' > /data/cfsplit/a.txt; split --numeric-suffixes='xé' /data/cfsplit/a.txt; echo rc=$?; split --hex-suffixes='xé' /data/cfsplit/a.txt; echo rc=$?; rm -rf /data/cfsplit",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\n",
+        "stderr": "split: 'x\\303\\251': invalid start value for numerical suffix\nTry 'split --help' for more information.\nsplit: 'x\\303\\251': invalid start value for hexadecimal suffix\nTry 'split --help' for more information.\n"
+      },
+      "flags": [
+        "numeric-suffixes",
+        "hex-suffixes"
+      ]
+    },
+    {
+      "id": "split_n_names_the_unparsed_chunk_spec",
+      "seq": 14102802,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "mkdir -p /data/cfsplit; printf 'hello\\nworld\\nfoo\\nbar\\nbaz\\n' > /data/cfsplit/a.txt; split -n x/3 /data/cfsplit/a.txt; echo rc=$?; split -n r/l/4 /data/cfsplit/a.txt; echo rc=$?; split -n 1/2/3/4 /data/cfsplit/a.txt; echo rc=$?; rm -rf /data/cfsplit",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\n",
+        "stderr": "split: invalid number of chunks: 'x/3'\nsplit: invalid number of chunks: 'l/4'\nsplit: invalid number of chunks: '2/3/4'\n"
+      },
+      "flags": [
+        "n"
+      ]
     }
   ]
 }

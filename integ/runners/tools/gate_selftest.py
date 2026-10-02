@@ -889,6 +889,20 @@ def selftest_case_targets() -> None:
         "case targets: a file rationale cannot excuse a sibling omission",
         remaining == {f"{broad} :: second": ["disk", "remote"]} and not stale,
     )
+    bound = {
+        **rationale,
+        "entries": {f"{broad} :: second": "Bound to the ram session"},
+    }
+    check(
+        "case targets: one entry reason excuses every target a case drops",
+        case_targets.excuse(case_targets.collect(targets), bound) == ({}, []),
+    )
+    targets[f"{broad} :: second"] = {"ram", "disk", "remote"}
+    check(
+        "case targets: an entry reason goes stale once the case is whole",
+        case_targets.excuse(case_targets.collect(targets), bound)[1]
+        == [f"{broad} :: second"],
+    )
 
     exceptions = ROOT / "target_exceptions.json"
     original = exceptions.read_text()

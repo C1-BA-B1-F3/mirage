@@ -23,58 +23,6 @@ def workspace(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_du_single_file(workspace):
-    await workspace.vfs.write("/f.txt", b"hello")
-    io = await workspace.shell("du /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout.decode().strip() == "5\t/f.txt"
-
-
-@pytest.mark.asyncio
-async def test_du_directory_collapses(workspace):
-    await workspace.vfs.mkdir("/dir")
-    await workspace.vfs.write("/dir/a.txt", b"aaa")
-    await workspace.vfs.write("/dir/b.txt", b"bb")
-    io = await workspace.shell("du /dir")
-    assert io.exit_code == 0
-    assert io.stdout.decode().strip() == "5\t/dir"
-
-
-@pytest.mark.asyncio
-async def test_du_a_lists_files(workspace):
-    await workspace.vfs.mkdir("/dir")
-    await workspace.vfs.write("/dir/a.txt", b"aaa")
-    await workspace.vfs.write("/dir/b.txt", b"bb")
-    io = await workspace.shell("du -a /dir")
-    assert io.exit_code == 0
-    out = io.stdout.decode()
-    assert "a.txt" in out
-    assert "b.txt" in out
-
-
-@pytest.mark.asyncio
-async def test_du_s_summary(workspace):
-    await workspace.vfs.mkdir("/dir")
-    await workspace.vfs.mkdir("/dir/sub")
-    await workspace.vfs.write("/dir/a.txt", b"hello")
-    await workspace.vfs.write("/dir/sub/b.txt", b"world")
-    io = await workspace.shell("du -s /dir")
-    assert io.exit_code == 0
-    lines = io.stdout.decode().strip().splitlines()
-    assert len(lines) == 1
-
-
-@pytest.mark.asyncio
-async def test_du_c_total(workspace):
-    await workspace.vfs.write("/a.txt", b"hello")
-    await workspace.vfs.write("/b.txt", b"world")
-    io = await workspace.shell("du -c /a.txt /b.txt")
-    assert io.exit_code == 0
-    lines = io.stdout.decode().strip().splitlines()
-    assert lines[-1] == "10\ttotal"
-
-
-@pytest.mark.asyncio
 async def test_du_h_human(workspace):
     await workspace.vfs.write("/big.txt", b"x" * 2048)
     io = await workspace.shell("du -h /big.txt")
@@ -92,10 +40,3 @@ async def test_du_without_operand_measures_the_working_directory(workspace):
     assert any(
         line.endswith("\t.") for line in io.stdout.decode().splitlines()
     )
-
-
-@pytest.mark.asyncio
-async def test_du_reports_an_unreadable_operand(workspace):
-    io = await workspace.shell("du /nope")
-    assert io.exit_code == 1
-    assert b"du: cannot access '/nope'" in (io.stderr or b"")

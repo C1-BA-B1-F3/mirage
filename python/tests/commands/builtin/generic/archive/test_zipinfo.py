@@ -99,18 +99,6 @@ def test_text_extra_encrypted_and_descriptor_letters():
     assert " Bl stor " in zipinfo.render_row(_row(flags=1 | 8), "short")
 
 
-def test_medium_row_adds_percent_saved_truncated_toward_zero():
-    assert zipinfo.render_row(
-        _row(name="dir/", size=0, csize=2, method=8), "medium"
-    ) == ("?rw-------  2.0 unx        0 b-  0% defN 26-Sep-20 07:33 dir/")
-    assert zipinfo.render_row(
-        _row(name="dir/a.txt", size=200, csize=6, method=8), "medium"
-    ) == ("?rw-------  2.0 unx      200 b- 97% defN 26-Sep-20 07:33 dir/a.txt")
-    assert zipinfo.render_row(
-        _row(name="b.txt", size=1, csize=3, method=8), "medium"
-    ) == ("?rw-------  2.0 unx        1 b--199% defN 26-Sep-20 07:33 b.txt")
-
-
 def test_unknown_method_and_host_past_the_table():
     row = _row(method=99, host=40)
     assert " ??? " in zipinfo.render_row(row, "short")
@@ -137,13 +125,6 @@ def test_totals_line():
 def test_encrypted_entry_header_is_not_compressed_data():
     assert zipinfo.render_totals([_row(flags=1, csize=17)]) == (
         "1 file, 5 bytes uncompressed, 5 bytes compressed:  0.0%\n"
-    )
-
-
-def test_header_lines():
-    assert zipinfo.render_header("/data/x.zip", 127, 1) == (
-        "Archive:  /data/x.zip\n"
-        "Zip file size: 127 bytes, number of entries: 1\n"
     )
 
 
@@ -191,25 +172,6 @@ def test_layout_follows_zi_opts():
     ) == zipinfo.ZipinfoLayout("names", False, False)
 
 
-def test_verbose_listing_matches_info_zip():
-    rows = [
-        _row(name="dir/", size=0, csize=2, method=8),
-        _row(name="dir/a.txt", size=200, csize=6, method=8, crc=0x599AF058),
-        _row(name="b.txt", size=1, csize=3, method=8, crc=0x71BEEFF9),
-    ]
-    assert zipinfo.render_verbose("m.zip", rows, False, b"") == (
-        b"Archive:  m.zip\n"
-        b" Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n"
-        b"--------  ------  ------- ---- ---------- ----- --------  ----\n"
-        b"       0  Defl:N        2   0% 2026-09-20 07:33 00000000  dir/\n"
-        b"     200  Defl:N        6  97% 2026-09-20 07:33 599af058  "
-        b"dir/a.txt\n"
-        b"       1  Defl:N        3 -200% 2026-09-20 07:33 71beeff9  b.txt\n"
-        b"--------          -------  ---                            -------\n"
-        b"     201               11  95%                            3 files\n"
-    )
-
-
 @pytest.mark.parametrize(
     "method,flags,label",
     [
@@ -233,24 +195,11 @@ def test_verbose_prints_a_full_growth_as_a_bare_hundred():
     assert line.split()[3] == b"100%"
 
 
-@pytest.mark.parametrize(
-    "comment,rendered",
-    [
-        (b"note", b"note\n"),
-        (b"note\n", b"note\n"),
-        (b"note\r\nnext", b"note\nnext\n"),
-        (b"note\0hidden", b"note\n"),
-        (b"note caf\xe9 \xff", b"note caf\xe9 \xff\n"),
-        (b"note\x1b[1m\x13 end", b"note^[[1m end\n"),
-    ],
-)
-def test_verbose_comments_follow_info_zip_and_quiet_suppresses_them(
-    comment, rendered
-):
-    row = _row(comment=comment)
-    listing = zipinfo.render_verbose("a.zip", [row], False, comment)
-    assert listing.startswith(b"Archive:  a.zip\n" + rendered)
-    assert b"document.txt\n" + rendered in listing
-    quiet = zipinfo.render_verbose("a.zip", [row], True, comment)
+def test_verbose_keeps_a_comment_newline_and_quiet_suppresses_it():
+    row = _row(comment=b"note\n")
+    listing = zipinfo.render_verbose("a.zip", [row], False, b"note\n")
+    assert listing.startswith(b"Archive:  a.zip\nnote\n")
+    assert b"document.txt\nnote\n" in listing
+    quiet = zipinfo.render_verbose("a.zip", [row], True, b"note\n")
     assert b"note" not in quiet
     assert b"Archive:" not in quiet

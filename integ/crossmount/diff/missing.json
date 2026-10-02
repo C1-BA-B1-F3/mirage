@@ -22,7 +22,10 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "gridfs",
+        "gridfs-prefix",
+        "box"
       ],
       "command": "diff /data/xrl_nope.txt /data2/xm.txt",
       "expect": {

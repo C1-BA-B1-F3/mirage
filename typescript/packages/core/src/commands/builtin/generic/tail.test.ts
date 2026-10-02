@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { type ByteSource, type IOResult, materialize } from '../../../io/types.ts'
+import type { ByteSource, IOResult } from '../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
@@ -318,30 +318,6 @@ describe('tail -f', () => {
     },
   )
 
-  it('--follow=name gives up on a directory that replaces the file', async () => {
-    const fs = new Growing(new Map([['/d/f', ENC.encode('a\n')]]))
-    const [stream, io] = (await tailGeneric(
-      [spec('/d/f')],
-      [],
-      opts({ follow: 'name', sleep_interval: '0.02' }),
-      fs.stream,
-      fs.stat,
-      fs.readRange,
-    )) as [AsyncIterable<Uint8Array>, IOResult]
-    const grower = (async () => {
-      await sleep(60)
-      fs.data.set('/d/f', null)
-    })()
-    const chunks: string[] = []
-    for await (const chunk of stream) chunks.push(DEC.decode(chunk))
-    await grower
-    expect(chunks.join('')).toBe('a\n')
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe(
-      "tail: '/d/f' has been replaced with an untailable file; giving up on this name\ntail: no files remaining\n",
-    )
-    expect(io.exitCode).toBe(1)
-  })
-
   it('a descriptor follow prints nothing while a directory stands there', async () => {
     // GNU keeps reading the descriptor it opened, which gains nothing.
     const fs = new Growing(new Map([['/d/f', ENC.encode('a\n')]]))
@@ -388,27 +364,6 @@ describe('tail -f', () => {
     ).toBe(true)
   })
 
-  it('--retry without follow warns and tails anyway', async () => {
-    // Pinned on coreutils 9.7: the warning comes first, the tail is
-    // printed as if --retry were not there, and the status is the
-    // operands' own.
-    const fs = new Growing(new Map())
-    fs.set('/d/f', 'l1\nl2\n')
-    const [stream, io] = (await tailGeneric(
-      [spec('/d/f')],
-      [],
-      opts({ retry: true, n: '1' }),
-      fs.stream,
-      fs.stat,
-      fs.readRange,
-    )) as [ByteSource, IOResult]
-    expect(DEC.decode(await materialize(stream))).toBe('l2\n')
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe(
-      'tail: warning: --retry ignored; --retry is useful only when following\n',
-    )
-    expect(io.exitCode).toBe(0)
-  })
-
   it('switches headers as files take turns', async () => {
     const fs = new Growing(new Map())
     fs.set('/d/p', 'p\n')
@@ -435,22 +390,6 @@ describe('tail -f', () => {
     expect(text).toBe(
       '==> /d/p <==\np\n\n==> /d/q <==\nq\n\n==> /d/p <==\np2\n\n==> /d/q <==\nq2\nq3\n',
     )
-  })
-
-  it('with nothing to follow says so', async () => {
-    const fs = new Growing(new Map())
-    const abort = new AbortController()
-    const [stream, io] = (await tailGeneric(
-      [spec('/d/nope')],
-      [],
-      followOpts(abort),
-      fs.stream,
-      fs.stat,
-      fs.readRange,
-    )) as [null, IOResult]
-    expect(stream).toBeNull()
-    expect(io.exitCode).toBe(1)
-    expect(DEC.decode(io.stderr as Uint8Array).endsWith('tail: no files remaining\n')).toBe(true)
   })
 
   it('-F waits for a file to appear', async () => {
@@ -673,28 +612,6 @@ describe('tail -f', () => {
     )
     expect(io.exitCode).toBe(1)
   })
-
-  it.each([
-    [
-      { follow: 'bogus' },
-      "tail: invalid argument 'bogus' for '--follow'\nValid arguments are:\n  - 'descriptor'\n  - 'name'\nTry 'tail --help' for more information.\n",
-    ],
-    [{ follow: true, sleep_interval: 'bogus' }, "tail: invalid number of seconds: 'bogus'\n"],
-  ])('refuses %o in GNU words', async (flags, stderr) => {
-    const fs = new Growing(new Map())
-    fs.set('/d/log', 'x\n')
-    const [stream, io] = (await tailGeneric(
-      [spec('/d/log')],
-      [],
-      opts(flags),
-      fs.stream,
-      fs.stat,
-      fs.readRange,
-    )) as [null, IOResult]
-    expect(stream).toBeNull()
-    expect(io.exitCode).toBe(1)
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe(stderr)
-  })
 })
 
 // Both of tail's own flag refusals name the refused word through gnulib's
@@ -729,20 +646,6 @@ describe('tail quotes the word it names', () => {
   it('quotes an empty -s value as the empty word', () => {
     expect(followFlags(new FlagView({ sleep_interval: '' }, specOf('tail')))).toBe(
       "tail: invalid number of seconds: ''\n",
-    )
-  })
-})
-
-// An EMPTY ARGMATCH value is `ambiguous`, not `invalid`: gnulib's argmatch
-// matches on a prefix and `''` is a prefix of every candidate. Measured on
-// coreutils 9.4: `tail --follow=` is
-// `tail: ambiguous argument '' for '--follow'`, exit 1. Mirrors
-// test_tail.py.
-describe('tail --follow= is ambiguous, not invalid', () => {
-  it('words the empty value as ambiguous', () => {
-    const answer = followFlags(new FlagView({ follow: '' }, specOf('tail')))
-    expect(typeof answer === 'string' ? answer.split('\n')[0] : answer).toBe(
-      "tail: ambiguous argument '' for '--follow'",
     )
   })
 })

@@ -95,6 +95,20 @@
         "stderr": "split: invalid suffix length: '1\\''\n"
       },
       "flags": ["a"]
+    },
+    {
+      "id": "split_n_names_the_bad_chunk_component",
+      "seq": 14102901,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "mkdir -p /data/cfsplit; printf 'hello\\nworld\\nfoo\\nbar\\nbaz\\n' > /data/cfsplit/a.txt; split -n 'l/xé/4' /data/cfsplit/a.txt; echo rc=$?; split -n 'l/2/xé' /data/cfsplit/a.txt; echo rc=$?; rm -rf /data/cfsplit",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\n",
+        "stderr": "split: invalid number of chunks: 'x\\303\\251/4'\nsplit: invalid number of chunks: 'x\\303\\251'\n"
+      },
+      "flags": [
+        "n"
+      ]
     }
   ]
 }

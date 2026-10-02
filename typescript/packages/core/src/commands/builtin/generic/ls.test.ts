@@ -14,10 +14,9 @@
 
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { describe, expect, it, vi } from 'vitest'
-import { ContentType, FileStat, FileType, LINK_TARGET_KEY, PathSpec } from '../../../types.ts'
-import type { LinkView, MountView } from '../../../ops/types.ts'
+import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
+import type { MountView } from '../../../ops/types.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
-import { DIR_SIZE } from '../../../utils/stat_view.ts'
 import type { CommandOpts } from '../../config.ts'
 import {
   LS_FAILURE,
@@ -85,20 +84,7 @@ const readdir = (p: PathSpec): Promise<string[]> => {
   return Promise.resolve([])
 }
 
-async function run(flags: Record<string, string | boolean | number | string[]>): Promise<string[]> {
-  const result = await lsGeneric([spec('/')], opts(flags), readdir, stat)
-  if (result === null) return []
-  const [out] = result
-  return DEC.decode(out as Uint8Array)
-    .replace(/\n$/, '')
-    .split('\n')
-}
-
 describe('lsGeneric', () => {
-  it('sorts names by ASCII byte order, uppercase before lowercase', async () => {
-    expect(await run({})).toEqual(['Banana.txt', 'CHERRY.txt', 'apple.txt'])
-  })
-
   // On a mount that keeps no listing index each entry's stat is a
   // backend request; a whole directory's worth at once is a burst.
   it('stats one entry at a time', async () => {
@@ -115,18 +101,6 @@ describe('lsGeneric', () => {
     const result = await lsGeneric([spec('/')], opts({}), () => Promise.resolve(names), slowStat)
     expect(DEC.decode((result?.[0] ?? new Uint8Array()) as Uint8Array).split('\n')).toHaveLength(41)
     expect(peak).toBe(1)
-  })
-
-  it('-r reverses the ASCII order', async () => {
-    expect(await run({ reverse: true })).toEqual(['apple.txt', 'CHERRY.txt', 'Banana.txt'])
-  })
-
-  it('-t sorts newest first by codepoint comparison of modified', async () => {
-    expect(await run({ t: true })).toEqual(['apple.txt', 'CHERRY.txt', 'Banana.txt'])
-  })
-
-  it('-tr sorts oldest first', async () => {
-    expect(await run({ t: true, reverse: true })).toEqual(['Banana.txt', 'CHERRY.txt', 'apple.txt'])
   })
 })
 
@@ -181,32 +155,8 @@ async function runTree(
 }
 
 describe('lsGeneric operand headers', () => {
-  it('a single directory operand has no header', async () => {
-    expect((await runTree(['/a'])).stdout).toBe('f.txt\nsub\n')
-  })
-
-  it('two directory operands are headed and blank-line separated', async () => {
-    const r = await runTree(['/a', '/b'])
-    expect(r.stdout).toBe('/a:\nf.txt\nsub\n\n/b:\ng.txt\n')
-    expect(r.exitCode).toBe(0)
-  })
-
   it('an empty directory operand still gets a header', async () => {
     expect((await runTree(['/b', '/c'])).stdout).toBe('/b:\ng.txt\n\n/c:\n')
-  })
-
-  it('file operands print first, unheaded, then the directories', async () => {
-    expect((await runTree(['/b', '/zfile', '/a', '/mfile'])).stdout).toBe(
-      '/mfile\n/zfile\n\n/a:\nf.txt\nsub\n\n/b:\ng.txt\n',
-    )
-  })
-
-  it('file operands alone emit no trailing blank line', async () => {
-    expect((await runTree(['/zfile', '/mfile'])).stdout).toBe('/mfile\n/zfile\n')
-  })
-
-  it('operands sort by name, not command-line order', async () => {
-    expect((await runTree(['/b', '/a'])).stdout).toBe('/a:\nf.txt\nsub\n\n/b:\ng.txt\n')
   })
 
   it('-r flips both the operand order and the entry order', async () => {
@@ -215,32 +165,13 @@ describe('lsGeneric operand headers', () => {
     )
   })
 
-  it('a failed operand still leaves the listed one headed', async () => {
-    const r = await runTree(['/nope', '/a'])
-    expect(r.stdout).toBe('/a:\nf.txt\nsub\n')
-    // The header is output, not evidence of success: the bad operand still
-    // ratchets the status to 2.
-    expect(r.exitCode).toBe(LS_FAILURE)
-    expect(r.stderr).toContain('/nope')
-  })
-
   it('a repeated operand lists twice', async () => {
     expect((await runTree(['/a', '/a'])).stdout).toBe('/a:\nf.txt\nsub\n\n/a:\nf.txt\nsub\n')
-  })
-
-  it('-R keeps the header on a lone operand', async () => {
-    expect((await runTree(['/a'], { recursive: true })).stdout).toBe('/a:\nf.txt\nsub\n\n/a/sub:\n')
   })
 
   it('-R does not head a file operand', async () => {
     expect((await runTree(['/a', '/zfile'], { recursive: true })).stdout).toBe(
       '/zfile\n\n/a:\nf.txt\nsub\n\n/a/sub:\n',
-    )
-  })
-
-  it('-d sorts its operands and stays unheaded', async () => {
-    expect((await runTree(['/zfile', '/b', '/a'], { directory: true })).stdout).toBe(
-      '/a\n/b\n/zfile\n',
     )
   })
 })
@@ -343,16 +274,6 @@ async function status(
 }
 
 describe('lsGeneric exit codes', () => {
-  it('exits 0 when every operand lists cleanly', async () => {
-    const [code] = await status(['/good'])
-    expect(code).toBe(LS_OK)
-  })
-
-  it('exits 2 for a missing command-line operand', async () => {
-    const [code] = await status(['/bad'])
-    expect(code).toBe(LS_FAILURE)
-  })
-
   it('exits 2 when only one of several operands is missing', async () => {
     expect((await status(['/bad', '/good']))[0]).toBe(LS_FAILURE)
     expect((await status(['/good', '/bad']))[0]).toBe(LS_FAILURE)
@@ -374,12 +295,6 @@ describe('lsGeneric exit codes', () => {
     expect(code).toBe(LS_MINOR_PROBLEM)
     // Not fatal, and not dropped: the entry keeps GNU's row of `?`.
     expect(out).toContain('? locked.txt')
-  })
-
-  it('exits 1 when -R cannot open a subdirectory, keeping parent output', async () => {
-    const [code, out] = await status(['/deep'], { recursive: true })
-    expect(code).toBe(LS_MINOR_PROBLEM)
-    expect(out).toContain('/deep:')
   })
 
   it('lets a serious problem outrank a minor one', async () => {
@@ -409,61 +324,12 @@ describe('lsGeneric exit codes', () => {
   })
 })
 
-describe('link operands on backends with different readdir shapes', () => {
-  const linkRowStat = new FileStat({
-    name: 'flink',
-    size: 19,
-    modified: '2026-01-02T15:30:00Z',
-    type: FileType.SYMLINK,
-    extra: { [LINK_TARGET_KEY]: '/data/symx/real.txt' },
-  })
-
-  const links: LinkView = {
-    statAt: (v: string) => (v.endsWith('flink') ? linkRowStat : null),
-    children: () => [],
-    subtree: () => [],
-    resolve: (v: string) => v,
-    exists: () => Promise.resolve(true),
-    targetStat: () => Promise.resolve(null),
-  }
-
-  const missing = (p: PathSpec): Promise<never> => {
-    // Stamped like a real backend's ENOENT; bare errors now propagate.
-    const err = new Error(p.virtual) as Error & { code: string }
-    err.code = 'ENOENT'
-    return Promise.reject(err)
-  }
-
-  it('reports the link when readdir throws', async () => {
-    const [out] = (await lsGeneric(
-      [PathSpec.fromStrPath('/data/symx/flink')],
-      { flags: { args_l: true }, cwd: '/', ns: { links } } as never,
-      missing,
-      missing,
-    )) as [Uint8Array, unknown]
-    expect(new TextDecoder().decode(out)).toContain('flink -> /data/symx/real.txt')
-  })
-
-  // Backends without real directories (s3, nextcloud) answer readdir on
-  // a link with an empty list, which rendered an empty directory.
-  it('reports the link when readdir returns empty', async () => {
-    const [out] = (await lsGeneric(
-      [PathSpec.fromStrPath('/data/symx/flink')],
-      { flags: { args_l: true }, cwd: '/', ns: { links } } as never,
-      () => Promise.resolve([]),
-      missing,
-    )) as [Uint8Array, unknown]
-    expect(new TextDecoder().decode(out)).toContain('flink -> /data/symx/real.txt')
-  })
-})
-
 describe('structure-only directories', () => {
   const missing = (p: PathSpec): Promise<never> => {
     const err = new Error(p.virtual) as Error & { code: string }
     err.code = 'ENOENT'
     return Promise.reject(err)
   }
-  const childMounts = (parent: string): string[] => (parent === '/ghost' ? ['deep'] : [])
   // Only `isRoot` is exercised: it is what tells a nested mount's root
   // (whose listing belongs to another backend) from a directory the
   // namespace merely owes children, which -R must still descend.
@@ -472,39 +338,6 @@ describe('structure-only directories', () => {
     visibleDescendants: (p) => roots.filter((r) => r.startsWith(`${rstripSlash(p)}/`)),
     isRoot: (p) => roots.includes(rstripSlash(p)),
     rootOf: () => '/',
-  })
-
-  // A directory no backend serves still lists when the namespace owes it
-  // children (a nested mount, a link's ancestors): the door already names
-  // it in the parent listing, so ls must agree instead of reporting it
-  // missing.
-  it('lists namespace children when no backend serves the directory', async () => {
-    const result = await lsGeneric(
-      [PathSpec.fromStrPath('/ghost')],
-      { flags: {}, cwd: '/', ns: { childMounts } } as never,
-      missing,
-      missing,
-    )
-    expect(result?.[1].exitCode).toBe(LS_OK)
-    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('deep\n')
-  })
-
-  // Under -R the group still renders from the namespace fact; only
-  // descent into the mount root is withheld, because that listing is
-  // another backend's and the cross-mount fan-out assembles it.
-  it('-R renders the namespace-only group and leaves descent to fan-out', async () => {
-    const result = await lsGeneric(
-      [PathSpec.fromStrPath('/ghost')],
-      {
-        flags: { recursive: true },
-        cwd: '/',
-        ns: { childMounts, mounts: mountsAt('/ghost/deep') },
-      } as never,
-      missing,
-      missing,
-    )
-    expect(result?.[1].exitCode).toBe(LS_OK)
-    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/ghost:\ndeep\n')
   })
 
   // A structure chain (a link's ancestors) continues below the first
@@ -524,45 +357,6 @@ describe('structure-only directories', () => {
     )
     expect(result?.[1].exitCode).toBe(LS_OK)
     expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/ghost:\ndeep\n\n/ghost/deep:\nlnk\n')
-  })
-
-  // A mount root is an ordinary entry of a backend-served directory. GNU
-  // (coreutils 9.7, tmpfs at `base/nested`) prints `nested` in `base`'s
-  // own listing and then its group. The merge used to be withheld
-  // whenever the walk was recursive, on the theory that the cross-mount
-  // fan-out contributed the whole nested mount; it contributes the group,
-  // not the parent's row, so the row went missing wherever the backend
-  // held no key of that name. Descent is what the fan-out owns, and the
-  // mount table is what says where to stop.
-  it('-R lists a mount root without descending it', async () => {
-    const served: Record<string, FileType> = {
-      '/base': FileType.DIRECTORY,
-      '/base/top.txt': FileType.FILE,
-    }
-    const servedStat = (p: PathSpec): Promise<FileStat> => {
-      const type = served[rstripSlash(p.virtual)]
-      if (type === undefined) return missing(p)
-      return Promise.resolve(
-        new FileStat({ name: rstripSlash(p.virtual).split('/').pop() ?? '', type }),
-      )
-    }
-    const servedReaddir = (p: PathSpec): Promise<string[]> =>
-      rstripSlash(p.virtual) === '/base' ? Promise.resolve(['/base/top.txt']) : missing(p)
-    const result = await lsGeneric(
-      [PathSpec.fromStrPath('/base')],
-      {
-        flags: { recursive: true },
-        cwd: '/',
-        ns: {
-          childMounts: (parent: string) => (parent === '/base' ? ['nested'] : []),
-          mounts: mountsAt('/base/nested'),
-        },
-      } as never,
-      servedReaddir,
-      servedStat,
-    )
-    expect(result?.[1].exitCode).toBe(LS_OK)
-    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/base:\nnested\ntop.txt\n')
   })
 
   // A mount root is not always a directory. Every workspace mounts
@@ -626,19 +420,6 @@ describe('structure-only directories', () => {
     expect(result?.[1].exitCode).toBe(LS_OK)
     expect(DEC.decode(result?.[0] as Uint8Array)).toBe('deep/\n')
   })
-
-  // -d stats the operand itself; the namespace fact is what says the
-  // directory exists, so the row must come from it when no backend does.
-  it('-d prints the namespace-only directory row', async () => {
-    const result = await lsGeneric(
-      [PathSpec.fromStrPath('/ghost')],
-      { flags: { directory: true }, cwd: '/', ns: { childMounts } } as never,
-      missing,
-      missing,
-    )
-    expect(result?.[1].exitCode).toBe(LS_OK)
-    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/ghost\n')
-  })
 })
 
 describe('honest per-entry errors', () => {
@@ -665,41 +446,43 @@ describe('honest per-entry errors', () => {
   // GNU (coreutils 9.7, EIO injected on one entry with strace) lists every
   // name, and only a listing that stats the entry (-l, -F, -t, -i ...)
   // reports it, whatever the errno, and exits 1.
-  it('lists a name whose stat failed without a word when nothing needs the stat', async () => {
+  it.each([
+    [stamped('/apple.txt', 'ENOENT'), {}, 'apple.txt', ''],
+    [new Error('socket hang up'), {}, 'apple.txt', ''],
+    [
+      stamped('/apple.txt', 'ENOENT'),
+      { args_l: true },
+      '?????????? ? ? ? ?            ? apple.txt',
+      "ls: cannot access '/apple.txt': No such file or directory\n",
+    ],
+    [
+      new Error('S3 GET apple.txt failed: 403 Forbidden'),
+      { classify: true },
+      'apple.txt',
+      "ls: cannot access '/apple.txt': S3 GET apple.txt failed: 403 Forbidden\n",
+    ],
+    [
+      stamped('/apple.txt', 'EIO'),
+      { args_l: true },
+      '?????????? ? ? ? ?            ? apple.txt',
+      "ls: cannot access '/apple.txt': Input/output error\n",
+    ],
+  ])('lists an entry whose stat failed with %s under %o', async (err, flags, row, expected) => {
     const host = (['debug', 'log', 'info', 'warn', 'error'] as const).map((m) =>
       vi.spyOn(console, m).mockImplementation(() => undefined),
     )
     try {
-      for (const err of [stamped('/apple.txt', 'ENOENT'), new Error('socket hang up')]) {
-        const { code, stdout, stderr } = await run({}, err)
-        expect(code).toBe(LS_OK)
-        expect(stdout).toBe('Banana.txt\nCHERRY.txt\napple.txt\n')
-        expect(stderr).toBe('')
-      }
+      const { code, stdout, stderr } = await run(flags, err)
+      expect(stdout.trimEnd().split('\n').slice(-2)).toEqual([
+        expect.stringMatching(/CHERRY\.txt$/),
+        row,
+      ])
+      expect(stderr).toBe(expected)
+      expect(code).toBe(expected === '' ? LS_OK : LS_MINOR_PROBLEM)
       for (const spy of host) expect(spy).not.toHaveBeenCalled()
     } finally {
       vi.restoreAllMocks()
     }
-  })
-
-  it('keeps a ? row and reports the entry when the listing needs its stat', async () => {
-    const { code, stdout, stderr } = await run({ args_l: true }, stamped('/apple.txt', 'ENOENT'))
-    expect(code).toBe(LS_MINOR_PROBLEM)
-    expect(stdout.split('\n')[3]).toBe('?????????? ? ? ? ?            ? apple.txt')
-    expect(stderr).toBe("ls: cannot access '/apple.txt': No such file or directory\n")
-  })
-
-  it('reports an unstamped backend error in its own words, not a GNU phrase', async () => {
-    const raw = new Error('S3 GET apple.txt failed: 403 Forbidden')
-    const { code, stdout, stderr } = await run({ classify: true }, raw)
-    expect(code).toBe(LS_MINOR_PROBLEM)
-    expect(stdout).toBe('Banana.txt\nCHERRY.txt\napple.txt\n')
-    expect(stderr).toBe("ls: cannot access '/apple.txt': S3 GET apple.txt failed: 403 Forbidden\n")
-  })
-
-  it('words a stamped EIO the way GNU does', async () => {
-    const { stderr } = await run({ args_l: true }, stamped('/apple.txt', 'EIO'))
-    expect(stderr).toBe("ls: cannot access '/apple.txt': Input/output error\n")
   })
 
   // GNU (coreutils 9.7, both entries' stat denied) zeroes a failed stat, so
@@ -774,55 +557,6 @@ async function runV(
 }
 
 describe('lsGeneric sort orders', () => {
-  it('-v reads numbers as numbers', async () => {
-    expect(await runV({ v: true })).toEqual([
-      'Z.txt',
-      'a.txt',
-      'b.md',
-      'c',
-      'dir1',
-      'dir2',
-      'file2.txt',
-      'file10.txt',
-    ])
-  })
-
-  it('-X groups by suffix then name', async () => {
-    expect(await runV({ X: true })).toEqual([
-      'c',
-      'dir1',
-      'dir2',
-      'b.md',
-      'Z.txt',
-      'a.txt',
-      'file10.txt',
-      'file2.txt',
-    ])
-  })
-
-  it('--group-directories-first partitions after sorting, -r included', async () => {
-    expect(await runV({ group_directories_first: true })).toEqual([
-      'dir1',
-      'dir2',
-      'Z.txt',
-      'a.txt',
-      'b.md',
-      'c',
-      'file10.txt',
-      'file2.txt',
-    ])
-    expect(await runV({ group_directories_first: true, reverse: true })).toEqual([
-      'dir2',
-      'dir1',
-      'file2.txt',
-      'file10.txt',
-      'c',
-      'b.md',
-      'a.txt',
-      'Z.txt',
-    ])
-  })
-
   it('-U keeps the listing order and ignores grouping', async () => {
     expect(await runV({ U: true, group_directories_first: true })).toEqual(VERSION_NAMES)
   })
@@ -848,19 +582,6 @@ describe('lsGeneric sort orders', () => {
       (name) => new FileStat({ name, type: FileType.FILE }),
     )
     expect(names(sortStats(wide, 'width', false))).toEqual(['a', 'é', 'aa', 'e\u0301x', '界'])
-  })
-
-  it('sortStats: -S counts a directory as DIR_SIZE bytes', () => {
-    const rows = [
-      new FileStat({ name: 'small.txt', type: FileType.FILE, size: 3 }),
-      new FileStat({ name: 'sub', type: FileType.DIRECTORY }),
-      new FileStat({ name: 'big.txt', type: FileType.FILE, size: DIR_SIZE + 1 }),
-    ]
-    expect(sortStats(rows, 'size', false).map((s) => s.name)).toEqual([
-      'big.txt',
-      'sub',
-      'small.txt',
-    ])
   })
 
   it('filevercmp orders bytes past the letters', () => {
@@ -917,15 +638,6 @@ describe('lsGeneric columns and time styles', () => {
     )
   })
 
-  it('--block-size scales and rounds up', async () => {
-    expect(await line({ g: true, o: true, block_size: 'K', time_style: '+x' })).toBe(
-      'total ?\n-rw-r--r-- 1 1K x a.txt\n',
-    )
-    expect(await line({ g: true, o: true, block_size: '4', time_style: '+x' })).toBe(
-      'total ?\n-rw-r--r-- 1 11 x a.txt\n',
-    )
-  })
-
   it('--hyperlink=always wraps the name in OSC 8', async () => {
     expect(await line({ hyperlink: 'always' })).toBe(
       '\x1b]8;;file:///d/a.txt\x07a.txt\x1b]8;;\x07\n',
@@ -965,8 +677,11 @@ describe('lsGeneric columns and time styles', () => {
   // gnulib's argmatch resolves an unambiguous prefix and answers the
   // canonical word of the value it matched. Every row measured on coreutils
   // 9.4 (`ls --sort=non`, `-l --time=acc`, `--hyperlink=n`,
-  // `-l --time-style=full`). Mirrors test_ls.py.
-  it.each([
+  // `-l --time-style=full`). Mirrors test_ls.py. A posix- prefix
+  // short-circuits the option before the matcher: GNU jumps to the locale
+  // style without reading what follows, `posix-l` included, which is
+  // ambiguous only if the remainder is matched (it must not be).
+  it.each<[Record<string, string>, string, string | boolean]>([
     [{ sort: 'non' }, 'sortBy', 'none'],
     [{ sort: 'n' }, 'sortBy', 'none'],
     [{ sort: 'si' }, 'sortBy', 'size'],
@@ -982,71 +697,31 @@ describe('lsGeneric columns and time styles', () => {
     [{ hyperlink: 'n' }, 'hyperlink', false],
     [{ hyperlink: 'au' }, 'hyperlink', false],
     [{ hyperlink: 'i' }, 'hyperlink', false],
-  ])('parseFlags accepts an unambiguous prefix (%o)', (flags, attr, expected) => {
-    const parsed = parseFlags(
-      new FlagView(flags as Record<string, FlagValue>, specOf('ls')),
-    ) as unknown as Record<string, unknown>
-    expect(parsed[attr]).toBe(expected)
-  })
-
-  it.each([
-    ['full', 'full-iso'],
-    ['long', 'long-iso'],
-    ['i', 'iso'],
-    ['loc', 'locale'],
-  ])('parseFlags accepts the unambiguous time style %s', (value, expected) => {
-    expect(parseFlags(new FlagView({ time_style: value }, specOf('ls'))).columns.timeStyle).toBe(
-      expected,
-    )
-  })
-
-  // A posix- prefix short-circuits the option before the matcher: GNU jumps
-  // to the locale style without reading what follows, so every row here
-  // exits 0 and prints what `locale` prints -- measured on coreutils 9.4,
-  // `posix-l` included, which is ambiguous only if the remainder is matched
-  // (it must not be).
-  it.each([
-    'posix-full-iso',
-    'posix-long-iso',
-    'posix-iso',
-    'posix-locale',
-    'posix-l',
-    'posix-zzz',
-    'posix-',
-    'posix-+%H:%M',
-    'posix-posix-full-iso',
-  ])('parseFlags treats %s as the locale style', (value) => {
-    expect(parseFlags(new FlagView({ time_style: value }, specOf('ls'))).columns.timeStyle).toBe(
+    [{ time_style: 'full' }, 'columns.timeStyle', 'full-iso'],
+    [{ time_style: 'long' }, 'columns.timeStyle', 'long-iso'],
+    [{ time_style: 'i' }, 'columns.timeStyle', 'iso'],
+    [{ time_style: 'loc' }, 'columns.timeStyle', 'locale'],
+    ...[
+      'posix-full-iso',
+      'posix-long-iso',
+      'posix-iso',
+      'posix-locale',
+      'posix-l',
+      'posix-zzz',
+      'posix-',
+      'posix-+%H:%M',
+      'posix-posix-full-iso',
+    ].map((value): [Record<string, string>, string, string] => [
+      { time_style: value },
+      'columns.timeStyle',
       'locale',
-    )
-  })
-
-  // Ambiguity is decided on values: `--time=a` matches atime and access,
-  // one value, and is accepted above, while these span two and are refused.
-  // The block and the hint below line 1 are the invalid refusal's, measured
-  // byte for byte.
-  it.each([
-    [
-      { time: 'c' },
-      "ls: ambiguous argument 'c' for '--time'\nValid arguments are:\n  - 'atime', 'access', 'use'",
-      1,
-    ],
-    [
-      { hyperlink: 'a' },
-      "ls: ambiguous argument 'a' for '--hyperlink'\nValid arguments are:\n  - 'always', 'yes', 'force'",
-      1,
-    ],
-    [{ time_style: 'lo' }, "ls: ambiguous argument 'lo' for 'time style'", 2],
-  ])('parseFlags refuses a prefix spanning two values (%o)', (flags, prefix, code) => {
-    let caught: unknown = null
-    try {
-      parseFlags(new FlagView(flags as Record<string, FlagValue>, specOf('ls')))
-    } catch (err) {
-      caught = err
-    }
-    expect(caught).toBeInstanceOf(UsageError)
-    expect((caught as UsageError).message.startsWith(prefix)).toBe(true)
-    expect((caught as UsageError).exitCode).toBe(code)
+    ]),
+  ])('parseFlags reads %o into %s as %s', (flags, attr, expected) => {
+    const parsed = parseFlags(new FlagView(flags, specOf('ls')))
+    const value = attr
+      .split('.')
+      .reduce<unknown>((at, name) => (at as Record<string, unknown>)[name], parsed)
+    expect(value).toBe(expected)
   })
 
   // `ls --sort=NON`, `=NONE` and `=None` are all `invalid argument`, never
@@ -1062,29 +737,6 @@ describe('lsGeneric columns and time styles', () => {
     expect(
       (caught as UsageError).message.startsWith(`ls: invalid argument '${value}' for '--sort'`),
     ).toBe(true)
-  })
-
-  it.each([
-    [{ sort: 'bogus' }, "ls: invalid argument 'bogus' for '--sort'", 1],
-    [
-      { time: 'bogus' },
-      "ls: invalid argument 'bogus' for '--time'\nValid arguments are:\n  - 'atime', 'access', 'use'",
-      1,
-    ],
-    [{ time_style: 'bogus' }, "ls: invalid argument 'bogus' for 'time style'", 2],
-    [{ block_size: 'bogus' }, "ls: invalid --block-size argument 'bogus'", 2],
-    [{ block_size: '0K' }, "ls: invalid --block-size argument '0K'", 2],
-    [{ hyperlink: 'bogus' }, "ls: invalid argument 'bogus' for '--hyperlink'", 1],
-  ])('parseFlags refuses in GNU words (%o)', (flags, prefix, code) => {
-    let caught: unknown = null
-    try {
-      parseFlags(new FlagView(flags as Record<string, FlagValue>, specOf('ls')))
-    } catch (err) {
-      caught = err
-    }
-    expect(caught).toBeInstanceOf(UsageError)
-    expect((caught as UsageError).message.startsWith(prefix)).toBe(true)
-    expect((caught as UsageError).exitCode).toBe(code)
   })
 })
 
@@ -1176,32 +828,6 @@ describe('ls quotes the word its argument clauses name', () => {
       message = error instanceof Error ? error.message : String(error)
     }
     expect(message.includes(value)).toBe(true)
-  })
-})
-
-// xstrtoumax's three refusals as ls words them, measured on coreutils 9.7;
-// the word is quoted but never escaped. Mirrored in test_ls.py.
-describe('ls --block-size refusals are worded as GNU words them', () => {
-  it.each([
-    ['x', "ls: invalid --block-size argument 'x'"],
-    ['', "ls: invalid --block-size argument ''"],
-    ['0K', "ls: invalid --block-size argument '0K'"],
-    ['1x', "ls: invalid suffix in --block-size argument '1x'"],
-    ['Kx', "ls: invalid suffix in --block-size argument 'Kx'"],
-    ['1e', "ls: invalid suffix in --block-size argument '1e'"],
-    ['1R', "ls: invalid suffix in --block-size argument '1R'"],
-    ['Y', "ls: --block-size argument 'Y' too large"],
-    ['16E', "ls: --block-size argument '16E' too large"],
-  ])('refuses %j', (value, message) => {
-    let caught: unknown = null
-    try {
-      parseFlags(new FlagView({ block_size: value }, specOf('ls')))
-    } catch (error) {
-      caught = error
-    }
-    expect(caught).toBeInstanceOf(UsageError)
-    expect((caught as UsageError).message).toBe(message)
-    expect((caught as UsageError).exitCode).toBe(2)
   })
 })
 

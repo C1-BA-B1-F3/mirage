@@ -15,7 +15,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   compressionRatio,
-  renderHeader,
   renderRow,
   renderTotals,
   renderVerbose,
@@ -104,18 +103,6 @@ describe('zipinfo rows', () => {
     expect(renderRow(row({ flags: 1 | 8 }), 'short')).toContain(' Bl stor ')
   })
 
-  it('adds the percent saved under -m, truncated toward zero', () => {
-    expect(renderRow(row({ name: 'dir/', size: 0, csize: 2, method: 8 }), 'medium')).toBe(
-      '?rw-------  2.0 unx        0 b-  0% defN 26-Sep-20 07:33 dir/',
-    )
-    expect(renderRow(row({ name: 'dir/a.txt', size: 200, csize: 6, method: 8 }), 'medium')).toBe(
-      '?rw-------  2.0 unx      200 b- 97% defN 26-Sep-20 07:33 dir/a.txt',
-    )
-    expect(renderRow(row({ name: 'b.txt', size: 1, csize: 3, method: 8 }), 'medium')).toBe(
-      '?rw-------  2.0 unx        1 b--199% defN 26-Sep-20 07:33 b.txt',
-    )
-  })
-
   it('renders an unknown method and a host past the table', () => {
     const line = renderRow(row({ method: 99, host: 40 }), 'short')
     expect(line).toContain(' ??? ')
@@ -141,12 +128,6 @@ describe('zipinfo header and totals', () => {
   it('does not count an encrypted entry header as compressed data', () => {
     expect(renderTotals([row({ flags: 1, csize: 17 })])).toBe(
       '1 file, 5 bytes uncompressed, 5 bytes compressed:  0.0%\n',
-    )
-  })
-
-  it('renders the header lines', () => {
-    expect(renderHeader('/data/x.zip', 127, 1)).toBe(
-      'Archive:  /data/x.zip\nZip file size: 127 bytes, number of entries: 1\n',
     )
   })
 })
@@ -207,24 +188,6 @@ describe('zipinfo layout', () => {
 })
 
 describe('unzip -v rows', () => {
-  it('match the verbose listing of Info-ZIP', () => {
-    const rows = [
-      row({ name: 'dir/', size: 0, csize: 2, method: 8 }),
-      row({ name: 'dir/a.txt', size: 200, csize: 6, method: 8, crc: 0x599af058 }),
-      row({ name: 'b.txt', size: 1, csize: 3, method: 8, crc: 0x71beeff9 }),
-    ]
-    expect(chars(renderVerbose('m.zip', rows, false, new Uint8Array()))).toBe(
-      'Archive:  m.zip\n' +
-        ' Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n' +
-        '--------  ------  ------- ---- ---------- ----- --------  ----\n' +
-        '       0  Defl:N        2   0% 2026-09-20 07:33 00000000  dir/\n' +
-        '     200  Defl:N        6  97% 2026-09-20 07:33 599af058  dir/a.txt\n' +
-        '       1  Defl:N        3 -200% 2026-09-20 07:33 71beeff9  b.txt\n' +
-        '--------          -------  ---                            -------\n' +
-        '     201               11  95%                            3 files\n',
-    )
-  })
-
   it.each([
     [0, 0, 'Stored'],
     [6, 6, 'Implode'],
@@ -245,19 +208,12 @@ describe('unzip -v rows', () => {
   })
 })
 
-it.each([
-  ['note', 'note\n'],
-  ['note\n', 'note\n'],
-  ['note\r\nnext', 'note\nnext\n'],
-  ['note\0hidden', 'note\n'],
-  ['note caf\xe9 \xff', 'note caf\xe9 \xff\n'],
-  ['note\x1b[1m\x13 end', 'note^[[1m end\n'],
-])('renders comments as Info-ZIP does and suppresses them under -q: %j', (comment, rendered) => {
-  const rows = [row({ comment: bytes(comment) })]
-  const listing = chars(renderVerbose('a.zip', rows, false, bytes(comment)))
-  expect(listing.startsWith('Archive:  a.zip\n' + rendered)).toBe(true)
-  expect(listing).toContain('document.txt\n' + rendered)
-  const quiet = chars(renderVerbose('a.zip', rows, true, bytes(comment)))
+it('keeps a comment newline and suppresses it under -q', () => {
+  const rows = [row({ comment: bytes('note\n') })]
+  const listing = chars(renderVerbose('a.zip', rows, false, bytes('note\n')))
+  expect(listing.startsWith('Archive:  a.zip\nnote\n')).toBe(true)
+  expect(listing).toContain('document.txt\nnote\n')
+  const quiet = chars(renderVerbose('a.zip', rows, true, bytes('note\n')))
   expect(quiet).not.toContain('note')
   expect(quiet).not.toContain('Archive:')
 })

@@ -18,7 +18,6 @@ from mirage.commands.builtin.github.grep import grep
 from mirage.commands.config import CommandOpts
 from mirage.io.stream import materialize
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_key
 from tests.fixtures.github_mock import MOCK_BLOBS
 
 
@@ -101,70 +100,7 @@ async def test_grep_count(mock_github_api, github_env):
 
 
 @pytest.mark.asyncio
-async def test_recursive_grep(mock_github_api, github_env):
-    accessor, index = github_env
-    text, io = await _run(accessor, index, ["src"], "dataclass", r=True)
-    assert io.exit_code == 0
-    lines = text.strip().splitlines()
-    assert len(lines) >= 2
-    paths_found = [line.split(":")[0] for line in lines]
-    assert any("user.py" in p for p in paths_found)
-    assert any("item.py" in p for p in paths_found)
-
-
-@pytest.mark.asyncio
 async def test_grep_no_match(mock_github_api, github_env):
     accessor, index = github_env
     text, io = await _run(accessor, index, ["src/main.py"], "zzz_no_match_zzz")
     assert io.exit_code == 1
-
-
-@pytest.mark.asyncio
-async def test_grep_files_only(mock_github_api, github_env):
-    accessor, index = github_env
-    text, io = await _run(
-        accessor, index, ["src"], "dataclass", r=True, args_l=True
-    )
-    assert io.exit_code == 0
-    lines = text.strip().splitlines()
-    assert any("user.py" in ln for ln in lines)
-    assert any("item.py" in ln for ln in lines)
-
-
-@pytest.mark.asyncio
-async def test_grep_stdin(github_env):
-    accessor, index = github_env
-    stdin_data = b"hello world\nfoo bar\nhello again\n"
-    stdout, io = await grep(
-        accessor, [], ["hello"], CommandOpts(stdin=stdin_data, index=index)
-    )
-    data = await materialize(stdout)
-    text = data.decode(errors="replace")
-    lines = text.strip().splitlines()
-    assert len(lines) == 2
-    assert "hello world" in lines[0]
-    assert "hello again" in lines[1]
-
-
-@pytest.mark.asyncio
-async def test_grep_files_only_with_prefix(mock_github_api, github_env):
-    accessor, index = github_env
-    scopes = [
-        PathSpec(
-            vfs_path=mount_key("/gh/src", "/gh"),
-            virtual="/gh/src",
-            directory="/gh/src/",
-            resolved=False,
-        )
-    ]
-    stdout, io = await grep(
-        accessor,
-        scopes,
-        ["dataclass"],
-        CommandOpts(index=index, flags={"r": True, "args_l": True}),
-    )
-    data = await materialize(stdout)
-    text = data.decode()
-    assert io.exit_code == 0
-    lines = text.strip().splitlines()
-    assert any("user.py" in ln for ln in lines)

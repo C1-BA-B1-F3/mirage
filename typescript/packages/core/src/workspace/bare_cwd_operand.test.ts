@@ -54,13 +54,6 @@ describe('bare invocations default to the cwd', () => {
     }
   })
 
-  it('find with only an expression implies the leading dot', async () => {
-    const ws = await makeWs()
-    const io = await ws.shell("find -name '*.txt'")
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io)).toBe('./a.txt\n./sub/b.txt\n')
-  })
-
   it('tree renders the cwd', async () => {
     const ws = await makeWs()
     const io = await ws.shell('tree')

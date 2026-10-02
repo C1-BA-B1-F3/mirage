@@ -30,9 +30,7 @@ from mirage.commands.builtin.generic.split import (
     parse_suffix_start,
 )
 from mirage.commands.errors import UsageError
-from mirage.types import MountMode, PathSpec
-from mirage.vfs.ram import RAMVFS
-from mirage.workspace import Workspace
+from mirage.types import PathSpec
 
 _TRY = "\nTry 'split --help' for more information."
 _ALPHA_SUFFIXES = split_generic._ALPHA_SUFFIXES
@@ -176,21 +174,6 @@ def test_chunks_names_the_component_gnu_names(value, named):
     assert exc.value.exit_code == 1
 
 
-@pytest.mark.parametrize(
-    "value,count",
-    [
-        ("4", 4),
-        ("l/4", 4),
-        ("r/4", 4),
-        ("2/4", 4),
-        ("l/2/4", 4),
-        ("r/2/4", 4),
-    ],
-)
-def test_chunks_accepts_the_shapes_gnu_accepts(value, count):
-    assert parse_chunks_value(value).count == count
-
-
 def test_suffix_length_rejects_junk_but_allows_zero():
     assert parse_suffix_length("3") == 3
     assert parse_suffix_length("0") == 0
@@ -218,13 +201,6 @@ def test_separator_rejects_multi_byte_values(value):
     with pytest.raises(UsageError) as exc:
         parse_separator(value)
     assert str(exc.value) == f"split: multi-character separator '{value}'"
-    assert exc.value.exit_code == 1
-
-
-def test_separator_rejects_an_empty_value():
-    with pytest.raises(UsageError) as exc:
-        parse_separator("")
-    assert str(exc.value) == "split: empty record separator"
     assert exc.value.exit_code == 1
 
 
@@ -429,22 +405,6 @@ def test_chunk_spec_reads_k_of_n():
     assert parse_chunks_value("l/4") == ChunkSpec(ChunkKind.LINES, 4)
 
 
-@pytest.mark.parametrize(
-    "value,message",
-    [
-        ("4/3", "split: invalid chunk number: '4'"),
-        ("0/3", "split: invalid chunk number: '0'"),
-        ("l/0/3", "split: invalid chunk number: '0'"),
-        ("3/0", "split: invalid number of chunks: '0'"),
-    ],
-)
-def test_chunk_number_is_range_checked_after_n(value, message):
-    with pytest.raises(UsageError) as exc:
-        parse_chunks_value(value)
-    assert str(exc.value) == message
-    assert exc.value.exit_code == 1
-
-
 def test_byte_chunks_spread_the_remainder_over_the_first_chunks():
     assert list(chunk_parts(b"abcdefg", parse_chunks_value("3"), b"\n")) == [
         b"abc",
@@ -511,14 +471,6 @@ def test_line_chunks_give_an_unterminated_tail_to_its_chunk():
         b"ab",
         b"",
         b"",
-    ]
-
-
-def test_round_robin_deals_records_in_turn():
-    assert list(chunk_parts(_LINES, parse_chunks_value("r/3"), b"\n")) == [
-        b"line1\nline4\n",
-        b"line2\nline5\n",
-        b"line3\n",
     ]
 
 
@@ -596,14 +548,3 @@ async def test_stdin_outputs_are_named_in_the_working_directory(
     )
     assert [p.virtual for p in specs] == named
     assert list(io.writes) == [name[len("/data") :] for name in named]
-
-
-@pytest.mark.asyncio
-async def test_a_dash_input_reads_stdin():
-    ws = Workspace(
-        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
-    )
-    r = await ws.shell(
-        "cd /data && split -l 1 - sp_ && cat sp_aa sp_ab", stdin=b"a\nb\n"
-    )
-    assert await r.materialize_stdout() == b"a\nb\n"

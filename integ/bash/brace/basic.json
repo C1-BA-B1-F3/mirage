@@ -779,7 +779,9 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "hf",
+        "hf-prefix"
       ],
       "command": "mkdir -p /data/zbrg && touch /data/zbrg/{ga1,ga2,gb1}.txt && echo /data/zbrg/{ga,gb}*",
       "expect": {
@@ -810,7 +812,9 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "hf",
+        "hf-prefix"
       ],
       "command": "echo /data/zbrg/{ga,zz}*",
       "expect": {

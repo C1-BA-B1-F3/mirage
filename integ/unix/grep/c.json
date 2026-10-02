@@ -334,6 +334,44 @@
         "c",
         "E"
       ]
+    },
+    {
+      "id": "grep_c_prints_no_context_separator",
+      "seq": 14101401,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/cfgA; printf 'a\\nb\\nc\\n' > /data/cfgA/g1; printf 'x\\na\\ny\\n' > /data/cfgA/g2; printf 'zzz\\n' > /data/cfgA/g0; grep -c -A1 a /data/cfgA/g1 /data/cfgA/g2; echo rc=$?; rm -rf /data/cfgA",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/cfgA/g1:1\n/data/cfgA/g2:1\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "A"
+      ]
     }
   ]
 }

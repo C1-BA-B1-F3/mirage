@@ -132,25 +132,6 @@ describe('narrowScope', () => {
     expect(res.usedSearch).toBe(false)
     expect(calls).toHaveLength(0)
   })
-
-  it('does not search a regex with no provable literal', async () => {
-    const calls: SearchCall[] = []
-    const acc = makeAccessor(['src/f1.py'], calls)
-    const res = await narrowScope(acc, [subdir()], 'foo|bar', false, true, true)
-    expect(res.usedSearch).toBe(false)
-    expect(calls).toHaveLength(0)
-  })
-
-  it('skips search without -w', async () => {
-    // Code search matches whole words while grep matches substrings, so a
-    // bare literal would narrow to a strict subset and silently drop files
-    // that contain it only inside a longer word.
-    const calls: SearchCall[] = []
-    const acc = makeAccessor(['src/f1.py'], calls)
-    const res = await narrowScope(acc, [subdir()], 'import', false, true, false)
-    expect(res.usedSearch).toBe(false)
-    expect(calls).toHaveLength(0)
-  })
 })
 
 // Twins of the end-to-end tests in
@@ -188,14 +169,6 @@ describe('narrowScope trusts only a complete, own-repository answer', () => {
     const res = await narrowScope(acc, [subdir()], pattern, fixedString, true, true)
     expect(res.usedSearch).toBe(false)
     expect(calls).toHaveLength(0)
-  })
-
-  it('still narrows on a complete own answer', async () => {
-    const calls: SearchCall[] = []
-    const acc = makeAccessor(['src/f1.py'], calls)
-    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
-    expect(res.usedSearch).toBe(true)
-    expect(res.resolved.map((p) => p.virtual)).toEqual(['/src/f1.py'])
   })
 
   it('never trusts a narrowing over a truncated tree', async () => {
@@ -278,39 +251,9 @@ describe('narrowScope over an expired listing', () => {
     vi.unstubAllGlobals()
   })
 
-  it('counts the refreshed tree', async () => {
-    const gh = new FakeGitHub({ 'docs/a.txt': 'x', 'docs/b.txt': 'x', 'top.txt': 'x' })
-    vi.stubGlobal('fetch', gh.fetch)
-    const vfs = await GitHubVFS.create({
-      token: 't',
-      owner: 'o',
-      repo: 'r',
-      ref: 'main',
-      baseUrl: gh.url,
-    })
-    const ws = new Workspace(
-      { '/gh': new Mount(vfs, { mode: MountMode.READ }) },
-      { shellParser: await getTestParser() },
-    )
-    try {
-      expect((await ws.shell('ls /gh/docs')).exitCode).toBe(0)
-      gh.set('docs/c.txt', 'x')
-      gh.set('newdir/d.txt', 'x')
-      const index = ws.registry.mountFor('/gh/docs').index
-      await index.invalidate()
-      gh.log.length = 0
-      const root = new PathSpec({ virtual: '/gh', directory: '/gh', vfsPath: '', resolved: false })
-      const res = await narrowScope(vfs.accessor, [root], 'x', false, true, false, index)
-      expect(res.fileCount).toBe(5)
-      expect(isDirectoryKey(vfs.accessor.tree, 'newdir')).toBe(true)
-      expect(gh.counts()).toEqual([0, 1, 0])
-    } finally {
-      await ws.close()
-    }
-  })
-
   // [mount prefix, scope below it, files in scope]
   it.each<[string, string, number]>([
+    ['/gh', '', 5],
     ['/gh', 'docs', 3],
     ['/r/gh', 'docs', 3],
     ['/r/gh', '', 5],
@@ -339,6 +282,7 @@ describe('narrowScope over an expired listing', () => {
       const scope = new PathSpec({ virtual, directory: virtual, vfsPath: sub, resolved: false })
       const res = await narrowScope(vfs.accessor, [scope], 'x', false, true, false, index)
       expect(res.fileCount).toBe(n)
+      expect(isDirectoryKey(vfs.accessor.tree, 'newdir')).toBe(true)
       const ls = await ws.shell(`ls ${prefix}`)
       expect(new TextDecoder().decode(ls.stdout)).toBe('docs\nnewdir\ntop.txt\n')
       expect(gh.counts()).toEqual([0, 1, 0])

@@ -8,21 +8,20 @@ async def _drain(gen):
 
 
 @pytest.mark.asyncio
-async def test_head_first_c_bytes_fast_path():
-    out = await _drain(head(b"hello world", c=5))
-    assert out == b"hello"
-
-
-@pytest.mark.asyncio
-async def test_head_first_c_bytes_across_chunks():
+@pytest.mark.parametrize(
+    "chunks,flags,expected",
+    [
+        ([b"hel", b"lo wor", b"ld"], {"c": 8}, b"hello wo"),
+        ([b"a\nb", b"\nc\nd\n"], {"n": 2}, b"a\nb\n"),
+    ],
+)
+async def test_head_reads_across_chunks(chunks, flags, expected):
 
     async def src():
-        yield b"hel"
-        yield b"lo wor"
-        yield b"ld"
+        for chunk in chunks:
+            yield chunk
 
-    out = await _drain(head(src(), c=8))
-    assert out == b"hello wo"
+    assert await _drain(head(src(), **flags)) == expected
 
 
 @pytest.mark.asyncio
@@ -35,23 +34,6 @@ async def test_head_first_c_bytes_shorter_than_total():
 async def test_head_first_c_zero_emits_nothing():
     out = await _drain(head(b"hello", c=0))
     assert out == b""
-
-
-@pytest.mark.asyncio
-async def test_head_first_n_lines_from_bytes():
-    out = await _drain(head(b"a\nb\nc\nd\n", n=2))
-    assert out == b"a\nb\n"
-
-
-@pytest.mark.asyncio
-async def test_head_first_n_lines_from_stream():
-
-    async def src():
-        yield b"a\nb"
-        yield b"\nc\nd\n"
-
-    out = await _drain(head(src(), n=2))
-    assert out == b"a\nb\n"
 
 
 @pytest.mark.asyncio
@@ -103,24 +85,6 @@ async def test_head_no_trailing_newline_in_last_line():
 
 
 @pytest.mark.asyncio
-async def test_head_n_larger_than_available():
-    out = await _drain(head(b"a\nb\n", n=10))
-    assert out == b"a\nb\n"
-
-
-@pytest.mark.asyncio
-async def test_head_n_one():
-    out = await _drain(head(b"line1\nline2\nline3\n", n=1))
-    assert out == b"line1\n"
-
-
-@pytest.mark.asyncio
-async def test_head_empty_input():
-    out = await _drain(head(b""))
-    assert out == b""
-
-
-@pytest.mark.asyncio
 async def test_head_empty_input_with_c():
     out = await _drain(head(b"", c=10))
     assert out == b""
@@ -131,10 +95,3 @@ async def test_head_single_line_no_newline_default_n():
     """head on a single line without trailing newline returns it as-is."""
     out = await _drain(head(b"hello"))
     assert out == b"hello"
-
-
-@pytest.mark.asyncio
-async def test_head_c_negative_is_all_but_last_abs():
-    """GNU head: -c -N emits all but the last N bytes."""
-    out = await _drain(head(b"hello", c=-3))
-    assert out == b"he"

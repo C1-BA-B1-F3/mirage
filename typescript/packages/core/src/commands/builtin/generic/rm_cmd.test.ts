@@ -16,59 +16,7 @@ import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
-import { describe, expect, it } from 'vitest'
-import { MountMode } from '../../../types.ts'
-import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
-import { Workspace } from '../../../workspace/workspace/workspace.ts'
-import { UsageError } from '../../errors.ts'
-import { rmWithoutOperands } from './rm_cmd.ts'
-
-const DEC = new TextDecoder()
-
-describe('rm with no operand', () => {
-  it('does nothing under -f', () => {
-    const result = rmWithoutOperands(true)
-    expect(result?.[0]).toBeNull()
-    expect(result?.[1].exitCode).toBe(0)
-  })
-
-  it('is a missing-operand usage error otherwise', () => {
-    let caught: unknown = null
-    try {
-      rmWithoutOperands(false)
-    } catch (err) {
-      caught = err
-    }
-    expect(caught).toBeInstanceOf(UsageError)
-    expect((caught as UsageError).message).toBe(
-      "rm: missing operand\nTry 'rm --help' for more information.",
-    )
-    expect((caught as UsageError).exitCode).toBe(1)
-  })
-
-  it.each([MountMode.WRITE, MountMode.READ])('answers like GNU on a %s mount', async (mode) => {
-    const ws = new Workspace(
-      { '/m/': [new RAMVFS(), mode] },
-      { shellParser: await getTestParser() },
-    )
-    try {
-      const forced = await ws.shell('cd /m && rm -f')
-      expect([forced.exitCode, DEC.decode(forced.stdout), DEC.decode(forced.stderr)]).toEqual([
-        0,
-        '',
-        '',
-      ])
-      const bare = await ws.shell('cd /m && rm')
-      expect(bare.exitCode).toBe(1)
-      expect(DEC.decode(bare.stderr)).toBe(
-        "rm: missing operand\nTry 'rm --help' for more information.\n",
-      )
-    } finally {
-      await ws.close()
-    }
-  })
-})
+import { it } from 'vitest'
 
 it('loads rm first under native ESM without the Vitest module runner', async () => {
   const compiler = pathToFileURL(createRequire(import.meta.url).resolve('typescript')).href

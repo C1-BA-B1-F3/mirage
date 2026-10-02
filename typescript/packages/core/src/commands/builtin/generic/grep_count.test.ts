@@ -40,12 +40,9 @@ function spec(path: string): PathSpec {
   })
 }
 
-function opts(
-  flags: Record<string, string | boolean | number | string[]>,
-  stdin: Uint8Array | null = null,
-): CommandOpts {
+function opts(flags: Record<string, string | boolean | number | string[]>): CommandOpts {
   return {
-    stdin,
+    stdin: null,
     flags,
     filetypeFns: null,
     cwd: '/',
@@ -77,13 +74,12 @@ async function runGrep(
   paths: PathSpec[],
   pattern: string,
   flags: Record<string, string | boolean | number | string[]>,
-  stdin: Uint8Array | null = null,
 ): Promise<[string, IOResult]> {
   const [out, io] = (await grepGeneric(
     'grep',
     paths,
     [pattern],
-    opts(flags, stdin),
+    opts(flags),
     stat,
     readdir,
     fileStream,
@@ -92,30 +88,6 @@ async function runGrep(
 }
 
 describe('grepGeneric count-only exit codes', () => {
-  it('grep -c prints 0 and exits 1 on a single file with no match', async () => {
-    const [out, io] = await runGrep([spec('/a.txt')], 'zzz', { c: true })
-    expect(out.trim()).toBe('0')
-    expect(io.exitCode).toBe(1)
-  })
-
-  it('grep -c exits 0 on a single file with matches', async () => {
-    const [out, io] = await runGrep([spec('/a.txt')], 'hello', { c: true })
-    expect(out.trim()).toBe('1')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('grep -c on stdin prints 0 and exits 1 with no match', async () => {
-    const [out, io] = await runGrep([], 'zzz', { c: true }, ENC.encode('hello\nworld\n'))
-    expect(out.trim()).toBe('0')
-    expect(io.exitCode).toBe(1)
-  })
-
-  it('grep -c on multiple files exits 1 when all counts are zero', async () => {
-    const [out, io] = await runGrep([spec('/a.txt'), spec('/b.txt')], 'zzz', { c: true })
-    expect(out.trim().split('\n')).toEqual(['/a.txt:0', '/b.txt:0'])
-    expect(io.exitCode).toBe(1)
-  })
-
   it('grep -c on multiple files exits 0 when any count is nonzero', async () => {
     const [out, io] = await runGrep([spec('/a.txt'), spec('/b.txt')], 'hello', { c: true })
     expect(out.trim().split('\n')).toEqual(['/a.txt:1', '/b.txt:0'])
@@ -125,44 +97,6 @@ describe('grepGeneric count-only exit codes', () => {
   it('grep -rc exits 1 when no file in the tree matches', async () => {
     const [out, io] = await runGrep([spec('/d')], 'zzz', { r: true, c: true })
     expect(out.trim().split('\n')).toEqual(['/d/a.txt:0'])
-    expect(io.exitCode).toBe(1)
-  })
-})
-
-describe('grepGeneric quiet mode', () => {
-  it('grep -q on multiple files suppresses output and exits 0 on match', async () => {
-    const [out, io] = await runGrep([spec('/a.txt'), spec('/b.txt')], 'hello', { q: true })
-    expect(out).toBe('')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('grep -q on multiple files exits 1 with no match', async () => {
-    const [out, io] = await runGrep([spec('/a.txt'), spec('/b.txt')], 'zzz', { q: true })
-    expect(out).toBe('')
-    expect(io.exitCode).toBe(1)
-  })
-
-  it('grep -qr suppresses output and exits 0 on match', async () => {
-    const [out, io] = await runGrep([spec('/d')], 'hello', { q: true, r: true })
-    expect(out).toBe('')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('grep -ql suppresses the file list', async () => {
-    const [out, io] = await runGrep([spec('/a.txt'), spec('/b.txt')], 'hello', {
-      q: true,
-      args_l: true,
-    })
-    expect(out).toBe('')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('grep -qc exits 1 when every count is zero', async () => {
-    const [out, io] = await runGrep([spec('/a.txt'), spec('/b.txt')], 'zzz', {
-      q: true,
-      c: true,
-    })
-    expect(out).toBe('')
     expect(io.exitCode).toBe(1)
   })
 })

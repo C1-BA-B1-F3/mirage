@@ -235,6 +235,24 @@
       "flags": [
         "from"
       ]
+    },
+    {
+      "id": "numfmt_iec_i_missing_i_names_a_multibyte_field",
+      "seq": 14102101,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "numfmt --from=iec-i '1Ké'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "numfmt: missing 'i' suffix in input: '1K\\303\\251' (e.g Ki/Mi/Gi)\n"
+      },
+      "flags": [
+        "from"
+      ]
     }
   ]
 }

@@ -209,7 +209,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -name data",
       "expect": {
@@ -242,7 +244,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/sub1 -name \"*.txt\" -print",
       "expect": {
@@ -276,7 +282,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/sub1 -name \"*.txt\" -print0",
       "expect": {
@@ -310,7 +320,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/sub1 -name \"*.txt\" -a -name \"inner*\"",
       "expect": {
@@ -344,7 +358,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/sub1 -name inner.txt -and -name \"*.txt\"",
       "expect": {
@@ -378,7 +396,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/sub1 -name \"*.txt\" -ls | awk '{print $NF}'",
       "expect": {
@@ -412,7 +434,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/del -name \"*.tmp\" -delete && ls /data/f4/del",
       "expect": {
@@ -446,7 +472,9 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "mkdir -p /data/f4/del2 && printf 'x\\n' > /data/f4/del2/g.tmp && find /data/f4/del2 -name \"*.tmp\" -delete -print && ls /data/f4/del2",
       "expect": {

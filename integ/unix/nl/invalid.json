@@ -3192,6 +3192,80 @@
       "flags": [
         "v"
       ]
+    },
+    {
+      "id": "nl_i_a_trailing_newline_is_refused",
+      "seq": 14102001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -i $'2\\n'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "nl: invalid line number increment: '2\\n'\n"
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "nl_l_a_trailing_newline_is_refused",
+      "seq": 14102002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -l $'2\\n'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "nl: invalid line number of blank lines: '2\\n'\n"
+      },
+      "flags": [
+        "l"
+      ]
     }
   ]
 }

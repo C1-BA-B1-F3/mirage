@@ -109,23 +109,3 @@ export async function seedChannel(
     }
   }
 }
-
-export async function seedUser(
-  index: RAMIndexCacheStore,
-  prefix: string,
-  filename: string,
-  userId: string,
-): Promise<void> {
-  const usersKey = `${prefix}/users`
-  await index.setDir(usersKey, [
-    [
-      filename,
-      new IndexEntry({
-        id: userId,
-        name: filename.split('__')[0] ?? filename,
-        resourceType: 'slack/user',
-        vfsName: filename,
-      }),
-    ],
-  ])
-}

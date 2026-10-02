@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/ptp/sub && printf x>/data/ptp/keep.py && printf y>/data/ptp/skip.txt && printf z>/data/ptp/sub/inner.py && tree -P '*.py' /data/ptp",
       "expect": {

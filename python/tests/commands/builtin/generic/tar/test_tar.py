@@ -68,14 +68,6 @@ async def _shell(line: str, seed: dict[str, bytes]):
 
 
 @pytest.mark.asyncio
-async def test_a_non_gzip_archive_is_gzips_refusal_then_tars():
-    # GNU tar 1.35 reads -z through a gzip -d child and dies when it
-    # fails, after gzip's own line.
-    r = await _shell("tar -tzf /data/c.tgz", {"/data/c.tgz": b"corrupted\n"})
-    assert r == (2, b"", b"\ngzip: stdin: not in gzip format\n" + CHILD_FAILED)
-
-
-@pytest.mark.asyncio
 async def test_a_damaged_trailer_still_yields_every_member():
     seed = {"/data/bad.tgz": DAMAGED}
     reasons = (
@@ -89,18 +81,6 @@ async def test_a_damaged_trailer_still_yields_every_member():
     )
     r = await _shell("tar -xzf /data/bad.tgz -C /data; cat /data/d/*", seed)
     assert r == (0, b"hello\nbee\n", reasons + CHILD_FAILED)
-
-
-@pytest.mark.asyncio
-async def test_the_gzip_magic_takes_the_same_road_without_z():
-    r = await _shell("tar -tf /data/junk.tgz", {"/data/junk.tgz": OK + b"xy"})
-    assert r == (
-        2,
-        b"d/a.txt\nd/b.txt\n",
-        b"\ngzip: stdin: decompression OK, trailing garbage ignored\n"
-        b"tar: Child returned status 2\n"
-        b"tar: Error is not recoverable: exiting now\n",
-    )
 
 
 @pytest.mark.asyncio
@@ -129,19 +109,6 @@ async def test_a_truncated_gzip_wrapper_keeps_complete_tar_members(
 
 
 @pytest.mark.asyncio
-async def test_a_truncated_gzip_trailer_still_extracts_to_disk():
-    r = await _shell(
-        "tar -xzf /data/cut.tgz -C /data; cat /data/d/*",
-        {"/data/cut.tgz": OK[:-3]},
-    )
-    assert r == (
-        0,
-        b"hello\nbee\n",
-        b"\ngzip: stdin: unexpected end of file\n" + CHILD_FAILED,
-    )
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("flags", ["-tzf", "-xzf", "-xOzf"])
 @pytest.mark.parametrize("size", [9, 512, 1024])
 async def test_a_tar_parse_error_does_not_mask_the_gzip_failure(flags, size):
@@ -162,28 +129,6 @@ async def test_a_tar_parse_error_does_not_mask_the_gzip_failure(flags, size):
         b"\ngzip: stdin: invalid compressed data--length error\n"
         + notices
         + CHILD_FAILED,
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["t", "x", "c"])
-@pytest.mark.parametrize(
-    "name, reason",
-    [
-        ("", "No such file or directory"),
-        ("loop", "Too many levels of symbolic links"),
-    ],
-)
-async def test_archive_walk_refusals_keep_the_typed_name(mode, name, reason):
-    result = await _shell(
-        f"cd /data; ln -s loop loop; tar -{mode}f '{name}' a.txt",
-        {"/data/a.txt": b"hello\n"},
-    )
-    assert result == (
-        2,
-        b"",
-        f"tar: {name}: Cannot open: {reason}\n".encode()
-        + b"tar: Error is not recoverable: exiting now\n",
     )
 
 

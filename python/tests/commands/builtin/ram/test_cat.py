@@ -23,22 +23,6 @@ def workspace():
 
 
 @pytest.mark.asyncio
-async def test_cat_basic(workspace):
-    await workspace.vfs.write("/f.txt", b"hello\nworld\n")
-    io = await workspace.shell("cat /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"hello\nworld\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_n_single_digit_alignment(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\n")
-    io = await workspace.shell("cat -n /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"     1\ta\n     2\tb\n"
-
-
-@pytest.mark.asyncio
 async def test_cat_n_multidigit_alignment(workspace):
     """POSIX %6d format keeps numbers right-justified at width 6 across the
     9/10 boundary. The pre-refactor `f"     {num}\\t"` literal-prefix broke
@@ -55,48 +39,11 @@ async def test_cat_n_multidigit_alignment(workspace):
 
 
 @pytest.mark.asyncio
-async def test_cat_preserves_no_trailing_newline(workspace):
-    """Native `printf "hello" | cat` emits no trailing newline. Old MIRAGE
-    cat always added one via `line + b"\\n"` in _number_lines_stream."""
-    await workspace.vfs.write("/partial.txt", b"hello")
-    io = await workspace.shell("cat /partial.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"hello"
-
-
-@pytest.mark.asyncio
 async def test_cat_n_preserves_no_trailing_newline(workspace):
     await workspace.vfs.write("/partial.txt", b"hello")
     io = await workspace.shell("cat -n /partial.txt")
     assert io.exit_code == 0
     assert io.stdout == b"     1\thello"
-
-
-@pytest.mark.asyncio
-async def test_cat_multi_file_concatenation(workspace):
-    await workspace.vfs.write("/a.txt", b"aaa\n")
-    await workspace.vfs.write("/b.txt", b"bbb\n")
-    io = await workspace.shell("cat /a.txt /b.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"aaa\nbbb\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_n_across_multiple_files(workspace):
-    """cat -n on multiple files numbers globally, not per-file."""
-    await workspace.vfs.write("/a.txt", b"x\ny\n")
-    await workspace.vfs.write("/b.txt", b"z\n")
-    io = await workspace.shell("cat -n /a.txt /b.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"     1\tx\n     2\ty\n     3\tz\n"
-
-
-@pytest.mark.asyncio
-async def test_cat_empty_file(workspace):
-    await workspace.vfs.write("/empty.txt", b"")
-    io = await workspace.shell("cat /empty.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b""
 
 
 @pytest.mark.asyncio

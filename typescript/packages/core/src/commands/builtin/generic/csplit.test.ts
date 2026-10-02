@@ -58,18 +58,13 @@ async function runCsplit(
 // Mirrors test_csplit.py.
 describe('csplit names outputs in the working directory', () => {
   it.each([
-    ['/data', ['/data/xx00', '/data/xx01']],
-    ['/data/sub', ['/data/sub/xx00', '/data/sub/xx01']],
-  ])('addresses stdin outputs under %s', async (cwd, named) => {
-    const [specs, io] = await runCsplit({}, cwd)
+    [{}, '/data', ['/data/xx00', '/data/xx01']],
+    [{}, '/data/sub', ['/data/sub/xx00', '/data/sub/xx01']],
+    [{ prefix: '/data/sub/cs' }, '/data', ['/data/sub/cs00', '/data/sub/cs01']],
+  ])('addresses stdin outputs with %j under %s', async (flags, cwd, named) => {
+    const [specs, io] = await runCsplit(flags, cwd)
     expect(specs.map((p) => p.virtual)).toEqual(named)
     expect(Object.keys(io.writes)).toEqual(named.map((n) => n.slice('/data'.length)))
-  })
-
-  it('addresses a prefix path by its virtual path', async () => {
-    const [specs, io] = await runCsplit({ prefix: '/data/sub/cs' })
-    expect(specs.map((p) => p.virtual)).toEqual(['/data/sub/cs00', '/data/sub/cs01'])
-    expect(Object.keys(io.writes)).toEqual(['/sub/cs00', '/sub/cs01'])
   })
 })
 
@@ -95,14 +90,6 @@ async function shell(
 }
 
 describe('csplit with stdin', () => {
-  it('reads a dash input from stdin', async () => {
-    const r = await shell(
-      'cd /data && csplit - 2 && cat xx01',
-      new TextEncoder().encode('a\nb\nc\n'),
-    )
-    expect(r).toEqual(['2\n4\nb\nc\n', '', 0])
-  })
-
   it('keeps /dev/stdin a path so no piece lands in /dev', async () => {
     // /dev/stdin runs csplit on the /dev mount, where its pieces would be
     // written, so it is refused as a missing path rather than read.

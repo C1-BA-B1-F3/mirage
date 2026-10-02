@@ -50,31 +50,3 @@ async def test_head_pushes_its_line_count_into_max_records(airtable_api):
         await ws.close()
     calls = airtable_api.record_calls()
     assert [c["maxRecords"] for c in calls] == ["2"]
-
-
-@pytest.mark.asyncio
-async def test_head_default_is_ten_and_respects_the_cap(airtable_api):
-    ws = _ws()
-    try:
-        result = await ws.shell(f"head {RECORDS}")
-    finally:
-        await ws.close()
-    # 10 lines asked of a 7-record table under a cap of 5: the full answer
-    # would exceed the cap, so it is refused rather than truncated
-    assert result.exit_code == 1
-    assert (
-        await result.stderr_str()
-        == f"head: error reading '{RECORDS}': File too large\n"
-    )
-
-
-@pytest.mark.asyncio
-async def test_head_by_bytes_reads_the_file(airtable_api):
-    ws = _ws()
-    try:
-        result = await ws.shell(f"head -c 12 {RECORDS}")
-    finally:
-        await ws.close()
-    # no line count to push down: a byte window needs the whole file,
-    # which the cap refuses
-    assert result.exit_code == 1

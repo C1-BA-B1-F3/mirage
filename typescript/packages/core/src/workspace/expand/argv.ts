@@ -191,15 +191,11 @@ export async function expandArgv(
   // So does a command a path-scoped rule names: the admission gate reads
   // the words before the backend would resolve them, and a pattern that
   // only later matches under the rule's path would pass a gate its
-  // matches fail. And so does a pattern that walks a `.` or `..`, which no
-  // backend key holds.
+  // matches fail.
   const globOpts = globOptions(session)
   let words =
     !refused &&
-    (policy === WordPolicy.SHELL ||
-      globNeedsShell(globOpts) ||
-      scopesPaths(session.commands, name) ||
-      classified.some((w) => w instanceof PathSpec && w.pattern !== null && w.dotted !== null))
+    (policy === WordPolicy.SHELL || globNeedsShell(globOpts) || scopesPaths(session.commands, name))
       ? await resolveGlobs(classified, registry, false, namespace, globOpts)
       : // A pattern still owes its backend a resolution, so it travels
         // marked and the marks come off there; every other word is done

@@ -958,10 +958,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "rg --sort path -e top -e deep /data; rg --sortr path -e top -e deep /data; rg --null --files /data | tr '\\0\\n' '|#'; echo; rg --null -l -e top -e deep /data | tr '\\0\\n' '|#'; echo; rg --null-data deep /data | tr '\\0\\n' '|#'; echo; printf 'pad\\n\\n' > /data/pad.txt; rg --heading -e top -e deep -e '^$' /data; grep -rh '^$' /data | wc -l; rm /data/pad.txt",
+      "command": "rg --sort path -e top -e deep /data; rg --sortr path -e top -e deep /data",
       "expect": {
         "exit": 0,
-        "stdout": "/data/inner/leaf.txt:deep\n/data/top.txt:top\n/data/top.txt:top\n/data/inner/leaf.txt:deep\n/data/top.txt|/data/inner/leaf.txt|\n/data/top.txt|/data/inner/leaf.txt|\n/data/inner/leaf.txt:deep#|\n/data/pad.txt\n\n\n/data/top.txt\ntop\n\n/data/inner/leaf.txt\ndeep\n1\n",
+        "stdout": "/data/inner/leaf.txt:deep\n/data/top.txt:top\n/data/top.txt:top\n/data/inner/leaf.txt:deep\n",
         "stderr": ""
       }
     },
@@ -1015,59 +1015,6 @@
         "exit": 1,
         "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
         "stderr": "find: '': No such file or directory\n"
-      }
-    },
-    {
-      "id": "nest_rg_sort_explicit_mount_operands",
-      "seq": 950084,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "rg --files --sortr path /data/inner/leaf.txt /data/top.txt; rg --sortr path -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sort modified -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sortr modified -l -e top -e deep /data/top.txt /data/inner/leaf.txt; rg --one-file-system --sort path -l -e top -e deep /data /data/inner/leaf.txt",
-      "expect": {
-        "exit": 0,
-        "stdout": "/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/top.txt\n/data/inner/leaf.txt\n",
-        "stderr": ""
-      },
-      "note": "One invocation sorts across explicit operands owned by different mounts; timestamps established by nest_rg_time_sort_spans_mounts."
-    },
-    {
-      "id": "nest_realpath_relative_operand",
-      "seq": 950085,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "cd /data && realpath -m /data/file /data/inner/file relative.txt",
-      "expect": {
-        "exit": 0,
-        "stdout": "/data/file\n/data/inner/file\n/data/relative.txt\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "nest_realpath_operand_order",
-      "seq": 950086,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "cd /data && realpath -m relative.txt /data/file other.txt /data/inner/file relative.txt",
-      "expect": {
-        "exit": 0,
-        "stdout": "/data/relative.txt\n/data/file\n/data/other.txt\n/data/inner/file\n/data/relative.txt\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "nest_realpath_empty_operand",
-      "seq": 950087,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "cd /data && realpath -m /data/file '' /data/inner/file relative.txt",
-      "expect": {
-        "exit": 1,
-        "stdout": "/data/file\n/data/inner/file\n/data/relative.txt\n",
-        "stderr": "realpath: '': No such file or directory\n"
       }
     }
   ]

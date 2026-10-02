@@ -25,10 +25,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo s*/x.txt; (mkdir -p /data/gdot/s/t && echo q > /data/gdot/f && echo h > /data/gdot/s/t/h && ln -s /data/gdot/s/t /data/gdot/lt && echo /data/gdot/*/../f /data/gdot/*/t/.. /data/gdot/[ls]*/./h && cd /data/gdot && cat */../f && ls -d s/*/.. lt/.. && echo /data/gdot/*/nope/..; rm -r /data/gdot)",
+      "command": "echo s*/x.txt",
       "expect": {
         "exit": 0,
-        "stdout": "sea/x.txt sub/x.txt\n/data/gdot/s/../f /data/gdot/s/t/.. /data/gdot/lt/./h\nq\nlt/..\ns/t/..\n/data/gdot/*/nope/..\n",
+        "stdout": "sea/x.txt sub/x.txt\n",
         "stderr": ""
       }
     }

@@ -33,7 +33,6 @@ def to_pathspec(path: Any, prefix: str = "") -> PathSpec:
 def mount_parent_readdir(
     readdir: Callable[[str | PathSpec], Awaitable[list[str]]],
     mounts: MountView | None,
-    home: str,
 ) -> Callable[[str | PathSpec], Awaitable[list[str]]]:
     """Wrap a walker's readdir so a mount parent lists as empty, not absent.
 
@@ -62,29 +61,19 @@ def mount_parent_readdir(
     otherwise absent parent has to keep reading as absence, the same
     way the mount itself does.
 
-    A directory a mount below this one serves lists as empty too,
-    whatever the backend holds there: the mount shadows those keys, as a
-    kernel mount does, and the fan-out walks it in a run of its own.
-
     Args:
         readdir (Callable): the bound readdir the walk uses.
         mounts (MountView | None): the mount boundaries; without them
             there is nothing to check and the readdir passes through.
-        home (str): the prefix of the mount the readdir is bound to.
     """
     if mounts is None:
         return readdir
 
     async def listing(path: str | PathSpec) -> list[str]:
-        virtual = path.virtual if isinstance(path, PathSpec) else path
-        if any(
-            virtual == root or virtual.startswith(root.rstrip("/") + "/")
-            for root in mounts.descendants(home or "/")
-        ):
-            return []
         try:
             return await readdir(path)
         except MISS_ERRORS:
+            virtual = path.virtual if isinstance(path, PathSpec) else path
             if mounts.visible_descendants(virtual):
                 return []
             raise

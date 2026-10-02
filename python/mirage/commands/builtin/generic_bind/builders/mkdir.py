@@ -172,8 +172,7 @@ async def _make_walked(
         links (LinkView | None): the namespace's symlink facts.
     """
     root = mount_prefix_of(path.virtual, path.vfs_path).rstrip("/")
-    follow = links.resolve if links is not None else None
-    for node, spelled in walk_nodes(dotted, path.raw_path, follow):
+    for node, spelled in walk_nodes(dotted, path.raw_path):
         try:
             why = await _enter_node(
                 mkdir_fn, accessor, path, node, root, links

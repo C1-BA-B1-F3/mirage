@@ -198,16 +198,8 @@ SPECS: dict[str, CommandSpec] = {
     ),
     "realpath": CommandSpec(
         options=(
-            Option(short="-e", long="--canonicalize-existing"),
-            Option(short="-m", long="--canonicalize-missing"),
-            Option(short="-L", long="--logical"),
-            Option(short="-P", long="--physical"),
-            Option(short="-q", long="--quiet"),
-            Option(long="--relative-to", type="str"),
-            Option(long="--relative-base", type="str"),
-            Option(short="-s", long="--strip"),
-            Option(long="--no-symlinks"),
-            Option(short="-z", long="--zero"),
+            Option(short="-e"),
+            Option(short="-m"),
         ),
         rest=Operand(type="path"),
     ),

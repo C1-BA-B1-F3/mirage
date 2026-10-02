@@ -248,7 +248,7 @@ export async function grepGeneric(
   }
   const prefix = mountPrefixOf(first.virtual, first.vfsPath)
   const mounts = opts.ns?.mounts
-  const rd = mountParentReaddir((p: string) => readdir(makeSpec(p, first)), mounts, prefix)
+  const rd = mountParentReaddir((p: string) => readdir(makeSpec(p, first)), mounts)
   const st = mountParentStat((p: string) => stat(makeSpec(p, first)), mounts)
   if (!f.recursive && paths.length === 1 && !(f.filesOnly || f.quiet || f.filesWithoutMatch)) {
     try {

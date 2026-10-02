@@ -12,15 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { canonicalize, doorStat } from '../../../../commands/builtin/generic/realpath.ts'
 import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { PathSpec } from '../../../../types.ts'
+import { CycleError, norm } from '../../../../utils/path.ts'
 import { PolicyDenied } from '../../../../policy/index.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import type { SessionState } from '../../../session/session.ts'
-import { fail, operandText, result, splitFlags } from '../shared.ts'
-import { operandAbs } from './ln.ts'
+import { absPath, fail, result, splitFlags } from '../shared.ts'
+import { pathExists } from '../../../mount/namespace/probe.ts'
 import type { Result } from '../types.ts'
 
 // Any filesystem answer other than a target: a refusal (session view or
@@ -50,45 +50,78 @@ export async function handleReadlink(
   if (operands.length === 0) {
     return fail('readlink', 'readlink: missing operand\n')
   }
-  // The last of -e, -f and -m wins, as in GNU readlink.
-  const typed = args
-    .slice(0, args.length - operands.length)
-    .map(operandText)
-    .join('')
-  const last = typed.match(/[efm]/g)?.pop()
-  const mode = last === undefined ? null : last === 'f' ? '' : last
-  const follow = (v: string): string => namespace.follow(v)
+  const canonical = flags.has('f') || flags.has('e') || flags.has('m')
+  // -m alone canonicalizes without asking for anything to be there, so it
+  // is the one mode whose path is never walked.
+  const walks = !canonical || flags.has('e') || flags.has('f')
+  const walker = dispatchStat(dispatch)
   const lines: string[] = []
   let exitCode = 0
   for (const op of operands) {
-    const absOp = operandAbs(namespace, op, session.cwd)
+    const absOp = absPath(op, session.cwd)
     const spec = typedSpec(op, session.cwd)
-    // The link entry is namespace state behind the op door: session grants
-    // and admission policies decide whether this session may read the
-    // target at all, so a link operand clears it even under -f, -e and -m.
-    // EINVAL (not a link), a refusal and a failed walk all land on GNU
-    // readlink's silent exit 1.
-    try {
-      if (mode !== null) {
-        if (namespace.isLink(absOp)) await dispatch('readlink', PathSpec.fromStrPath(absOp))
-        lines.push(
-          await canonicalize(spec.rawPath, session.cwd, mode, false, follow, doorStat(dispatch)),
-        )
-        continue
+    // The walk refused the operand before readlink ran: the empty name
+    // answers ENOENT in every mode, a link loop in every mode but -m,
+    // which leaves it unresolved as spelled (coreutils 9.7).
+    if (spec.walkError === 'ENOENT' || (spec.walkError !== null && walks)) {
+      exitCode = 1
+      continue
+    }
+    if (walks && (await dotRefusal(walker, spec)) !== null) {
+      exitCode = 1
+      continue
+    }
+    if (canonical) {
+      // -f/-e/-m canonicalize: resolve every symlink (including a trailing
+      // one) and normalize the path, GNU realpath-style. A link operand
+      // still clears the op door first: -m probes nothing, so without
+      // this a scoped session read an ungranted link's target out of
+      // the resolved path.
+      if (namespace.isLink(absOp)) {
+        try {
+          await dispatch('readlink', PathSpec.fromStrPath(absOp))
+        } catch (err) {
+          if (!readlinkRefused(err)) throw err
+          exitCode = 1
+          continue
+        }
       }
-      if (
-        spec.walkError !== null ||
-        (await dotRefusal(dispatchStat(dispatch), spec, follow)) !== null
-      ) {
+      let resolved: string
+      try {
+        resolved = norm(namespace.follow(absOp))
+      } catch (err) {
+        if (!(err instanceof CycleError)) throw err
+        if (walks) {
+          exitCode = 1
+          continue
+        }
+        resolved = norm(absOp)
+      }
+      const probe = flags.has('e')
+        ? resolved
+        : flags.has('f')
+          ? resolved.slice(0, resolved.lastIndexOf('/')) || '/'
+          : null
+      if (probe !== null && !(await pathExists(dispatch, probe))) {
         exitCode = 1
         continue
       }
+      lines.push(resolved)
+      continue
+    }
+    // The link entry is namespace state behind the op door: session
+    // grants and admission policies decide whether this session may
+    // read the target at all.
+    let target: string
+    try {
       const [found] = await dispatch('readlink', PathSpec.fromStrPath(absOp))
-      lines.push(found as string)
+      target = found as string
     } catch (err) {
       if (!readlinkRefused(err)) throw err
       exitCode = 1
+      continue
     }
+    lines.push(target)
   }
   if (lines.length === 0) return result('readlink', { exitCode })
   const text = flags.has('n') ? lines.join('') : lines.map((l) => l + '\n').join('')

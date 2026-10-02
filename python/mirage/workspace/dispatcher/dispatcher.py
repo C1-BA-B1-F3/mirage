@@ -15,7 +15,6 @@
 import errno
 import functools
 import os
-import posixpath
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -25,7 +24,7 @@ from typing import Any
 from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
-from mirage.commands.builtin.utils.paths import dot_refusal, walk_spelling
+from mirage.commands.builtin.utils.paths import dot_refusal
 from mirage.context import (
     get_current_session,
     hidden_paths_intersect,
@@ -784,13 +783,10 @@ class Dispatcher:
             DotWalkLoop: when a link above the name loops (ELOOP), as the
                 OSError every caller's per-operand catch words.
         """
-        spelled = walk_spelling(path, self._namespace.follow)
         try:
-            walked = self._namespace.follow_parent(spelled)
+            walked = self._namespace.follow_parent(path.virtual)
         except CycleError:
             raise eloop(path) from None
-        if spelled != path.virtual:
-            walked = posixpath.normpath(walked)
         if walked == path.virtual:
             return path
         if not path_allowed(walked):

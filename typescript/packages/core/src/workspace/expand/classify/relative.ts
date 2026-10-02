@@ -25,8 +25,9 @@ import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
  * path: `virtual` resolves the pair to an absolute path, `rawPath`
  * keeps the typed spelling for display, and `dotted` the spelling a walk
  * proves when the word steps through a name with `.` or `..`. Glob chars
- * in the word make a pattern spec (unresolved), its matches respelled from
- * the walk; words whose resolved path has no mount stay plain text.
+ * in the word make a pattern spec (unresolved), whose dots stay textual as
+ * its matches are respelled; words whose resolved path has no mount stay
+ * plain text.
  */
 export function relativeSpec(
   word: string,
@@ -44,7 +45,6 @@ export function relativeSpec(
       pattern: path.slice(lastSlash + 1),
       resolved: false,
       rawPath: word,
-      dotted: dottedSpelling(word, cwd),
     })
   }
   // The empty name joins onto the directory as the directory itself, a

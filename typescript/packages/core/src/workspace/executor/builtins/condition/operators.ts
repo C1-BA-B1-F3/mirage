@@ -18,10 +18,9 @@ import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import type { FileStat } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
-import { CycleError, dottedSpelling, resolvePath, resolveSymlinks } from '../../../../utils/path.ts'
+import { CycleError, resolvePath, resolveSymlinks } from '../../../../utils/path.ts'
 import { isoTimestamp } from '../../../../utils/dates.ts'
 import { isEfbig } from '../../../../utils/errors.ts'
-import { operandAbs } from '../links/index.ts'
 import { resolvePathStat } from '../../../mount/namespace/probe.ts'
 import { toScope, scopePath } from '../scope.ts'
 import { elementIsSet } from '../../../session/elements.ts'
@@ -33,10 +32,8 @@ import { rstripSlash } from '../../../../utils/slash.ts'
 /** Resolve a file operand to an addressable scope. */
 function operandScope(ctx: CondContext, val: string | PathSpec): PathSpec {
   if (val instanceof PathSpec) return val
-  const resolved = resolveSymlinks(
-    dottedSpelling(val, ctx.session.cwd) ?? resolvePath(val, ctx.session.cwd),
-    ctx.namespace.symlinkTargets(),
-  )
+  let resolved = resolvePath(val, ctx.session.cwd)
+  resolved = resolveSymlinks(resolved, ctx.namespace.symlinkTargets())
   return toScope(resolved)
 }
 
@@ -53,11 +50,7 @@ async function pathKind(
   // A path whose `.` and `..` do not resolve names nothing, which is what
   // every file test reads as false.
   const walk = typedSpec(val, ctx.session.cwd)
-  if (
-    (await dotRefusal(dispatchStat(ctx.dispatch), walk, (v) => ctx.namespace.follow(v))) !== null
-  ) {
-    return [null, null]
-  }
+  if ((await dotRefusal(dispatchStat(ctx.dispatch), walk)) !== null) return [null, null]
   let scope: PathSpec
   try {
     scope = operandScope(ctx, val)
@@ -96,7 +89,8 @@ export async function applyUnary(
     }
   }
   if (op === '-L' || op === '-h') {
-    return ctx.namespace.isLink(operandAbs(ctx.namespace, val, ctx.session.cwd))
+    const resolved = resolvePath(text, ctx.session.cwd)
+    return ctx.namespace.isLink(resolved)
   }
   if (FILE_UNARY.has(op)) {
     if (!(val instanceof PathSpec) && text === '') return false

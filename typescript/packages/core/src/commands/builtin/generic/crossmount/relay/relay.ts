@@ -29,19 +29,9 @@ import { runTar } from './tar.ts'
 import { runUnzip } from './unzip.ts'
 import { runWc } from './wc.ts'
 import { runZip } from './zip_cmd.ts'
-import { GREP_BUILDER } from '../../../generic_bind/builders/grep.ts'
-import { RG_BUILDER } from '../../../generic_bind/builders/rg.ts'
-import { REALPATH_BUILDER } from '../../../generic_bind/builders/realpath.ts'
-import { runDispatch } from '../../../generic_bind/dispatch.ts'
 import { Cmd, type CrossResult, type DispatchFn, type RunSingle } from '../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 import type { NamespaceView, SessionView } from '../../../../../ops/types.ts'
-
-export const DISPATCH_BUILDERS = new Map([
-  [Cmd.GREP, GREP_BUILDER],
-  [Cmd.RG, RG_BUILDER],
-  [Cmd.REALPATH, REALPATH_BUILDER],
-])
 
 // Run a command whose work must see every operand at once. Pure wiring:
 // every operand is read or written through dispatch primitives on its owning
@@ -89,9 +79,5 @@ export async function runRelay(
   if (cmdName === Cmd.TAR) return runTar(scopes, textArgs, flagKwargs, dispatch, ns, stdin)
   if (cmdName === Cmd.UNZIP) return runUnzip(scopes, textArgs, flagKwargs, dispatch)
   if (cmdName === Cmd.ZIP) return runZip(scopes, flagKwargs, dispatch, ns)
-  const builder = DISPATCH_BUILDERS.get(cmdName)
-  if (builder !== undefined) {
-    return runDispatch(builder, scopes, textArgs, flagKwargs, dispatch, cwd, ns, stdin)
-  }
   return runCmp(scopes, textArgs, flagKwargs, dispatch, stdin)
 }

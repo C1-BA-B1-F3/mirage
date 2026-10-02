@@ -34,28 +34,11 @@ from mirage.commands.builtin.generic.crossmount.types import (
     CrossResult,
     RunSingle,
 )
-from mirage.commands.builtin.generic_bind.adapter import Builder
-from mirage.commands.builtin.generic_bind.builders.grep import (
-    BUILDER as GREP_BUILDER,
-)
-from mirage.commands.builtin.generic_bind.builders.realpath import (
-    BUILDER as REALPATH_BUILDER,
-)
-from mirage.commands.builtin.generic_bind.builders.rg import (
-    BUILDER as RG_BUILDER,
-)
-from mirage.commands.builtin.generic_bind.dispatch import run_dispatch
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource
 from mirage.ops.types import NamespaceView, SessionView
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
-
-DISPATCH_BUILDERS: dict[str, Builder] = {
-    Cmd.GREP: GREP_BUILDER,
-    Cmd.RG: RG_BUILDER,
-    Cmd.REALPATH: REALPATH_BUILDER,
-}
 
 
 async def run_relay(
@@ -84,7 +67,7 @@ async def run_relay(
 
     Args:
         cmd_name (str): One of cp, mv, diff, cmp, paste, comm, join, tar,
-            unzip, zip, ls, sort, wc, awk, sed, realpath.
+            unzip, zip, ls, sort, wc, awk, sed.
         scopes (list[PathSpec]): Path operands in command-line order.
         text_args (list[str]): Positional text operands (tar's member
             selectors, cmp's skips; empty for the transfer and merge
@@ -141,15 +124,4 @@ async def run_relay(
         return await run_unzip(scopes, text_args, flag_kwargs, dispatch)
     if cmd_name == Cmd.ZIP:
         return await run_zip(scopes, flag_kwargs, dispatch, ns)
-    if cmd_name in DISPATCH_BUILDERS:
-        return await run_dispatch(
-            DISPATCH_BUILDERS[cmd_name],
-            scopes,
-            text_args,
-            flag_kwargs,
-            dispatch,
-            cwd,
-            ns,
-            stdin,
-        )
     return await run_cmp(scopes, text_args, flag_kwargs, dispatch, stdin)

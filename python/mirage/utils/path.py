@@ -12,10 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import errno
-import os
 import posixpath
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 
 from mirage.utils.fnmatch import fnmatch
 
@@ -184,9 +182,7 @@ def dotted_spelling(word: str, base: str = "/") -> str | None:
     return start.rstrip("/") + "/" + "/".join(rest)
 
 
-def dot_prefixes(
-    dotted: str, follow: Callable[[str], str] | None = None
-) -> list[str]:
+def dot_prefixes(dotted: str) -> list[str]:
     """The directories a walk of ``dotted`` has to find, in walk order.
 
     Whatever stands in front of a ``.`` or ``..`` is where it resolves,
@@ -195,15 +191,11 @@ def dot_prefixes(
 
     Args:
         dotted (str): an absolute spelling from :func:`dotted_spelling`.
-        follow (Callable[[str], str] | None): the namespace's link
-            resolution, None while it holds no link.
     """
     current = "/"
     found: list[str] = []
     for part in (p for p in dotted.split("/") if p):
         if part in _DOTS:
-            if follow is not None:
-                current = follow(current)
             if current != "/" and current not in found:
                 found.append(current)
             if part == "..":
@@ -213,9 +205,7 @@ def dot_prefixes(
     return found
 
 
-def walk_nodes(
-    dotted: str, raw: str, follow: Callable[[str], str] | None = None
-) -> list[tuple[str, str]]:
+def walk_nodes(dotted: str, raw: str) -> list[tuple[str, str]]:
     """The intermediate names a walk enters, each with its spelling.
 
     What ``mkdir -p`` creates on the way and names when it cannot: GNU
@@ -228,8 +218,6 @@ def walk_nodes(
     Args:
         dotted (str): an absolute spelling from :func:`dotted_spelling`.
         raw (str): the operand as typed, whose prefixes spell each name.
-        follow (Callable[[str], str] | None): the namespace's link
-            resolution, None while it holds no link.
     """
     typed = [part for part in raw.split("/") if part]
     lead = 0
@@ -243,11 +231,6 @@ def walk_nodes(
     for index in range(lead, len(typed) - 1):
         part = typed[index]
         if part in _DOTS:
-            if follow is not None:
-                try:
-                    current = follow(current)
-                except CycleError:
-                    return entered
             current = parent(current) if part == ".." else current
             continue
         current = current.rstrip("/") + "/" + part
@@ -258,18 +241,13 @@ def walk_nodes(
 MAX_SYMLINK_HOPS = 40
 
 
-class CycleError(OSError):
+class CycleError(Exception):
     """Raised when symlink resolution exceeds the maximum hop count.
 
     Mirrors POSIX ELOOP (a loop such as ``a -> b -> a`` or an unbounded
-    expansion such as ``a -> a/x``) as the OSError the kernel raises.
-
-    Args:
-        path (str): the path whose resolution looped.
+    expansion such as ``a -> a/x``). Command boundaries render this as the
+    GNU ``strerror`` text "Too many levels of symbolic links".
     """
-
-    def __init__(self, path: str) -> None:
-        super().__init__(errno.ELOOP, os.strerror(errno.ELOOP), path)
 
 
 def resolve_symlinks(path: str, links: dict[str, str]) -> str:

@@ -24,12 +24,7 @@ from mirage.shell.errors import ArithError, ExitSignal
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import iso_timestamp
 from mirage.utils.errors import FileTooLargeError
-from mirage.utils.path import (
-    CycleError,
-    dotted_spelling,
-    resolve_path,
-    resolve_symlinks,
-)
+from mirage.utils.path import CycleError, resolve_path, resolve_symlinks
 from mirage.workspace.executor.builtins.condition.constants import (
     FILE_PAIR_BINARY,
     FILE_UNARY,
@@ -40,7 +35,6 @@ from mirage.workspace.executor.builtins.condition.types import (
     CondContext,
     CondError,
 )
-from mirage.workspace.executor.builtins.links import operand_abs
 from mirage.workspace.executor.builtins.scope import _scope_path, _to_scope
 from mirage.workspace.mount.namespace.probe import resolve_path_stat
 from mirage.workspace.session.elements import element_is_set
@@ -55,11 +49,8 @@ def operand_scope(ctx: CondContext, val: str | PathSpec) -> PathSpec:
     """
     if isinstance(val, PathSpec):
         return val
-    resolved = resolve_symlinks(
-        dotted_spelling(val, ctx.session.cwd)
-        or resolve_path(val, ctx.session.cwd),
-        ctx.namespace.symlink_targets(),
-    )
+    resolved = resolve_path(val, ctx.session.cwd)
+    resolved = resolve_symlinks(resolved, ctx.namespace.symlink_targets())
     return _to_scope(resolved)
 
 
@@ -79,9 +70,7 @@ async def path_kind(
     """
     walk = typed_spec(val, ctx.session.cwd)
     if (
-        await dot_refusal(
-            partial(dispatch_stat, ctx.dispatch), walk, ctx.namespace.follow
-        )
+        await dot_refusal(partial(dispatch_stat, ctx.dispatch), walk)
         is not None
     ):
         # A path whose `.` and `..` do not resolve names nothing, which
@@ -128,9 +117,8 @@ async def apply_unary(ctx: CondContext, op: str, val: str | PathSpec) -> bool:
                 1, stderr=f"bash: {exc}\n".encode(), contained_code=1
             ) from exc
     if op in ("-L", "-h"):
-        return ctx.namespace.is_link(
-            operand_abs(ctx.namespace, val, ctx.session.cwd)
-        )
+        resolved = resolve_path(text, ctx.session.cwd)
+        return ctx.namespace.is_link(resolved)
     if op in FILE_UNARY:
         if not isinstance(val, PathSpec) and not text:
             return False

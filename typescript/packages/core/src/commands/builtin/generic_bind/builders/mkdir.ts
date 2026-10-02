@@ -93,8 +93,7 @@ async function makeWalked<A extends Accessor>(
   links: LinkView | null,
 ): Promise<string | null> {
   const root = rstripSlash(mountPrefixOf(path.virtual, path.vfsPath))
-  const follow = links === null ? null : (virtual: string) => links.resolve(virtual)
-  for (const [node, spelled] of walkNodes(dotted, path.rawPath, follow)) {
+  for (const [node, spelled] of walkNodes(dotted, path.rawPath)) {
     let why: string | null
     try {
       why = await enterNode(mkdir, accessor, path, node, root, links)

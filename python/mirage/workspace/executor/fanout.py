@@ -34,18 +34,19 @@ from mirage.commands.builtin.generic.crossmount.fanout.exit import (
     combined_exit,
 )
 from mirage.commands.builtin.generic.crossmount.fanout.fanout import run_fanout
-from mirage.commands.builtin.generic.crossmount.relay.relay import (
-    DISPATCH_BUILDERS,
-)
 from mirage.commands.builtin.generic.crossmount.types import RunSingle
-from mirage.commands.builtin.generic.crossmount.utils import run_separator
+from mirage.commands.builtin.generic.crossmount.utils import (
+    flat_scopes,
+    relay,
+    run_separator,
+)
 from mirage.commands.builtin.generic.grep import filename_mode
 from mirage.commands.builtin.generic.rg import (
     label_flags,
+    rg,
     walks_descendant_mounts,
 )
-from mirage.commands.builtin.generic_bind.dispatch import run_dispatch
-from mirage.commands.config import ExecContext
+from mirage.commands.config import CommandOpts, ExecContext
 from mirage.commands.errors import (
     CommandTimeoutError,
     FindParseError,
@@ -578,8 +579,7 @@ async def _fan_out_traversal(
     duplicates when the parent's VFS has shadowed keys).
 
     rg with depth or sorting options uses one dispatcher-backed walk,
-    so mount boundaries do not reset depth or split the sorted output;
-    it crosses them itself, so it is offered no boundary to stop at.
+    so mount boundaries do not reset depth or split the sorted output.
 
     For `find`, mount-prefix paths themselves are injected as synthetic
     directory entries (subject to depth and -type filters) because
@@ -594,37 +594,44 @@ async def _fan_out_traversal(
     never receives them reports a tree with every link missing, and a
     nested mount is not a reason for ``find`` to stop seeing one.
     """
-    if cmd_name in DISPATCH_BUILDERS and dispatch is not None:
+    if (
+        cmd_name == "rg"
+        and dispatch is not None
+        and any(
+            FlagView(flag_kwargs, spec=SPECS["rg"]).raw(name) is not None
+            for name in ("max_depth", "sort", "sortr", "sort_files")
+        )
+    ):
         try:
-            stdout, io = await run_dispatch(
-                DISPATCH_BUILDERS[cmd_name],
-                paths,
+            stdout, io = await rg(
+                flat_scopes(paths),
                 texts,
-                flag_kwargs,
-                dispatch,
-                cwd,
-                ns,
-                stdin,
+                CommandOpts(
+                    flags=flag_kwargs,
+                    cwd=PathSpec(
+                        virtual=cwd, directory=cwd, vfs_path=cwd.strip("/")
+                    ),
+                    ns=ns,
+                    dispatch=dispatch,
+                ),
+                readdir=functools.partial(relay, dispatch, "readdir"),
+                stat=functools.partial(relay, dispatch, "stat"),
+                read_bytes=functools.partial(relay, dispatch, "read"),
+                read_stream=None,
+                stdin=stdin,
             )
+            stdout = await materialize(stdout)
         except UsageError as exc:
             stdout = None
             io = IOResult(exit_code=exc.exit_code, stderr=f"{exc}\n".encode())
         io.producer = Producer(
             command=cmd_name,
             prefixes=tuple(
-                dict.fromkeys(
-                    [
-                        primary_mount.prefix,
-                        *(
-                            m.prefix
-                            for path in paths
-                            if path.walk_error is None
-                            for m in _allowed_descendants(
-                                registry, path.virtual
-                            )
-                        ),
-                    ]
-                )
+                m.prefix
+                for m in [
+                    primary_mount,
+                    *_allowed_descendants(registry, paths[0].virtual),
+                ]
             ),
         )
         return (
@@ -872,14 +879,7 @@ async def _fan_out_traversal(
                 else:
                     find_matches.append(rows)
             stdout = None
-        elif (
-            mount is primary_mount
-            and descendant_prefixes
-            and stdout
-            and cmd_name not in ("grep", "rg")
-        ):
-            # grep and rg never walk into a mount below their own
-            # (mount_parent_readdir), so there is nothing of theirs to drop.
+        elif mount is primary_mount and descendant_prefixes and stdout:
             stdout = await _filter_under_prefixes(
                 stdout, descendant_prefixes, cmd_name
             )
@@ -955,9 +955,11 @@ async def _fan_out_traversal(
         # one file's context and the next file's; every other format is a
         # plain line stream.
         sep = (
-            b"\n" if cmd_name == "ls" else run_separator(cmd_name, flag_kwargs)
+            b"\n\n"
+            if cmd_name == "ls"
+            else b"\n" + run_separator(cmd_name, flag_kwargs)
         )
-        combined = sep.join(all_stdout)
+        combined = sep.join(b.rstrip(b"\n") for b in all_stdout) + b"\n"
     else:
         combined = None
     quiet = (

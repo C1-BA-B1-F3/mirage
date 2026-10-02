@@ -251,7 +251,7 @@ def parse_flags(
                         raw if isinstance(raw, str) else None,
                     )
                 elif isinstance(value, str) and value in scope_map:
-                    flag_kwargs[key] = scope_map[value].virtual
+                    flag_kwargs[key] = scope_map[value]
         else:
             # The string view still takes an option's word off the queue,
             # so the operands get the same words on both dispatch paths.

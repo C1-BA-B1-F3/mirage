@@ -59,22 +59,18 @@ async def _row(path):
 
 @pytest.mark.asyncio
 async def test_readdir_passes_through_without_a_mount_view():
-    assert await mount_parent_readdir(_listing, None, "")("/x") == ["a.txt"]
+    assert await mount_parent_readdir(_listing, None)("/x") == ["a.txt"]
 
 
 @pytest.mark.asyncio
 async def test_readdir_lists_a_mount_parent_as_empty():
-    rd = mount_parent_readdir(
-        _absent, _mounts(descendants=("/ghost/deep",)), ""
-    )
+    rd = mount_parent_readdir(_absent, _mounts(descendants=("/ghost/deep",)))
     assert await rd("/ghost") == []
 
 
 @pytest.mark.asyncio
 async def test_readdir_re_raises_where_no_mount_sits_below():
-    rd = mount_parent_readdir(
-        _absent, _mounts(descendants=("/ghost/deep",)), ""
-    )
+    rd = mount_parent_readdir(_absent, _mounts(descendants=("/ghost/deep",)))
     with pytest.raises(FileNotFoundError):
         await rd("/nope")
 
@@ -87,9 +83,7 @@ async def test_readdir_re_raises_when_the_only_mount_below_is_hidden():
     # this returned an empty listing and a recursive search reported an
     # ordinary no-match where every other verb reports ENOENT.
     rd = mount_parent_readdir(
-        _absent,
-        _mounts(descendants=("/ghost/deep",), hidden=("/ghost/deep",)),
-        "",
+        _absent, _mounts(descendants=("/ghost/deep",), hidden=("/ghost/deep",))
     )
     with pytest.raises(FileNotFoundError):
         await rd("/ghost")
@@ -102,7 +96,6 @@ async def test_readdir_answers_when_one_of_two_mounts_below_is_visible():
         _mounts(
             descendants=("/ghost/deep", "/ghost/seen"), hidden=("/ghost/deep",)
         ),
-        "",
     )
     assert await rd("/ghost") == []
 
@@ -143,9 +136,7 @@ async def test_readdir_re_raises_a_refusal_that_is_not_an_absence():
     # A directory the backend refused is there and holds data this run
     # cannot read. Calling it empty would let grep -r print the mount
     # below it and exit 0 while silently omitting the parent.
-    st = mount_parent_readdir(
-        _denied, _mounts(descendants=("/ghost/deep",)), ""
-    )
+    st = mount_parent_readdir(_denied, _mounts(descendants=("/ghost/deep",)))
     with pytest.raises(PermissionError):
         await st("/ghost")
 

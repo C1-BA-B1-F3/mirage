@@ -16,7 +16,8 @@ import { constants as fsConstants } from 'node:fs'
 import { posix } from 'node:path'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import type { Ops } from '@struktoai/mirage-core/ops/ops'
-import { FileTable, mergeWrites } from '@struktoai/mirage-core/runtime/handles/index'
+import { FileTable, mergeWrites, ChunkedHandle } from '@struktoai/mirage-core/runtime/handles/index'
+import { READ_CHUNK } from '@struktoai/mirage-core/runtime/handles/constants'
 import { FileType } from '@struktoai/mirage-core/types'
 import type { FileStat } from '@struktoai/mirage-core/types'
 import { isMissingOp } from '@struktoai/mirage-core/utils/errors'
@@ -45,6 +46,8 @@ export interface Handle {
   key: string
   data?: Uint8Array
   writeBuf?: [number, Uint8Array][]
+  /** A large file reads a chunk at a time rather than hydrating whole. */
+  chunked?: ChunkedHandle
 }
 
 interface PrefetchEntry {
@@ -389,6 +392,7 @@ export class MountCore {
     // none by default, so this reads raw bytes until a mount adds one.
     // Matches Python's `self._ops.read(path)`, which also dispatches.
     path = ctx?.path ?? path
+    if (ctx?.chunked !== undefined && ctx.data === undefined) return ctx.chunked.pread(pos, len)
     if (ctx !== undefined && ctx.data === undefined) {
       const cached = this.cachedData(path)
       ctx.data = cached ?? (await this.op(() => this.ops.readFile(this.resolve(path))))
@@ -493,6 +497,9 @@ export class MountCore {
       this.prefetchGen.set(key, (this.prefetchGen.get(key) ?? 0) + 1)
     }
     if (!rehydrate) return
+    for (const ctx of this.handles.values()) {
+      if (ctx.key === key) ctx.chunked?.drop()
+    }
     const hydrated = [...this.handles.values()].filter(
       (ctx) => ctx.key === key && ctx.data !== undefined,
     )
@@ -669,8 +676,19 @@ export class MountCore {
       // rather than shadowed by literal raw emptiness.
       const data = await this.prefetch(path)
       if (data !== null) ctx.data = data
+    } else if (s.size > READ_CHUNK && (flags & fsConstants.O_TRUNC) === 0) {
+      // A file larger than a chunk is read a chunk at a time: the kernel
+      // asks in small pieces, and fetching the whole file on the first one
+      // moved all of it to answer a `head`. Mirrors Python's MountCore.open.
+      ctx.chunked = new ChunkedHandle(path, s.size, (offset, size) =>
+        this.readChunk(path, offset, size),
+      )
     }
     return this.handles.add(ctx)
+  }
+
+  private readChunk(path: string, offset: number, size: number): Promise<Uint8Array> {
+    return this.op(() => this.ops.readFile(this.resolve(path), { offset, size }))
   }
 
   async release(fd: number): Promise<void> {

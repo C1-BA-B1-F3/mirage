@@ -14,6 +14,7 @@
 
 import asyncio
 import errno
+import functools
 import logging
 import os
 import posixpath
@@ -26,7 +27,8 @@ from mirage.bridge.sync import run_async_from_sync
 from mirage.context import reset_current_session, set_current_session
 from mirage.fuse.platform.macos import is_macos_metadata
 from mirage.ops import Ops
-from mirage.runtime.handles import FileTable, merge_writes
+from mirage.runtime.handles import ChunkedHandle, FileTable, merge_writes
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.types import FileStat, FileType
 from mirage.utils.stat_view import (
     DIR_MODE,
@@ -54,6 +56,8 @@ class Handle:
     key: str
     data: bytes | None = None
     write_buf: WriteBuf = field(default_factory=list)
+    # A large file reads a chunk at a time rather than hydrating whole.
+    chunked: ChunkedHandle | None = None
 
 
 class MountCore:
@@ -443,6 +447,8 @@ class MountCore:
         ctx = self._ctx(fh)
         if ctx is not None and ctx.data is not None:
             return ctx.data[offset : offset + size]
+        if ctx is not None and ctx.chunked is not None:
+            return ctx.chunked.pread(offset, size)
         if ctx is not None:
             path = ctx.path
         data = self.cached_data(path)
@@ -692,7 +698,19 @@ class MountCore:
             # path, so an extension whose renderer gives an empty file a body
             # is honored rather than shadowed by literal raw emptiness.
             ctx.data = self.prefetch_read(path)
+        elif s.size > READ_CHUNK and not flags & os.O_TRUNC:
+            # A file larger than a chunk is read a chunk at a time: the
+            # kernel asks in small pieces, and fetching the whole file on
+            # the first one moved all of it to answer a `head`.
+            ctx.chunked = ChunkedHandle(
+                path=path,
+                size=s.size,
+                fetch=functools.partial(self._read_chunk, path),
+            )
         return self._handles.add(ctx)
+
+    def _read_chunk(self, path: str, offset: int, size: int) -> bytes:
+        return self._run(self._ops.read(self.resolve(path), offset, size))
 
     def release(self, fh: int) -> None:
         ctx = self._handles.get(fh)
@@ -763,6 +781,9 @@ class MountCore:
         self._prefetch.pop(key, None)
         if not rehydrate:
             return
+        for ctx in self._handles.values():
+            if ctx.key == key and ctx.chunked is not None:
+                ctx.chunked.drop()
         hydrated = [
             ctx
             for ctx in self._handles.values()

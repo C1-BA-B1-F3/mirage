@@ -18,6 +18,7 @@ import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { ContentType, FileStat, FileType, MountMode } from '@struktoai/mirage-core/types'
 import { enotsup } from '@struktoai/mirage-core/utils/errors'
 import { DIR_SIZE, mtimeMs } from '@struktoai/mirage-core/utils/stat_view'
+import { READ_CHUNK } from '@struktoai/mirage-core/runtime/handles/constants'
 import { describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../workspace.ts'
 import { MountCore } from './core.ts'
@@ -575,4 +576,38 @@ describe('open handles across rename', () => {
       await expect(core.getattr('/sub/file')).rejects.toThrow()
     },
   )
+})
+
+describe('MountCore chunks', () => {
+  it('reads a large file a chunk at a time', async () => {
+    // The kernel asks in small pieces; hydrating the whole file on the
+    // first one moved all of it to answer a `head`. Mirrors Python's
+    // test_a_large_file_reads_a_chunk_at_a_time.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.vfs.writeFile('/data/big.bin', new Uint8Array(3 * READ_CHUNK).fill(1))
+    const core = new MountCore(ws.vfs)
+    const fd = await core.open('/data/big.bin')
+    const reads = vi.spyOn(ws.vfs, 'readFile')
+    expect((await core.read('/data/big.bin', fd, 0, 4096)).length).toBe(4096)
+    expect((await core.read('/data/big.bin', fd, 4096, 4096)).length).toBe(4096)
+    expect((await core.read('/data/big.bin', fd, 3 * READ_CHUNK - 2, 4096)).length).toBe(2)
+    expect(reads.mock.calls.map((call) => call[1])).toEqual([
+      { offset: 0, size: READ_CHUNK },
+      { offset: 3 * READ_CHUNK - 2, size: READ_CHUNK },
+    ])
+    await core.release(fd)
+  })
+
+  it('drops the chunk an open handle kept when the file changes', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.vfs.writeFile('/data/f.txt', 'old'.repeat(READ_CHUNK))
+    const core = new MountCore(ws.vfs)
+    const reader = await core.open('/data/f.txt')
+    expect(new TextDecoder().decode(await core.read('/data/f.txt', reader, 0, 3))).toBe('old')
+    const writer = await core.open('/data/f.txt')
+    await core.write('/data/f.txt', writer, new TextEncoder().encode('new'), 0)
+    await core.release(writer)
+    expect(new TextDecoder().decode(await core.read('/data/f.txt', reader, 0, 3))).toBe('new')
+    await core.release(reader)
+  })
 })

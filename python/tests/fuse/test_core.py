@@ -25,6 +25,7 @@ import pytest_asyncio
 from mirage.fuse.core import MountCore
 from mirage.observe import OpRecord
 from mirage.ops.registry import op
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.types import ContentType, FileStat, FileType, MountMode, PathSpec
 from mirage.utils.stat_view import DIR_SIZE, mtime_ns
 from mirage.vfs.ram import RAMVFS
@@ -487,3 +488,35 @@ async def test_rename_keeps_open_handles_on_the_moved_file(seeded, directory):
     assert seeded.read(target, 100, 0, None) == b"BEFOREAFTER"
     with pytest.raises(FileNotFoundError):
         seeded.getattr("/sub/b.txt")
+
+
+@pytest.mark.asyncio
+async def test_a_large_file_reads_a_chunk_at_a_time():
+    # The kernel asks in small pieces; hydrating the whole file on the
+    # first one moved all of it to answer a `head`.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.vfs.write("/big.bin", b"\x01" * (3 * READ_CHUNK))
+    core = MountCore(ws.vfs)
+    fh = core.open("/big.bin")
+    before = len(ws.vfs.records)
+    assert core.read("/big.bin", 4096, 0, fh) == b"\x01" * 4096
+    assert core.read("/big.bin", 4096, 4096, fh) == b"\x01" * 4096
+    tail = core.read("/big.bin", 4096, 3 * READ_CHUNK - 2, fh)
+    assert tail == b"\x01\x01"
+    moved = [r.bytes for r in ws.vfs.records[before:] if r.op == "read"]
+    assert moved == [READ_CHUNK, 2]
+    core.release(fh)
+
+
+@pytest.mark.asyncio
+async def test_a_write_drops_the_chunk_an_open_handle_kept():
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.vfs.write("/f.txt", b"old" * READ_CHUNK)
+    core = MountCore(ws.vfs)
+    reader = core.open("/f.txt")
+    assert core.read("/f.txt", 3, 0, reader) == b"old"
+    writer = core.open("/f.txt")
+    core.write("/f.txt", b"new", 0, writer)
+    core.release(writer)
+    assert core.read("/f.txt", 3, 0, reader) == b"new"
+    core.release(reader)

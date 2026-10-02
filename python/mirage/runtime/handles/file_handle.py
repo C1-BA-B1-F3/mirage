@@ -160,6 +160,11 @@ class FileHandle:
         """True when the position sits at or past the end."""
         return self.pos >= len(self.buf)
 
+    @property
+    def size(self) -> int:
+        """The file's length as this handle holds it."""
+        return len(self.buf)
+
     def flush_plan(self) -> tuple[FlushKind, bytes]:
         """What this handle owes the mount at close."""
         return plan_flush(self.base_len, self.low_write, self.buf)

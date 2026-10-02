@@ -242,14 +242,29 @@ class WasmView:
             return None
         return core.listing_or_none(path)
 
-    def read(self, path: str) -> bytes:
+    def read(
+        self,
+        path: str,
+        *,
+        offset: int = 0,
+        size: int | None = None,
+        raw: bool = False,
+    ) -> bytes:
+        """A file's bytes, or a range of them, from the build or the
+        workspace.
+
+        Args:
+            path (str): guest-absolute path.
+            offset (int): where the range starts.
+            size (int | None): its length; None reads to the end.
+            raw (bool): the stored bytes rather than a rendering.
+        """
         build = self._serving_build(path)
         if build is not None:
-            return build.read(path)
-        data = self._core_call("read", path)
-        if isinstance(data, str):
-            return data.encode()
-        return bytes(data)
+            return build.read(path, offset=offset, size=size)
+        return self._content_core(path).read(
+            path, offset=offset, size=size, raw=raw
+        )
 
     def write(self, path: str, data: bytes) -> None:
         self._deny_build(path)

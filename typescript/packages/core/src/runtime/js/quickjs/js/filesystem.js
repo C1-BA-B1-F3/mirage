@@ -1,11 +1,26 @@
+// A chunked file holds one chunk of its bytes: fill until the read it is
+// about to answer lacks nothing (-1 asks for the rest, -2 for a line).
+const fill = (fd, want) => {
+  while (__mirage_lacks(fd, want)) __mirage_fill(fd, want)
+}
 std.open = (path, mode) => {
   const fd = __mirage_open(String(path), String(mode === undefined ? 'r' : mode))
   if (fd === -2) throw new TypeError('invalid file mode')
   if (fd < 0) return null
   return {
-    readAsString: (max) => __mirage_read(fd, max === undefined ? -1 : max | 0),
-    read: () => __mirage_read(fd, -1),
-    getline: () => __mirage_getline(fd),
+    readAsString: (max) => {
+      const want = max === undefined ? -1 : max | 0
+      fill(fd, want)
+      return __mirage_read(fd, want)
+    },
+    read: () => {
+      fill(fd, -1)
+      return __mirage_read(fd, -1)
+    },
+    getline: () => {
+      fill(fd, -2)
+      return __mirage_getline(fd)
+    },
     puts: (s) => {
       __mirage_write(fd, String(s))
     },
@@ -18,7 +33,10 @@ std.open = (path, mode) => {
       return 0
     },
     tell: () => __mirage_tell(fd),
-    eof: () => __mirage_eof(fd),
+    eof: () => {
+      fill(fd, 1)
+      return __mirage_eof(fd)
+    },
     flush: () => undefined,
     close: () => {
       __mirage_close(fd)

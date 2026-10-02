@@ -140,6 +140,11 @@ export class FileHandle {
     return this.pos >= this.buf.length
   }
 
+  /** The file's length as this handle holds it. */
+  get size(): number {
+    return this.buf.length
+  }
+
   /** What this handle owes the mount at close. */
   flushPlan(): [FlushKind, Uint8Array] {
     return planFlush(this.baseLen, this.lowWrite, this.buf)

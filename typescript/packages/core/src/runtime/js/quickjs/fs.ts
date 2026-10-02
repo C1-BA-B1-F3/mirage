@@ -18,7 +18,14 @@ import { WASI, errnoFor } from './errors.ts'
 import { readdir } from './list.ts'
 import { stat } from './stat.ts'
 import { epochToIso } from '../../../utils/dates.ts'
-import { FileHandle, FileTable, parseMode, type OpenMode } from '../../handles/index.ts'
+import {
+  ChunkedHandle,
+  FileHandle,
+  FileTable,
+  parseMode,
+  type OpenMode,
+} from '../../handles/index.ts'
+import { READ_CHUNK } from '../../handles/constants.ts'
 import { applyOpen } from '../../open.ts'
 import type { RuntimeVFS } from '../../vfs.ts'
 import type { QuickJSAsyncContext, QuickJSHandle } from 'quickjs-emscripten'
@@ -32,6 +39,10 @@ const DEC = new TextDecoder('utf-8', { fatal: false })
 // numbering must not leak.
 const ENOENT = WASI.ENOENT
 
+// What the bootstrap's getline asks `__mirage_lacks` for; any other
+// negative want is the rest of the file.
+const WANT_LINE = -2
+
 /**
  * Install the `std.open`/`os.readdir` host functions on an asyncified
  * quickjs context, backed by the runtime vfs. A null vfs (no
@@ -44,7 +55,7 @@ const ENOENT = WASI.ENOENT
  * @param vfs - the runtime's mount vocabulary, or null when no mounts are wired
  */
 export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null): void {
-  const table = new FileTable<FileHandle>()
+  const table = new FileTable<FileHandle | ChunkedHandle>()
   let cwd = PathSpec.fromStrPath('/')
   const absolute = (handle: QuickJSHandle): string => {
     const path = ctx.getString(handle)
@@ -106,26 +117,52 @@ export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | nul
     // or failure is the guest's null: a transient failure or a policy
     // denial on an existing file must refuse the open, or a
     // create-capable mode would create over content this open never saw.
-    let buf: Uint8Array = new Uint8Array()
+    let handle: FileHandle | ChunkedHandle
     try {
-      if ((await applyOpen(vfs, path, mode)) !== null) buf = await vfs.read(path)
+      const row = await applyOpen(vfs, path, mode)
+      if (row !== null && !mode.writable && row.size > READ_CHUNK) {
+        const door = vfs
+        handle = new ChunkedHandle(path, row.size, (offset, size) =>
+          door.read(path, { offset, size }),
+        )
+      } else {
+        // A handle that writes starts from the stored bytes: its close
+        // stores what it holds.
+        const buf = row === null ? new Uint8Array() : await vfs.read(path, { raw: mode.writable })
+        handle = FileHandle.opened(path, buf, mode)
+      }
     } catch {
       return ctx.newNumber(-1)
     }
-    const fd = table.add(FileHandle.opened(path, buf, mode))
-    return ctx.newNumber(fd)
+    return ctx.newNumber(table.add(handle))
   })
 
   defineAsync('__mirage_close', async (fdH) => {
     const file = table.pop(ctx.getNumber(fdH))
     if (file === undefined) return ctx.undefined
-    if (file.dirty && file.writable && vfs !== null) {
+    if (file instanceof FileHandle && file.dirty && file.writable && vfs !== null) {
       await vfs.flush(file.path, file.baseLen, file.lowWrite, file.buf)
     }
     return ctx.undefined
   })
 
   defineAsync('__mirage_readdir', (pathH) => readdir(ctx, vfs, absolute(pathH)))
+
+  // A chunked file answers a read only from the chunk it holds, so the
+  // bootstrap asks whether a read lacks bytes and fills until it does not;
+  // every read below then answers synchronously.
+  defineSync('__mirage_lacks', (fdH, wantH) => {
+    const file = table.get(ctx.getNumber(fdH))
+    if (!(file instanceof ChunkedHandle)) return ctx.false
+    const want = ctx.getNumber(wantH)
+    return (want === WANT_LINE ? file.lacksLine() : file.lacks(want)) ? ctx.true : ctx.false
+  })
+
+  defineAsync('__mirage_fill', async (fdH, wantH) => {
+    const file = table.get(ctx.getNumber(fdH))
+    if (file instanceof ChunkedHandle) await file.fill(ctx.getNumber(wantH))
+    return ctx.undefined
+  })
 
   defineSync('__mirage_read', (fdH, maxH) => {
     const file = table.get(ctx.getNumber(fdH))
@@ -135,6 +172,10 @@ export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | nul
 
   defineSync('__mirage_getline', (fdH) => {
     const file = table.get(ctx.getNumber(fdH))
+    if (file instanceof ChunkedHandle) {
+      const line = file.readLine()
+      return line === null ? ctx.null : ctx.newString(DEC.decode(line))
+    }
     if (file === undefined || file.pos >= file.buf.length) return ctx.null
     let end = file.pos
     while (end < file.buf.length && file.buf[end] !== 0x0a) end++
@@ -145,7 +186,7 @@ export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | nul
 
   defineSync('__mirage_write', (fdH, textH) => {
     const file = table.get(ctx.getNumber(fdH))
-    if (file?.writable) file.write(ENC.encode(ctx.getString(textH)))
+    if (file instanceof FileHandle && file.writable) file.write(ENC.encode(ctx.getString(textH)))
     return ctx.undefined
   })
 
@@ -154,7 +195,7 @@ export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | nul
     if (file === undefined) return ctx.undefined
     const offset = ctx.getNumber(offsetH)
     const whence = ctx.getNumber(whenceH)
-    const base = whence === 1 ? file.pos : whence === 2 ? file.buf.length : 0
+    const base = whence === 1 ? file.pos : whence === 2 ? file.size : 0
     file.pos = Math.max(0, base + offset)
     return ctx.undefined
   })

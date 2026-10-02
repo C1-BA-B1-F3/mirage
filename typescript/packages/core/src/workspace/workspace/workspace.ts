@@ -687,9 +687,10 @@ export class Workspace {
   // so runtime journal replay stays open during close and sandbox I/O takes
   // the same path as shell commands — cache read-through on
   // reads, post-write invalidation, and mount-mode enforcement narrowed
-  // by the current session all come from the Dispatcher. Reads are raw
-  // bytes (no filetype rendering), matching the Python WasmView. An
-  // `issuer` rides every op as the `issuer` kwarg, which the dispatcher
+  // by the current session all come from the Dispatcher. A read is the
+  // rendered one unless its `raw` attr asks for the stored bytes, and its
+  // `offset`/`size` attrs ask for a byte range, matching Python's
+  // RuntimeVFS.read. An `issuer` rides every op as the `issuer` kwarg, which the dispatcher
   // lifts onto the op door's context and never forwards to a backend:
   // it is how a profile policy's own reads reach its `preOps` marked as
   // its own, as an argument rather than ambient state.
@@ -708,8 +709,14 @@ export class Workspace {
       )
     return async (op, path, bytes, dst, attrs) => {
       switch (op) {
-        case 'read':
-          return (await dispatch('read', path)) as Uint8Array
+        case 'read': {
+          const kwargs: OpKwargs = attrs?.raw === true ? { filetype: null } : {}
+          if (attrs?.offset !== undefined || attrs?.size !== undefined) {
+            kwargs.offset = attrs.offset ?? 0
+            kwargs.size = attrs.size ?? null
+          }
+          return (await dispatch('read', path, [], kwargs)) as Uint8Array
+        }
         case 'write': {
           if (bytes === undefined) throw new Error('write op requires bytes')
           const buf =

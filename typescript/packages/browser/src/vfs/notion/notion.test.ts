@@ -16,7 +16,7 @@ import { NOTION_COMMANDS } from '@struktoai/mirage-core/commands/builtin/notion/
 import { MemoryOAuthClientProvider } from '@struktoai/mirage-core/core/notion/client'
 import { NOTION_OPS } from '@struktoai/mirage-core/ops/notion/index'
 import { VFSName } from '@struktoai/mirage-core/types'
-import type { OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js'
+import type { OAuthClientMetadata } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
 import { NotionVFS } from './notion.ts'
 

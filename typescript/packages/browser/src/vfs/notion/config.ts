@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
+import type { OAuthClientProvider } from '@modelcontextprotocol/client'
 import {
   parseConfigWithSchema,
   redactConfigWithSchema,

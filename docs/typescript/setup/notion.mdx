@@ -29,14 +29,14 @@ await ws.shell('ls /notion/pages/')
 ## Browser
 
 ```bash
-pnpm add @struktoai/mirage-browser @modelcontextprotocol/sdk
+pnpm add @struktoai/mirage-browser @modelcontextprotocol/client
 ```
 
 ```ts
 import { MountMode, NotionVFS, Workspace } from '@struktoai/mirage-browser'
 
 const notion = new NotionVFS({
-  authProvider, // OAuthClientProvider from @modelcontextprotocol/sdk
+  authProvider, // OAuthClientProvider from @modelcontextprotocol/client
 })
 
 const ws = new Workspace({ '/notion': notion }, { mode: MountMode.READ })
@@ -45,7 +45,7 @@ await ws.shell('ls /notion/')
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `authProvider` | required | `OAuthClientProvider` from `@modelcontextprotocol/sdk`. Redacted in snapshots. |
+| `authProvider` | required | `OAuthClientProvider` from `@modelcontextprotocol/client`. Redacted in snapshots. |
 | `serverUrl` | Notion's hosted MCP endpoint | Override if you proxy MCP through your own URL. |
 
 ## Mount mode

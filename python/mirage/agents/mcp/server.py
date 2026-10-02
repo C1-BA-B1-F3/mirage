@@ -12,11 +12,23 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
 from typing import Any
 
-from mcp.server.lowlevel import Server
+import jsonschema
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
+from mcp.shared.exceptions import MCPError
+from mcp.types import (
+    INVALID_PARAMS,
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+    ToolAnnotations,
+)
 
 from mirage import __version__
 from mirage.agents.tool_descriptions import (
@@ -34,13 +46,15 @@ from mirage.agents.tool_operations import (
 )
 from mirage.workspace.workspace import Workspace
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True)
+logger = logging.getLogger(__name__)
+
+READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 TOOLS = [
     Tool(
         name="execute_command",
         description=EXECUTE_DESCRIPTION,
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {"command": {"type": "string"}},
             "required": ["command"],
@@ -50,7 +64,7 @@ TOOLS = [
         name="read",
         description=READ_DESCRIPTION,
         annotations=READ_ONLY,
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
@@ -63,7 +77,7 @@ TOOLS = [
     Tool(
         name="write",
         description=WRITE_DESCRIPTION,
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
@@ -75,7 +89,7 @@ TOOLS = [
     Tool(
         name="edit",
         description=EDIT_DESCRIPTION,
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
@@ -90,7 +104,7 @@ TOOLS = [
         name="ls",
         description=LS_DESCRIPTION,
         annotations=READ_ONLY,
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {"path": {"type": "string"}},
             "required": ["path"],
@@ -100,7 +114,7 @@ TOOLS = [
         name="grep",
         description=GREP_DESCRIPTION,
         annotations=READ_ONLY,
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "pattern": {"type": "string"},
@@ -115,14 +129,14 @@ TOOLS = [
 def _to_mcp(result: ToolResult) -> CallToolResult:
     return CallToolResult(
         content=[TextContent(type="text", text=result.text)],
-        isError=result.is_error,
+        is_error=result.is_error,
     )
 
 
 class MirageMcpServer:
     """Serves one workspace's six tools over the MCP protocol.
 
-    The handlers are bound methods rather than decorated closures, so
+    The handlers are bound methods handed to the SDK's constructor, so
     the tool table stays readable and nothing nests.
 
     Args:
@@ -141,39 +155,79 @@ class MirageMcpServer:
         version: str = __version__,
     ) -> None:
         self._ops = MirageToolOperations(workspace, stale_write_protection)
-        # The SDK's parameters are the lifespan result and the per-request
-        # payload. No lifespan is passed, so the default one runs and
-        # yields an empty dict; nothing here reads a request payload.
-        self.server: Server[dict[str, Any], Any] = Server(
-            name, version=version
+        # The SDK's parameter is the lifespan result. No lifespan is
+        # passed, so the default one runs and yields an empty dict.
+        self.server: Server[dict[str, Any]] = Server(
+            name,
+            version=version,
+            on_list_tools=self.list_tools,
+            on_call_tool=self.call_tool,
         )
-        self.server.list_tools()(self.list_tools)
-        self.server.call_tool()(self.call_tool)
 
-    async def list_tools(self) -> list[Tool]:
+    async def list_tools(
+        self,
+        ctx: ServerRequestContext[dict[str, Any]],
+        params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
         """Report the tool table.
 
+        Args:
+            ctx (ServerRequestContext[dict[str, Any]]): The request
+                context; unused.
+            params (PaginatedRequestParams | None): The page cursor;
+                every tool fits on one page.
+
         Returns:
-            list[Tool]: Every tool this server serves.
+            ListToolsResult: Every tool this server serves.
         """
-        return list(TOOLS)
+        return ListToolsResult(tools=list(TOOLS))
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any]
+        self,
+        ctx: ServerRequestContext[dict[str, Any]],
+        params: CallToolRequestParams,
     ) -> CallToolResult:
         """Run one tool call.
 
+        A tool this server does not serve is a protocol error, as the
+        TypeScript twin answers it. Arguments outside the tool's input
+        schema and a raised exception are the tool's answer, with
+        `is_error` set, so the agent reads them and can retry.
+
         Args:
-            name (str): The tool being called.
-            arguments (dict[str, Any]): Arguments, already validated
-                against the tool's input schema.
+            ctx (ServerRequestContext[dict[str, Any]]): The request
+                context; unused.
+            params (CallToolRequestParams): The tool name and arguments.
 
         Returns:
             CallToolResult: The tool's answer.
 
         Raises:
-            ValueError: The tool name is not one this server serves.
+            MCPError: The tool name is not one this server serves.
         """
+        tool = next((t for t in TOOLS if t.name == params.name), None)
+        if tool is None:
+            raise MCPError(INVALID_PARAMS, f"Tool {params.name} not found")
+        arguments = params.arguments or {}
+        try:
+            jsonschema.validate(arguments, tool.input_schema)
+        except jsonschema.ValidationError as exc:
+            return _to_mcp(
+                ToolResult(
+                    "Input validation error: Invalid arguments for tool "
+                    f"{params.name}: {exc.message}",
+                    True,
+                )
+            )
+        try:
+            return await self._run(params.name, arguments)
+        except Exception as exc:
+            logger.debug("mcp tool %s failed", params.name, exc_info=True)
+            return _to_mcp(ToolResult(str(exc), True))
+
+    async def _run(
+        self, name: str, arguments: dict[str, Any]
+    ) -> CallToolResult:
         if name == "execute_command":
             return _to_mcp(await self._ops.execute(arguments["command"]))
         if name == "read":

@@ -12,14 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
+  OAuthClientProvider,
   OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+} from '@modelcontextprotocol/client'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { API_VERSION, DEFAULT_API_BASE_URL } from './constants.ts'
 import { apiRequest, type RetryPolicy } from '../api/client.ts'
 

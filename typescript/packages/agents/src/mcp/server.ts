@@ -14,8 +14,8 @@
 
 import { VERSION } from '@struktoai/mirage-core/version'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { McpServer } from '@modelcontextprotocol/server'
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import {
   EDIT_DESCRIPTION,
@@ -44,37 +44,40 @@ export function createMirageMcpServer(
 
   server.registerTool(
     'execute_command',
-    { description: EXECUTE_DESCRIPTION, inputSchema: { command: z.string() } },
+    { description: EXECUTE_DESCRIPTION, inputSchema: z.object({ command: z.string() }) },
     (args) => operations.execute(args.command),
   )
   server.registerTool(
     'read',
     {
       description: READ_DESCRIPTION,
-      inputSchema: {
+      inputSchema: z.object({
         path: z.string(),
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).optional(),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     (args) => operations.read(args.path, args.offset, args.limit),
   )
   server.registerTool(
     'write',
-    { description: WRITE_DESCRIPTION, inputSchema: { path: z.string(), content: z.string() } },
+    {
+      description: WRITE_DESCRIPTION,
+      inputSchema: z.object({ path: z.string(), content: z.string() }),
+    },
     (args) => operations.write(args.path, args.content),
   )
   server.registerTool(
     'edit',
     {
       description: EDIT_DESCRIPTION,
-      inputSchema: {
+      inputSchema: z.object({
         path: z.string(),
         old_string: z.string(),
         new_string: z.string(),
         replace_all: z.boolean().optional(),
-      },
+      }),
     },
     (args) => operations.edit(args.path, args.old_string, args.new_string, args.replace_all),
   )
@@ -82,7 +85,7 @@ export function createMirageMcpServer(
     'ls',
     {
       description: LS_DESCRIPTION,
-      inputSchema: { path: z.string() },
+      inputSchema: z.object({ path: z.string() }),
       annotations: { readOnlyHint: true },
     },
     (args) => operations.ls(args.path),
@@ -91,7 +94,7 @@ export function createMirageMcpServer(
     'grep',
     {
       description: GREP_DESCRIPTION,
-      inputSchema: { pattern: z.string(), path: z.string() },
+      inputSchema: z.object({ pattern: z.string(), path: z.string() }),
       annotations: { readOnlyHint: true },
     },
     (args) => operations.grep(args.pattern, args.path),

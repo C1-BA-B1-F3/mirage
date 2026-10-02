@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { OpsRegistry } from '@struktoai/mirage-core/ops/registry'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { MountMode } from '@struktoai/mirage-core/types'
@@ -55,6 +54,35 @@ describe('createMirageMcpServer', () => {
     expect(write.isError).not.toBe(true)
     const read = await client.callTool({ name: 'read', arguments: { path: '/hello.txt' } })
     expect(firstText(read.content)).toContain('hello')
+    await client.close()
+    await server.close()
+    await workspace.close()
+  })
+
+  it('rejects an unknown tool and answers bad arguments with an error result', async () => {
+    const workspace = mkWs()
+    const server = createMirageMcpServer(workspace)
+    const client = new Client({ name: 'mirage-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    await expect(client.callTool({ name: 'nope', arguments: {} })).rejects.toMatchObject({
+      code: -32602,
+      message: 'Tool nope not found',
+    })
+    const missing = await client.callTool({ name: 'read', arguments: {} })
+    expect(missing.isError).toBe(true)
+    expect(firstText(missing.content)).toContain(
+      'Input validation error: Invalid arguments for tool read: ',
+    )
+    const outside = await client.callTool({
+      name: 'read',
+      arguments: { path: '/a.txt', offset: -1 },
+    })
+    expect(outside.isError).toBe(true)
+    expect(firstText(outside.content)).toContain(
+      'Input validation error: Invalid arguments for tool read: ',
+    )
     await client.close()
     await server.close()
     await workspace.close()

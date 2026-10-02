@@ -1,7 +1,22 @@
 import pytest
+from mcp import Client
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS, CallToolResult, Tool
 
 from mirage import RAMVFS, MountMode, Workspace
 from mirage.agents.mcp.server import MirageMcpServer, create_mirage_mcp_server
+
+
+async def list_tools(server: MirageMcpServer) -> list[Tool]:
+    async with Client(server.server) as client:
+        return (await client.list_tools()).tools
+
+
+async def call_tool(
+    server: MirageMcpServer, name: str, arguments: dict
+) -> CallToolResult:
+    async with Client(server.server) as client:
+        return await client.call_tool(name, arguments)
 
 
 @pytest.fixture
@@ -16,7 +31,7 @@ def server(workspace):
 
 @pytest.mark.asyncio
 async def test_lists_the_six_tools(server):
-    tools = await server.list_tools()
+    tools = await list_tools(server)
     assert sorted(t.name for t in tools) == [
         "edit",
         "execute_command",
@@ -30,8 +45,8 @@ async def test_lists_the_six_tools(server):
 @pytest.mark.asyncio
 async def test_read_only_tools_are_annotated(server):
     annotations = {
-        t.name: t.annotations and t.annotations.readOnlyHint
-        for t in await server.list_tools()
+        t.name: t.annotations and t.annotations.read_only_hint
+        for t in await list_tools(server)
     }
     assert annotations["read"] is True
     assert annotations["ls"] is True
@@ -43,7 +58,7 @@ async def test_read_only_tools_are_annotated(server):
 @pytest.mark.asyncio
 async def test_every_tool_declares_its_required_arguments(server):
     required = {
-        t.name: t.inputSchema["required"] for t in await server.list_tools()
+        t.name: t.input_schema["required"] for t in await list_tools(server)
     }
     assert required["execute_command"] == ["command"]
     assert required["read"] == ["path"]
@@ -55,26 +70,28 @@ async def test_every_tool_declares_its_required_arguments(server):
 
 @pytest.mark.asyncio
 async def test_call_execute_command(server):
-    result = await server.call_tool("execute_command", {"command": "echo hi"})
+    result = await call_tool(server, "execute_command", {"command": "echo hi"})
     assert "hi" in result.content[0].text
-    assert result.isError is False
+    assert result.is_error is False
 
 
 @pytest.mark.asyncio
 async def test_call_write_then_read(server):
-    written = await server.call_tool(
-        "write", {"path": "/a.txt", "content": "x\ny\n"}
+    written = await call_tool(
+        server, "write", {"path": "/a.txt", "content": "x\ny\n"}
     )
-    assert written.isError is False
-    read = await server.call_tool("read", {"path": "/a.txt"})
+    assert written.is_error is False
+    read = await call_tool(server, "read", {"path": "/a.txt"})
     assert read.content[0].text == "     1\tx\n     2\ty\n"
 
 
 @pytest.mark.asyncio
 async def test_call_read_offset_and_limit(server):
-    await server.call_tool("write", {"path": "/m.txt", "content": "a\nb\nc\n"})
-    read = await server.call_tool(
-        "read", {"path": "/m.txt", "offset": 1, "limit": 1}
+    await call_tool(
+        server, "write", {"path": "/m.txt", "content": "a\nb\nc\n"}
+    )
+    read = await call_tool(
+        server, "read", {"path": "/m.txt", "offset": 1, "limit": 1}
     )
     assert read.content[0].text == "     2\tb\n"
 
@@ -82,35 +99,57 @@ async def test_call_read_offset_and_limit(server):
 @pytest.mark.asyncio
 async def test_call_edit(server, workspace):
     await workspace.vfs.write("/e.txt", b"foo bar")
-    result = await server.call_tool(
-        "edit", {"path": "/e.txt", "old_string": "bar", "new_string": "qux"}
+    result = await call_tool(
+        server,
+        "edit",
+        {"path": "/e.txt", "old_string": "bar", "new_string": "qux"},
     )
-    assert result.isError is False
+    assert result.is_error is False
     assert await workspace.vfs.read("/e.txt") == b"foo qux"
 
 
 @pytest.mark.asyncio
 async def test_call_ls_and_grep(server):
-    await server.call_tool(
-        "write", {"path": "/d/a.txt", "content": "needle\n"}
+    await call_tool(
+        server, "write", {"path": "/d/a.txt", "content": "needle\n"}
     )
-    listing = await server.call_tool("ls", {"path": "/d"})
+    listing = await call_tool(server, "ls", {"path": "/d"})
     assert "a.txt" in listing.content[0].text
-    found = await server.call_tool("grep", {"pattern": "needle", "path": "/"})
+    found = await call_tool(server, "grep", {"pattern": "needle", "path": "/"})
     assert "needle" in found.content[0].text
 
 
 @pytest.mark.asyncio
 async def test_failure_sets_is_error(server):
-    result = await server.call_tool("read", {"path": "/missing.txt"})
-    assert result.isError is True
+    result = await call_tool(server, "read", {"path": "/missing.txt"})
+    assert result.is_error is True
     assert "not found" in result.content[0].text
 
 
 @pytest.mark.asyncio
-async def test_unknown_tool_raises(server):
-    with pytest.raises(ValueError, match="unknown tool"):
-        await server.call_tool("nope", {})
+async def test_unknown_tool_is_a_protocol_error(server):
+    async with Client(server.server) as client:
+        with pytest.raises(MCPError) as caught:
+            await client.call_tool("nope", {})
+    assert caught.value.code == INVALID_PARAMS
+    assert caught.value.message == "Tool nope not found"
+
+
+@pytest.mark.asyncio
+async def test_missing_argument_is_an_error_result(server):
+    result = await call_tool(server, "read", {})
+    assert result.is_error is True
+    assert result.content[0].text == (
+        "Input validation error: Invalid arguments for tool read: "
+        "'path' is a required property"
+    )
+
+
+@pytest.mark.asyncio
+async def test_argument_outside_the_schema_is_an_error_result(server):
+    result = await call_tool(server, "read", {"path": "/a.txt", "offset": -1})
+    assert result.is_error is True
+    assert "Input validation error" in result.content[0].text
 
 
 def test_server_advertises_name_and_version(workspace):
@@ -125,10 +164,11 @@ def test_server_advertises_name_and_version(workspace):
 async def test_stale_write_protection_reaches_the_tools(workspace):
     server = MirageMcpServer(workspace, stale_write_protection=False)
     await workspace.vfs.write("/a.txt", b"hello world")
-    await server.call_tool("read", {"path": "/a.txt"})
+    await call_tool(server, "read", {"path": "/a.txt"})
     await workspace.vfs.write("/a.txt", b"hello there")
-    result = await server.call_tool(
+    result = await call_tool(
+        server,
         "edit",
         {"path": "/a.txt", "old_string": "hello", "new_string": "goodbye"},
     )
-    assert result.isError is False
+    assert result.is_error is False

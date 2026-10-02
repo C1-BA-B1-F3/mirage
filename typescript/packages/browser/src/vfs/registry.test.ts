@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js'
+import type { OAuthClientMetadata } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
 import { tokenUrl } from '@struktoai/mirage-core/core/google/client'
 import type { TokenManager } from '@struktoai/mirage-core/core/google/client'

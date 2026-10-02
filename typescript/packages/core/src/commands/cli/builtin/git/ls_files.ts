@@ -14,31 +14,17 @@
 
 import { IOResult } from '../../../../io/types.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
-import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { GitError } from './errors.ts'
 import { readIndex } from './index_file.ts'
-import { repoRelative, under } from './pathspec.ts'
+import { pathspecPatterns, pathspecSelects, repoRelative } from './pathspec.ts'
 import { quotePath, relativePath } from './render.ts'
 import { configBool } from './repo.ts'
 import { opened } from './session.ts'
 import { fatal, startPoint } from './util.ts'
-
-/**
- * Whether a repository-relative path is one a pathspec names.
- *
- * A pathspec names a path it spells, a directory the path lies under, or a
- * glob that matches it whole; a glob's `*` crosses `/`, so `*.c` finds
- * `sub/x.c` as git's does.
- */
-export function pathspecSelects(path: string, patterns: readonly string[]): boolean {
-  return patterns.some(
-    (pattern) => under(path, pattern) || path === pattern || fnmatch(path, pattern),
-  )
-}
 
 /**
  * List index paths, including conflict stages when requested.
@@ -56,7 +42,7 @@ export async function lsFiles(inv: CLIInvocation): Promise<CommandFnResult> {
     const state = await readIndex(repo, repo.dispatch)
     const start = startPoint(fl)
     const prefix = repoRelative(repo.location, start, '.')
-    const patterns = inv.texts.map((text) => repoRelative(repo.location, start, text))
+    const patterns = pathspecPatterns(repo.location, start, inv.texts)
     const rows = [...state.entries.values()]
     for (const conflict of state.conflicts.values()) {
       for (const entry of [conflict.ancestor, conflict.this, conflict.other])

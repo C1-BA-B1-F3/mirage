@@ -337,6 +337,7 @@ describe('endpoint-required S3 aliases (minio/ceph/seaweedfs)', () => {
       const vfs = c.build(c.make() as never)
       expect(vfs.name).toBe(c.kind)
       expect(vfs).toBeInstanceOf(S3VFS)
+      expect(vfs.storageLocation()).toBe(new S3VFS(c.toS3(c.make() as never)).storageLocation())
       for (const op of vfs.ops()) expect(op.vfs).toBe(c.kind)
       for (const cmd of vfs.commands()) expect(cmd.vfs).toBe(c.kind)
       const blob = JSON.stringify(await vfs.getState())

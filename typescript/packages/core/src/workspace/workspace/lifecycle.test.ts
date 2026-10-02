@@ -603,14 +603,18 @@ describe('closeWorkspace surfaces closer failures', () => {
     await expect(ws.close()).rejects.toThrow('journal replay failed')
   }, 30_000)
 
-  it('keeps the closer failure when a later teardown stage fails too', async () => {
+  it('keeps every teardown failure and still releases the later stages', async () => {
     const vfs = new RAMVFS()
     const ws = new Workspace(
       { '/m': [vfs, MountMode.WRITE] },
       { mode: MountMode.WRITE, shellParser: parser },
     )
     await ws.dispatch('stat', '/m')
+    vi.spyOn(ws.processes, 'stop').mockImplementation(() => {
+      throw new Error('process cancellation failed')
+    })
     vi.spyOn(vfs, 'close').mockRejectedValue(new Error('VFS close failed'))
+    vi.spyOn(ws.stateStore, 'close').mockRejectedValue(new Error('store close failed'))
     const closers = (ws as unknown as { closers: (() => Promise<void>)[] }).closers
     closers.push(() => Promise.reject(new Error('journal replay failed')))
     const err = await ws.close().then(
@@ -620,10 +624,13 @@ describe('closeWorkspace surfaces closer failures', () => {
     // The later rejection must not carry the replay failure back out of sight.
     expect(err).toBeInstanceOf(AggregateError)
     expect((err as AggregateError).errors.map((e: Error) => e.message)).toEqual([
+      'process cancellation failed',
       'journal replay failed',
       'VFS close failed',
+      'store close failed',
     ])
     expect((ws as unknown as { closed: boolean }).closed).toBe(true)
+    await expect(ws.close()).rejects.toBe(err)
   }, 30_000)
 
   it('aggregates when more than one closer fails', async () => {

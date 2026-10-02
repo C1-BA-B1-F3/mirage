@@ -18,16 +18,22 @@ from mirage.types import PathSpec
 def normalize(raw: str | None) -> str:
     """Normalize a key prefix.
 
+    The one rule every object-key backend applies, on both hosts:
+    leading slashes go and one trailing slash is ensured. A prefix that
+    is empty once its leading slashes are gone (``""``, ``"/"``) is no
+    prefix at all, so a root-spelled prefix never puts a slash in front
+    of every key.
+
     Args:
-        raw: The raw prefix string, or None.
+        raw (str | None): The raw prefix string, or None.
 
     Returns:
-        Empty string if input was None/empty; otherwise the prefix with
-        leading slashes stripped and a trailing slash ensured.
+        str: ``""`` for no prefix, else the prefix with leading slashes
+        stripped and a trailing slash ensured.
     """
-    if not raw:
+    v = (raw or "").lstrip("/")
+    if not v:
         return ""
-    v = raw.lstrip("/")
     return v if v.endswith("/") else v + "/"
 
 

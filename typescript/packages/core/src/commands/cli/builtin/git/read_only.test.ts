@@ -105,6 +105,17 @@ it.each(forms)('matches native Git: %s', async (form) => {
   })
   expect(await run(form)).toEqual([native.status, native.stdout, native.stderr])
 })
+
+// A named commit always shows its header, even when the pathspec leaves no
+// diff (git 2.55 in CI; Apple's git 2.54 drops the commit, so these stay out
+// of the native list).
+it.each([
+  ['show --format=%s --name-status HEAD~1 -- nothing', 'add app\n'],
+  ['show --format=%s --name-status HEAD -- app.txt', 'merge side\n\n'],
+  ['show --format=%s --first-parent --name-status HEAD -- app.txt', 'merge side\n'],
+])('keeps a named commit header: %s', async (form, stdout) => {
+  expect(await run(form)).toEqual([0, stdout, ''])
+})
 it.each(['--version', 'version', '-v'])('version without repository: %s', async (form) => {
   const r = await ws.shell('git ' + form)
   expect(r.exitCode).toBe(0)

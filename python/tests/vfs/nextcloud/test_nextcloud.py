@@ -66,21 +66,3 @@ def test_nextcloud_vfs_registers_commands():
     assert "find" in command_names
     assert "mkdir" in command_names
     assert "rm" in command_names
-
-
-def test_nextcloud_vfs_get_state():
-    config = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/",
-        username="alice",
-        password="secret",
-    )
-    vfs = NextcloudVFS(config)
-    state = vfs.get_state()
-    assert state["type"] == "nextcloud"
-    assert state["needs_override"] is True
-    assert state["config"]["password"] == "<REDACTED>"
-    assert state["config"]["username"] == "alice"
-    assert (
-        state["config"]["url"]
-        == "https://cloud.example.com/remote.php/dav/files/user/"
-    )

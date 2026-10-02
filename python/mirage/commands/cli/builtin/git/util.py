@@ -134,6 +134,27 @@ def escaped(argv: tuple[str, ...]) -> frozenset[str]:
     return frozenset(argv[argv.index(MARKER) + 1 :])
 
 
+def split_marked(
+    texts: tuple[str, ...], argv: tuple[str, ...]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The operands before a ``--`` on the line and the ones after it.
+
+    ``git diff A B -- docs`` reads what comes before the marker as
+    revisions and what follows as pathspecs, whatever either looks
+    like. Every word after the marker is an operand, so they are the
+    tail of the operands, as many as the verbatim argv holds past it.
+
+    Args:
+        texts (tuple[str, ...]): positional text operands, as typed.
+        argv (tuple[str, ...]): the line's verbatim tokens after the
+            head word, subcommand words included.
+    """
+    if MARKER not in argv:
+        return texts, ()
+    cut = len(texts) - (len(argv) - argv.index(MARKER) - 1)
+    return texts[:cut], texts[cut:]
+
+
 def switches(inv: CLIInvocation[None]) -> frozenset[str]:
     """The one-letter switches the leaf declares, without their dash.
 
@@ -197,11 +218,13 @@ def check_operands(
     marker survives the parser.
 
     Which side of the marker an operand fell on says nothing about what
-    it *means*: a verb taking a revision reads an escaped word as one
-    and fails with git's own "unknown revision or path" wording, where
-    git would narrow the walk by it instead. That divergence is
-    unchanged and deliberate, because limiting by nothing would print
-    every commit and look like an answer.
+    it *means* here. ``diff``, ``show`` and ``diff-tree`` read what
+    follows the marker as pathspecs (``split_marked``); a walk (``log``,
+    ``rev-list``, ``shortlog``) reads an escaped word as a revision and
+    fails with git's own "unknown revision or path" wording, where git
+    would narrow the walk by it instead. That divergence is deliberate,
+    because limiting by nothing would print every commit and look like
+    an answer.
 
     Which refusal to raise is the caller's, because git words this
     differently per verb and means each one: see ``UnknownSwitchError``

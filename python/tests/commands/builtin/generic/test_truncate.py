@@ -155,12 +155,14 @@ def _operand(path: str, raw: str) -> PathSpec:
 
 
 @pytest.mark.asyncio
-async def test_a_slashed_operand_is_settled_by_the_truncate_op():
+async def test_a_slashed_operand_is_the_opens_eisdir():
     # GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
     # the open's EISDIR, not the stat's miss, and an absent bare name is
-    # made where its directory exists. The chain answers first: under an
-    # absent directory the name is ENOENT and the op never runs, every
-    # operand is still tried, and -c leaves an absent name alone.
+    # made where its directory exists. The EISDIR is settled before the
+    # op, so a backend with no truncate op says it too. The chain answers
+    # first: under an absent directory the name is ENOENT and the op never
+    # runs, every operand is still tried, and -c leaves an absent name
+    # alone.
     lengths: list[tuple[str, int]] = []
 
     async def stat(path):
@@ -179,9 +181,10 @@ async def test_a_slashed_operand_is_settled_by_the_truncate_op():
         stat=stat,
         truncate_fn=truncate_fn,
     )
-    assert lengths == [("/missing/", 4), ("/missing", 4)]
+    assert lengths == [("/missing", 4)]
     assert io.exit_code == 1
     assert io.stderr == (
+        b"truncate: cannot open '/missing/' for writing: Is a directory\n"
         b"truncate: cannot open '/nodir/x' for writing: "
         b"No such file or directory\n"
     )
@@ -192,7 +195,7 @@ async def test_a_slashed_operand_is_settled_by_the_truncate_op():
         truncate_fn=truncate_fn,
     )
     assert io.exit_code == 0
-    assert lengths == [("/missing/", 4), ("/missing", 4)]
+    assert lengths == [("/missing", 4)]
 
 
 @pytest.mark.asyncio

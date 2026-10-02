@@ -67,4 +67,19 @@ describe('github find', () => {
     expect(await find(accessor(), spec('/src/main.py'), { maxSize: 50 })).toEqual([])
     expect(await find(accessor(), spec('/src/main.py'), { minSize: 100 })).toEqual(['/src/main.py'])
   })
+
+  it.each([
+    ['/', ['/empty-dir', '/empty.txt']],
+    ['/empty-dir', ['/empty-dir']],
+    ['/src', []],
+  ])('-empty from %s matches empty files and directories', async (start, expected) => {
+    // A directory holding only a submodule is one: the tree drops gitlinks.
+    const tree: Record<string, TreeEntry> = {
+      ...TREE,
+      'empty.txt': { path: 'empty.txt', type: 'blob', sha: 's6', size: 0 },
+      'empty-dir': { path: 'empty-dir', type: 'tree', sha: 's7', size: null },
+    }
+    const github = { tree } as unknown as GitHubAccessor
+    expect(await find(github, spec(start), { empty: true })).toEqual(expected)
+  })
 })

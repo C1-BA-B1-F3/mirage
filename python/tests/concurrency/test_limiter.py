@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import pytest
 
 from mirage.concurrency import ConcurrencyLimiter
+from mirage.concurrency.limiter import bounded_map
 
 
 @dataclass
@@ -99,3 +100,41 @@ async def test_cancellation_releases_capacity() -> None:
         await task
 
     await asyncio.wait_for(_acquire_once(limiter), timeout=0.1)
+
+
+@pytest.mark.asyncio
+async def test_bounded_map_keeps_order_and_owns_its_workers():
+    entered = asyncio.Event()
+    cleaned = asyncio.Event()
+    admitted = []
+
+    async def one(value):
+        admitted.append(value)
+        if value == 0:
+            await entered.wait()
+            raise ValueError("download failed")
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaned.set()
+
+    with pytest.raises(ValueError, match="download failed"):
+        await bounded_map(list(range(1000)), one, 2)
+    assert admitted == [0, 1]
+    assert cleaned.is_set()
+
+    entered.clear()
+    cleaned.clear()
+    task = asyncio.create_task(bounded_map([1, 2, 3], one, 1))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cleaned.is_set()
+
+    async def double(value):
+        await asyncio.sleep(0)
+        return value * 2
+
+    assert await bounded_map([3, 1, 2], double, 2) == [6, 2, 4]

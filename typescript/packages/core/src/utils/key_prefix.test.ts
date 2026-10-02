@@ -12,17 +12,24 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { expect, it } from 'vitest'
-import { pathspecSelects } from './ls_files.ts'
+import { describe, expect, it } from 'vitest'
+import { normalize } from './key_prefix.ts'
 
-it.each([
-  ['docs/a.md', [''], true],
-  ['docs/a.md', ['docs'], true],
-  ['docs/a.md', ['doc'], false],
-  ['docs/a.md', ['docs/a.md'], true],
-  ['docs/sub/a.md', ['*.md'], true],
-  ['docs/a.md', ['docs/*.txt', '*.md'], true],
-  ['a.txt', ['docs'], false],
-])('names %s by path, directory or glob in %j', (path, patterns, expected) => {
-  expect(pathspecSelects(path, patterns)).toBe(expected)
+// The one key-prefix rule, mirrored by python/tests/utils/test_key_prefix.py.
+// A root-spelled prefix is no prefix: '/' used to normalize to '/', and every
+// s3 or gridfs key then began with a slash.
+const NORMALIZE: readonly [string | undefined, string][] = [
+  ['/team/x/', 'team/x/'],
+  ['team/x', 'team/x/'],
+  ['//team/x', 'team/x/'],
+  ['', ''],
+  [undefined, ''],
+  ['/', ''],
+  ['//', ''],
+]
+
+describe('normalize', () => {
+  it.each(NORMALIZE)('%j -> %j', (raw, expected) => {
+    expect(normalize(raw)).toBe(expected)
+  })
 })

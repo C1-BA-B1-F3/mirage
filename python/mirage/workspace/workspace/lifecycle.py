@@ -16,6 +16,7 @@ import asyncio
 import builtins
 import io
 import os
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, cast
 
 from mirage.runtime.python.host.fs import os_routing
@@ -122,6 +123,20 @@ def close_sync_parts(
     ws._cache._drain_tasks.clear()
 
 
+async def _drop_state(ws: "Workspace") -> None:
+    """Delete the workspace's state: its own planes, then its store scope.
+
+    A plane store passed in directly is not the state store's, so the
+    store's drop alone would leave it holding the workspace.
+
+    Args:
+        ws: the workspace being deleted.
+    """
+    for plane in ws._planes:
+        await plane.clear()
+    await ws._state_store.drop(ws.workspace_id)
+
+
 async def close_async(
     ws: "Workspace",
     *,
@@ -154,63 +169,79 @@ async def close_async(
     ws._closing = True
     async with ws._close_lock:
         if ws._async_closed:
+            if ws._close_error is not None:
+                raise ws._close_error
             return
-        await ws._session_mgr.settle()
-        await ws._watch.detach()
-        await ws.job_table.kill_all()
-        ws.processes.stop()
+        failures: list[BaseException] = []
+
+        async def settle(*work: Awaitable[Any]) -> None:
+            results = await asyncio.gather(*work, return_exceptions=True)
+            failures.extend(
+                result
+                for result in results
+                if isinstance(result, BaseException)
+            )
+
+        await settle(ws._session_mgr.settle())
+        await settle(ws._watch.detach())
+        await settle(ws.job_table.kill_all())
+        try:
+            ws.processes.stop()
+        except Exception as exc:
+            failures.append(exc)
         drain_tasks = list(ws._cache._drain_tasks.values())
-        await ws._script_policy.close()
-        await ws._runtimes.close()
-        await ws.processes.drain()
-        await ws.job_table.close_consoles()
-        retirements = await asyncio.gather(
+        await settle(ws._script_policy.close())
+        await settle(ws._runtimes.close())
+        await settle(ws.processes.drain())
+        await settle(ws.job_table.close_consoles())
+        await settle(
             *(
                 asyncio.shield(task)
                 for task in list(ws._registry.retiring_mounts.values())
-            ),
-            return_exceptions=True,
+            )
         )
-        for result in retirements:
-            if isinstance(result, BaseException):
-                raise result
         mounts = {
             id(mount.vfs): mount.vfs
             for mount in ws._registry.mounts()
             if id(mount.vfs) not in ws._shared_mounts
         }
-        await asyncio.gather(*(vfs.close() for vfs in mounts.values()))
+        await settle(*(vfs.close() for vfs in mounts.values()))
         stores = {
             id(mount.index_store): mount.index_store
             for mount in ws._registry.mounts()
         }
-        await asyncio.gather(*(store.close() for store in stores.values()))
-        dropped: Exception | None = None
+        await settle(*(store.close() for store in stores.values()))
         if drop_state:
             # The kernel mounts still serve requests until the sync parts
             # unmount them, and a request may write the very state being
             # deleted, so they go first. A failed drop must not skip the
             # rest of teardown: a mount left up keeps the process alive.
-            ws._kernel_mounts.close()
-            ws._state_dropped = True
             try:
-                for plane in ws._planes:
-                    await plane.clear()
-                await ws._state_store.drop(ws.workspace_id)
+                ws._kernel_mounts.close()
             except Exception as exc:
-                dropped = exc
+                failures.append(exc)
+            ws._state_dropped = True
+            await settle(_drop_state(ws))
         if ws._owns_state_store:
-            await ws._state_store.close()
-        close_sync_parts(ws)
-        for task in drain_tasks:
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            await settle(ws._state_store.close())
         try:
-            await ws._cache.clear()
-        finally:
-            await ws._cache.close()
+            close_sync_parts(ws)
+        except Exception as exc:
+            failures.append(exc)
+        drains = await asyncio.gather(*drain_tasks, return_exceptions=True)
+        failures.extend(
+            result
+            for result in drains
+            if isinstance(result, BaseException)
+            and not isinstance(result, asyncio.CancelledError)
+        )
+        await settle(ws._cache.clear())
+        await settle(ws._cache.close())
         ws._async_closed = True
-        if dropped is not None:
-            raise dropped
+        if failures:
+            ws._close_error = (
+                failures[0]
+                if len(failures) == 1
+                else BaseExceptionGroup("workspace teardown failed", failures)
+            )
+            raise ws._close_error

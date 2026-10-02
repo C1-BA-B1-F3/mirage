@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class LanceDBConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     uri: str
     api_key: SecretStr | None = None

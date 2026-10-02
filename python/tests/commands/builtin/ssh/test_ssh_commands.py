@@ -15,7 +15,7 @@
 import asyncio
 import io
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncssh
 import pytest
@@ -199,7 +199,7 @@ class SSHTestEnv:
         self._dirs: set[str] = {"/data"}
         self._sftp = MockSFTPClient(self._files, self._dirs)
         self.vfs.accessor._sftp = self._sftp
-        self.vfs.accessor._conn = MagicMock()
+        self.vfs.accessor._conn = MagicMock(wait_closed=AsyncMock())
         self.ws = Workspace(
             {"/ssh": (self.vfs, MountMode.WRITE)},
             mode=MountMode.WRITE,

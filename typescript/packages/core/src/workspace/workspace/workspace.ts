@@ -688,7 +688,7 @@ export class Workspace {
   // the same path as shell commands — cache read-through on
   // reads, post-write invalidation, and mount-mode enforcement narrowed
   // by the current session all come from the Dispatcher. Reads are raw
-  // bytes (no filetype rendering), matching the Python WasmVFS. An
+  // bytes (no filetype rendering), matching the Python WasmView. An
   // `issuer` rides every op as the `issuer` kwarg, which the dispatcher
   // lifts onto the op door's context and never forwards to a backend:
   // it is how a profile policy's own reads reach its `preOps` marked as
@@ -1702,15 +1702,17 @@ export class Workspace {
 
   private async runClose(dropState: boolean): Promise<void> {
     this.stateDropped = dropState
-    await this.sessionManager.settle()
-    await this.scriptPolicy.close()
     try {
       await closeWorkspace({
         watch: this.watchManager,
         cache: this.cache,
         ownsStateStore: this.ownsStateStore,
         stateStore: this.stateStoreInternal,
-        closers: this.closers,
+        closers: [
+          () => this.sessionManager.settle(),
+          () => this.scriptPolicy.close(),
+          ...this.closers.splice(0),
+        ],
         jobTable: this.jobTable,
         registry: this.registry,
         sharedMounts: this.sharedMounts,

@@ -68,7 +68,7 @@ describe('statFields', () => {
 describe('statResult', () => {
   it('wraps the fields as a named class instance, not a bare object', () => {
     // Parameter properties rather than a bare constructor body, which
-    // is also how `osaccess.test.ts` spells this fake: a class whose
+    // is also how `fs.test.ts` spells this fake: a class whose
     // only member is a constructor is not a class worth writing.
     class FakeClassInstance {
       constructor(

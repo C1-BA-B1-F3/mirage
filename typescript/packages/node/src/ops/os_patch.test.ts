@@ -13,16 +13,16 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type fs from 'node:fs'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { MountMode } from '@struktoai/mirage-core/types'
-import { DiskVFS } from './vfs/disk/disk.ts'
-import { patchNodeFs } from './fs_monkey.ts'
-import { Workspace } from './workspace.ts'
+import { DiskVFS } from '../vfs/disk/disk.ts'
+import { patchNodeFs } from './os_patch.ts'
+import { Workspace } from '../workspace.ts'
 
 type Fs = typeof fs
 
@@ -32,7 +32,7 @@ let scratch: string
 let restore: (() => void) | null = null
 
 beforeEach(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'mirage-fsmonkey-'))
+  scratch = mkdtempSync(join(tmpdir(), 'mirage-os-patch-'))
 })
 
 afterEach(() => {
@@ -124,6 +124,25 @@ describe('patchNodeFs — fall-through to native fs', () => {
     await fs.promises.writeFile(realPath, 'native-content')
     const text = await fs.promises.readFile(realPath, 'utf-8')
     expect(text).toBe('native-content')
+    await ws.close()
+  })
+
+  it('a disk root at its own prefix does not re-enter', async () => {
+    // Python needs ops/host_io for this layout: its patched os answers the
+    // disk backend's own physical path. The node backends bind
+    // node:fs/promises as ESM, which fs-monkey's swap of the CJS
+    // fs.promises getter never reaches.
+    writeFileSync(join(scratch, 'a.txt'), 'hello')
+    const ws = new Workspace(
+      { [scratch]: new DiskVFS({ root: scratch }) },
+      { mode: MountMode.READ },
+    )
+    restore = patchNodeFs(ws)
+    const fs = requireCjs('fs') as Fs
+
+    await expect(fs.promises.writeFile(join(scratch, 'b.txt'), 'x')).rejects.toThrow()
+    expect(await fs.promises.readdir(scratch)).toEqual(['a.txt'])
+    expect(await fs.promises.readFile(join(scratch, 'a.txt'), 'utf-8')).toBe('hello')
     await ws.close()
   })
 

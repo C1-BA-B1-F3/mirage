@@ -153,6 +153,7 @@ async def test_readdir_stores_sftp_attrs_in_index(index):
 async def test_stat_size_matches_read_for_every_file(index):
     # The fskit invariant behind sizes_always_known: the size stat reports
     # must equal the byte length a read delivers, 0-byte files included.
+    # A directory has no byte length, so its remote 4096 never surfaces.
     accessor = _accessor(
         {"/a.txt": b"hello", "/empty.txt": b"", "/docs/b.bin": b"abc"},
         {"/", "/docs"},
@@ -167,6 +168,7 @@ async def test_stat_size_matches_read_for_every_file(index):
         for child in listing:
             info = await stat(accessor, PathSpec.from_str_path(child), index)
             if info.type == FileType.DIRECTORY:
+                assert info.size is None, child
                 stack.append(child)
                 continue
             assert info.size is not None, child

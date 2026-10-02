@@ -383,11 +383,24 @@ class SessionManager:
                 )
             self._loaded = True
 
-    async def flush(self) -> None:
-        """Write dirty sessions through the store's generation gate."""
-        for session in list(self._sessions.values()):
-            async with self._locks[session.session_id]:
-                await self._flush_one(session)
+    async def flush(self, session_id: str | None = None) -> None:
+        """Persist one session, or all sessions at a workspace boundary.
+
+        Args:
+            session_id (str | None): session to persist; None flushes all.
+        """
+        if session_id is None:
+            sessions = list(self._sessions.values())
+        else:
+            session = self._sessions.get(session_id)
+            sessions = [] if session is None else [session]
+        for session in sessions:
+            lock = self._locks.get(session.session_id)
+            if lock is None:
+                continue
+            async with lock:
+                if self._sessions.get(session.session_id) is session:
+                    await self._flush_one(session)
 
     async def settle(self) -> None:
         """Wait for admitted session writes before their store closes."""

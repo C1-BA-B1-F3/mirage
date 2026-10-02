@@ -921,3 +921,13 @@ async def test_a_cancelled_cas_that_committed_is_rewritten_on_the_next_flush():
     session.cwd = "/base"
     await mgr.flush()
     assert (await store.load())["default"]["cwd"] == "/base"
+
+
+@pytest.mark.asyncio
+async def test_flush_of_closed_session_does_not_recreate_it():
+    manager = SessionManager("default")
+    manager.create("gone")
+    await manager.flush("gone")
+    await manager.close("gone")
+    await manager.flush("gone")
+    assert "gone" not in await manager.store.load()

@@ -2,6 +2,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 
 from mirage.core.nextcloud.search.constants import SEARCH_ENDPOINT_PATH
 from mirage.core.nextcloud.search.types import SearchTarget
+from mirage.core.nextcloud.util import raw_path_of
 from mirage.types import PathSpec
 
 
@@ -24,7 +25,7 @@ def search_target(url: str) -> SearchTarget | None:
 
 
 def scope_path(target: SearchTarget, path: PathSpec) -> str:
-    relative = path.mount_path.strip("/")
+    relative = raw_path_of(path).strip("/")
     if not relative:
         return target.vfs_scope
     return target.vfs_scope.rstrip("/") + "/" + relative

@@ -393,6 +393,36 @@ class PathspecError(GitError):
         super().__init__(f"pathspec '{pathspec}' did not match any files")
 
 
+class EmptyPathspecError(GitError):
+    """An empty pathspec operand, which git refuses rather than reading
+    as everything (pinned against git 2.54)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "empty string is not a valid pathspec. please use . instead if "
+            "you meant to match all paths"
+        )
+
+
+class UnsupportedPathspecError(GitError):
+    """Pathspec magic git has but this build does not read.
+
+    ``:(top)``, ``:!``, ``:(icase)`` and their kin are real git; matching
+    the operand as a plain path would select nothing, or the wrong
+    paths, and look like an answer, so the refusal says unsupported and
+    names what exists instead.
+
+    Args:
+        pathspec (str): the operand as the user spelled it.
+    """
+
+    def __init__(self, pathspec: str) -> None:
+        super().__init__(
+            f"unsupported pathspec magic: {pathspec} (this build implements "
+            f"paths, leading directories and wildcard patterns)"
+        )
+
+
 class IgnoredPathsError(GitError):
     """Explicitly named paths that an ignore rule covers.
 

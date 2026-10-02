@@ -5,6 +5,10 @@ import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { HfBucketsAccessor } from '../../accessor/hf_buckets.ts'
+import { HfModelsHubAccessor } from '../../accessor/hf_hub.ts'
+import { GridFSVFS } from '../gridfs/gridfs.ts'
+import { R2VFS } from '../r2/r2.ts'
 import { S3VFS } from './s3.ts'
 import { installS3Mock, S3MockStore, type S3Mock } from './mock.ts'
 
@@ -17,30 +21,36 @@ function mkPath(virtual: string): PathSpec {
   return new PathSpec({ virtual, directory: virtual, vfsPath: stripSlash(virtual) })
 }
 
-describe('normalizeKeyPrefix', () => {
-  it('returns undefined for empty string', () => {
-    expect(normalizeKeyPrefix('')).toBeUndefined()
-  })
+// The one key-prefix rule (core `normalize`) reaches every backend that keys
+// objects under a prefix, so one spelling names one prefix whichever backend
+// it lands on; an alias reaches it through the S3VFS it builds. A root-spelled
+// prefix is no prefix. Mirrors python/tests/utils/test_key_prefix.py.
+const PREFIX_SPELLINGS: readonly [string | undefined, string][] = [
+  ['/team/x/', 'team/x/'],
+  ['team/x', 'team/x/'],
+  ['', ''],
+  [undefined, ''],
+  ['/', ''],
+]
 
-  it('appends trailing slash to prefix without one', () => {
-    expect(normalizeKeyPrefix('users/abc')).toBe('users/abc/')
-  })
+const opt = (keyPrefix: string | undefined): { keyPrefix?: string } =>
+  keyPrefix === undefined ? {} : { keyPrefix }
 
-  it('strips leading slash and normalizes trailing slash', () => {
-    expect(normalizeKeyPrefix('/users/abc/')).toBe('users/abc/')
-  })
-})
+const PREFIX_BACKENDS: Record<string, (keyPrefix: string | undefined) => string | undefined> = {
+  normalizeKeyPrefix: (p) => normalizeKeyPrefix(p),
+  s3: (p) => new S3VFS({ bucket: BUCKET, ...opt(p) }).config.keyPrefix,
+  r2: (p) => new R2VFS({ bucket: BUCKET, accountId: 'a', ...opt(p) }).accessor.config.keyPrefix,
+  gridfs: (p) => new GridFSVFS({ uri: 'mongodb://h', database: 'd', ...opt(p) }).config.keyPrefix,
+  hf_buckets: (p) => new HfBucketsAccessor({ bucket: 'o/b', ...opt(p) }).keyPrefix,
+  hf_models: (p) => new HfModelsHubAccessor({ repoId: 'o/r', ...opt(p) }).keyPrefix,
+}
 
-describe('S3VFS constructor with keyPrefix', () => {
-  it('does not set keyPrefix when not provided', () => {
-    const res = new S3VFS({ bucket: BUCKET })
-    expect(res.config.keyPrefix).toBeUndefined()
-  })
-
-  it('normalizes keyPrefix on construction', () => {
-    const res = new S3VFS({ bucket: BUCKET, keyPrefix: '/users/abc/' })
-    expect(res.config.keyPrefix).toBe('users/abc/')
-  })
+describe('one key prefix rule across backends', () => {
+  for (const [name, build] of Object.entries(PREFIX_BACKENDS)) {
+    it.each(PREFIX_SPELLINGS)(`${name}: %j -> %j`, (raw, expected) => {
+      expect(build(raw) ?? '').toBe(expected)
+    })
+  }
 })
 
 describe('S3VFS operations with keyPrefix (mocked)', () => {

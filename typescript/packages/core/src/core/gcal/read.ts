@@ -20,7 +20,8 @@ import { makeRead } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { compactJsonBytes } from '../render/json.ts'
 import { listEvents } from './client.ts'
-import { bucketZone, calendarIndex, calendarPayload, scopedDayBounds } from './readdir.ts'
+import { dayBounds } from './day.ts'
+import { bucketZone, calendarIndex, calendarPayload, scopedBucket } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 async function readCalendarJson(
@@ -39,7 +40,9 @@ async function readCalendarJson(
  *
  * The event file holds the events.list item unmodified: the directory name
  * and the HHMM segment are a view, while the payload is the truth an
- * absolute-instant comparison has to be made against.
+ * absolute-instant comparison has to be made against. Only the day the name
+ * is on is queried, so a read in a multi-day bucket costs what one in a day
+ * directory does.
  */
 async function readEvent(
   accessor: GCalAccessor,
@@ -52,8 +55,13 @@ async function readEvent(
   const tz = bucketZone(accessor, calendars)
   const calId = entry.id
   if (typeof calId !== 'string') throw enoent(path.virtual)
-  const [eventId] = parseEventFilename(match.slots.event ?? '')
-  const [timeMin, timeMax] = scopedDayBounds(accessor, match.slots.day ?? '', tz, path.virtual)
+  const days = scopedBucket(accessor, match.slots.bucket ?? '', tz, path.virtual)
+  const [eventId, named] = parseEventFilename(match.slots.event ?? '')
+  // A name carries its day exactly when the mount's buckets span several.
+  if ((named !== null) !== accessor.config.bucketDays > 1) throw enoent(path.virtual)
+  const day = named ?? days[0] ?? ''
+  if (!days.includes(day)) throw enoent(path.virtual)
+  const [timeMin, timeMax] = dayBounds(day, tz)
   for (const event of await listEvents(
     accessor.tokenManager,
     calId,

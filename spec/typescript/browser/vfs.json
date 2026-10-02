@@ -1395,6 +1395,9 @@
         "apiBase": {
           "required": false
         },
+        "bucketDays": {
+          "required": false
+        },
         "clientId": {
           "required": false
         },

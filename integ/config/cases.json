@@ -402,6 +402,30 @@
       "expect": {
         "refused": "gcal: start"
       }
+    },
+    {
+      "id": "gcal_bucket_days_round_trips",
+      "vfs": "gcal",
+      "config": {
+        "access_token": "t",
+        "bucket_days": 7
+      },
+      "expect": {
+        "state": {
+          "bucket_days": 7
+        }
+      }
+    },
+    {
+      "id": "gcal_bucket_days_is_1_7_or_30",
+      "vfs": "gcal",
+      "config": {
+        "access_token": "t",
+        "bucket_days": 14
+      },
+      "expect": {
+        "refused": "gcal: bucket"
+      }
     }
   ]
 }

@@ -26,80 +26,96 @@ from mirage.vfs.gcal.event_entry import (
 EVENT_ID = "la9i1t995acovthi3f761chla0"
 
 
-def test_filename_leads_with_the_id():
-    name = make_event_filename(EVENT_ID, "0900-1030", "PhD_Defense")
-    assert name == f"{EVENT_ID}__0900-1030_PhD_Defense.gcal.json"
-    assert parse_event_filename(name) == (EVENT_ID, "0900-1030")
+@pytest.mark.parametrize(
+    "title, day, name",
+    [
+        ("PhD_Defense", None, f"{EVENT_ID}__0900-1030_PhD_Defense.gcal.json"),
+        ("A__B_C", None, f"{EVENT_ID}__0900-1030_A__B_C.gcal.json"),
+        (
+            "PhD_Defense",
+            "2026-08-11",
+            f"{EVENT_ID}__2026-08-11_0900-1030_PhD_Defense.gcal.json",
+        ),
+    ],
+)
+def test_a_filename_leads_with_the_id_and_round_trips(title, day, name):
+    assert make_event_filename(EVENT_ID, "0900-1030", title, day) == name
+    assert parse_event_filename(name) == (EVENT_ID, day)
 
 
-def test_filename_round_trips_a_title_holding_underscores():
-    name = make_event_filename(EVENT_ID, "1500-1600", "A__B_C")
-    assert parse_event_filename(name) == (EVENT_ID, "1500-1600")
-
-
-def test_filename_rejects_a_non_event_name():
+@pytest.mark.parametrize(
+    "name",
+    [
+        "notes.txt",
+        "noseparator.gcal.json",
+        f"{EVENT_ID}__090.gcal.json",
+        f"{EVENT_ID}__0900-1030x.gcal.json",
+        f"{EVENT_ID}__2026-08-11_090.gcal.json",
+    ],
+)
+def test_a_name_without_a_time_label_is_not_an_event(name):
     with pytest.raises(FileNotFoundError):
-        parse_event_filename("notes.txt")
-    with pytest.raises(FileNotFoundError):
-        parse_event_filename("noseparator.gcal.json")
-    with pytest.raises(FileNotFoundError):
-        parse_event_filename(f"{EVENT_ID}__090.gcal.json")
+        parse_event_filename(name)
 
 
-def test_long_ascii_title_is_trimmed_to_name_max():
-    name = make_event_filename(EVENT_ID, "0900-1030", "a" * 400)
+@pytest.mark.parametrize(
+    "title", ["a" * 400, "会" * 200], ids=["ascii", "cjk"]
+)
+@pytest.mark.parametrize("day", [None, "2026-08-11"])
+def test_a_long_title_is_trimmed_by_bytes_to_name_max(title, day):
+    # 3 bytes per CJK character: a character-counted budget would overflow
+    # NAME_MAX, the bug gdocs/gsheets/gslides had until sanitize_label grew
+    # a byte budget.
+    name = make_event_filename(EVENT_ID, "0900-1030", title, day)
     assert len(name.encode()) <= NAME_MAX_BYTES
-    assert parse_event_filename(name) == (EVENT_ID, "0900-1030")
+    assert parse_event_filename(name) == (EVENT_ID, day)
 
 
-def test_long_cjk_title_is_trimmed_by_bytes_not_characters():
-    # 3 bytes per character: a character-counted budget would overflow
-    # NAME_MAX. gdocs/gsheets/gslides had exactly that bug until
-    # sanitize_label grew a byte budget.
-    name = make_event_filename(EVENT_ID, "0900-1030", "会" * 200)
-    raw = name.encode()
-    assert len(raw) <= NAME_MAX_BYTES
-    assert raw.decode() == name
-    assert parse_event_filename(name) == (EVENT_ID, "0900-1030")
-
-
-def test_title_is_dropped_when_a_long_id_leaves_no_room():
+def test_the_title_is_dropped_when_a_long_id_leaves_no_room():
     # 234 is the widest id that still names an event: the title is squeezed
-    # out entirely and id + separators + suffix lands exactly on NAME_MAX.
+    # out and id + separators + suffix lands exactly on NAME_MAX.
     long_id = "v" * 234
     name = make_event_filename(long_id, "0900-1030", "Some_Title")
-    assert len(name.encode()) == NAME_MAX_BYTES
     assert name == f"{long_id}__0900-1030.gcal.json"
-    assert parse_event_filename(name) == (long_id, "0900-1030")
+    assert len(name.encode()) == NAME_MAX_BYTES
 
 
-def test_an_id_too_long_to_name_keeps_the_id_rather_than_truncating_it():
+def test_an_id_too_long_to_name_is_kept_rather_than_truncated():
     # The title is what gives, never the id: a trimmed id would stop
-    # addressing the event. Real Google ids are 26 chars, so this only
+    # addressing the event. Google's own ids are 26 chars, so this only
     # arises for a caller-supplied events.import id.
     long_id = "v" * (NAME_MAX_BYTES - 20)
     name = make_event_filename(long_id, "0900-1030", "Some Title")
     assert len(name.encode()) > NAME_MAX_BYTES
-    assert parse_event_filename(name) == (long_id, "0900-1030")
+    assert parse_event_filename(name) == (long_id, None)
 
 
-def test_event_title_falls_back_by_access_role():
-    assert event_title("Standup") == "Standup"
-    assert event_title(None) == "untitled"
-    assert event_title("   ") == "untitled"
-    assert event_title(None, free_busy=True) == "busy"
+@pytest.mark.parametrize(
+    "summary, free_busy, title",
+    [
+        ("Standup", False, "Standup"),
+        (None, False, "untitled"),
+        ("   ", False, "untitled"),
+        (None, True, "busy"),
+    ],
+)
+def test_event_title_falls_back_by_access_role(summary, free_busy, title):
+    assert event_title(summary, free_busy=free_busy) == title
 
 
-def test_primary_calendar_keeps_its_alias():
-    assert (
-        make_calendar_dirname(
-            "integ@example.com", "integ@example.com", primary=True
-        )
-        == PRIMARY_DIR
-    )
-
-
-def test_calendar_dirname_embeds_the_id_verbatim():
-    cal_id = "en.usa#holiday@group.v.calendar.google.com"
-    name = make_calendar_dirname("US Holidays", cal_id)
-    assert name == f"US_Holidays__{cal_id}"
+@pytest.mark.parametrize(
+    "summary, cal_id, primary, name",
+    [
+        ("integ@example.com", "integ@example.com", True, PRIMARY_DIR),
+        (
+            "US Holidays",
+            "en.usa#holiday@group.v.calendar.google.com",
+            False,
+            "US_Holidays__en.usa#holiday@group.v.calendar.google.com",
+        ),
+    ],
+)
+def test_calendar_dirname_is_the_alias_or_embeds_the_id(
+    summary, cal_id, primary, name
+):
+    assert make_calendar_dirname(summary, cal_id, primary=primary) == name

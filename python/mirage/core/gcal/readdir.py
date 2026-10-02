@@ -18,6 +18,7 @@ from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.gcal.client import list_calendars, list_events
 from mirage.core.gcal.day import (
+    SPAN_SEP,
     bucket_name,
     bucket_start,
     clamped_hhmm,
@@ -34,7 +35,7 @@ from mirage.core.render.json import compact_json_bytes
 from mirage.core.time_range import TimeRange, parse_time
 from mirage.types import JsonValue, PathSpec
 from mirage.utils.errors import enoent
-from mirage.utils.glob_walk import glob_span
+from mirage.utils.glob_walk import glob_prefix, literal_span
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.vfs.gcal.event_entry import (
     CALENDAR_FILE,
@@ -165,6 +166,9 @@ def day_span(
 
     A glob's span widens to whole buckets, so a bucket the glob reaches
     into is decided on all of its days, not only on the ones it named.
+    A glob is read up to its first span separator: a bucket name is keyed
+    on its first day, so ``2027-03-01--2027-03-07*`` bounds the listing
+    as ``2027-03-01*`` does.
 
     Args:
         pattern (str | None): date glob, if present.
@@ -173,7 +177,7 @@ def day_span(
         scope (TimeRange): explicit inclusive/exclusive mount bounds.
         size (int): the mount's bucket length in days.
     """
-    span = glob_span(pattern)
+    span = literal_span(glob_prefix(pattern).partition(SPAN_SEP)[0])
     lo = scope.start
     hi = scope.end
     if span is not None:

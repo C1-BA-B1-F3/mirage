@@ -115,7 +115,16 @@ export function globStemPrefix(pattern: string | null | undefined, suffixes: str
  * the offset.
  */
 export function globSpan(pattern: string | null | undefined): [string, string] | null {
-  const literal = globPrefix(pattern)
+  return literalSpan(globPrefix(pattern))
+}
+
+/**
+ * The half-open range of dates a literal year, month or day names.
+ *
+ * The reading `globSpan` applies to a glob's literal prefix, for a caller
+ * that cuts the prefix first; separators trailing the literal are ignored.
+ */
+export function literalSpan(literal: string): [string, string] | null {
   if (literal === '') return null
   const parts = literal.replace(/[_-]+$/, '').split('-')
   if (parts.length === 1) {

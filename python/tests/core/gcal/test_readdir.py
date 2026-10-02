@@ -87,28 +87,34 @@ async def test_the_window_is_centred_in_the_bucket_zone(gcal_api, accessor):
 
 
 @pytest.mark.parametrize(
-    "size, listed, window",
+    "size, glob, listed, window",
     [
         (
             1,
+            "2025-01-*",
             "2025-01-05",
             ("2024-12-31T16:00:00+00:00", "2025-01-31T16:00:00+00:00"),
         ),
         # Widened to whole weeks: January 1st falls in the week of Dec 30.
         (
             7,
+            "2025-01-*",
             "2024-12-30--2025-01-05",
             ("2024-12-29T16:00:00+00:00", "2025-02-02T16:00:00+00:00"),
+        ),
+        (
+            7,
+            "2024-12-30--2025-01-05*",
+            "2024-12-30--2025-01-05",
+            ("2024-12-29T16:00:00+00:00", "2025-01-05T16:00:00+00:00"),
         ),
     ],
 )
 async def test_a_date_glob_moves_the_window_to_its_buckets(
-    gcal_api, size, listed, window, index
+    gcal_api, size, glob, listed, window, index
 ):
     accessor = make_accessor(bucket_days=size)
-    out = await readdir(
-        accessor, spec("/primary/2025-01-*", "2025-01-*"), index
-    )
+    out = await readdir(accessor, spec(f"/primary/{glob}", glob), index)
     assert listed in names(out)
     assert gcal_api.listed[-1][1:] == window
 

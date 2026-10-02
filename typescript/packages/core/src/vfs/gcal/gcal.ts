@@ -18,14 +18,28 @@ import { GCAL_COMMANDS } from '../../commands/builtin/gcal/index.ts'
 
 import type { RegisteredCommand } from '../../commands/config.ts'
 
+import { bucketName, bucketStart } from '../../core/gcal/day.ts'
 import { TokenManager } from '../../core/google/client.ts'
 import { GCAL_OPS } from '../../ops/gcal/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { BUCKET_PROMPT, PROMPT, WRITE_PROMPT } from './prompt.ts'
+import { BUCKET_PROMPT, DAY_PROMPT, PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGCalConfig, type GCalConfig, type GCalConfigRedacted } from './config.ts'
+
+const EXAMPLE_DAY = '2026-08-11'
+
+/** The prompt for a mount's tree, its examples named on that grid. */
+function treePrompt(size: number): string {
+  const layout = size === 1 ? DAY_PROMPT : BUCKET_PROMPT
+  const bucket = bucketName(bucketStart(EXAMPLE_DAY, size), size)
+  const day = size === 1 ? '' : `${EXAMPLE_DAY}_`
+  return PROMPT.replaceAll('{layout}', layout)
+    .replaceAll('{days}', String(size))
+    .replaceAll('{bucket}', bucket)
+    .replaceAll('{day}', day)
+}
 
 export interface GCalVFSState {
   type: string
@@ -49,9 +63,7 @@ export class GCalVFS extends BaseVFS {
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GCalAccessor({ tokenManager: tm, config })
-    const days = config.bucketDays
-    const bucket = days > 1 ? BUCKET_PROMPT.replaceAll('{days}', String(days)) : ''
-    this.prompt = PROMPT + bucket + this.accessor.timeRange.prompt()
+    this.prompt = treePrompt(config.bucketDays) + this.accessor.timeRange.prompt()
   }
 
   override commands(): readonly RegisteredCommand[] {

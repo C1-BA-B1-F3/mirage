@@ -13,10 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import json
+import re
 
 import pytest
 
 from mirage import Workspace
+from mirage.core.gcal.day import parse_bucket
 from mirage.core.render.json import compact_json_bytes
 from mirage.vfs.gcal.gcal import GCalVFS
 from tests.fixtures.gcal_api import EVENTS, gcal_api, gcal_config
@@ -55,8 +57,11 @@ async def test_the_op_door_reads_calendar_json_cold():
 
 
 @pytest.mark.parametrize("size", [1, 7, 30])
-def test_only_a_multi_day_mount_describes_its_buckets(size):
-    prompt = GCalVFS(gcal_config(bucket_days=size)).prompt
-    described = f"bucket_days={size}, so each date directory holds {size} days"
-    assert (described in prompt) is (size > 1)
-    assert "{days}" not in prompt
+def test_the_prompt_shows_the_mount_s_own_tree(size):
+    vfs = GCalVFS(gcal_config(bucket_days=size))
+    text = Workspace({"/cal": vfs}).file_prompt
+    example = re.search(r"/primary/([^/]+)/<eventId>__(\S+)", text)
+    assert example is not None
+    assert parse_bucket(example[1], size) is not None
+    assert example[2].startswith("2026-08-11_") is (size > 1)
+    assert """--params '{"calendarId":"primary"}'""" in text

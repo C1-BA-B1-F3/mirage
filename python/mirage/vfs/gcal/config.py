@@ -24,8 +24,6 @@ class GCalConfig(GoogleConfig, TimeRangeConfig):
     # would make the same day directory name mean different 24-hour windows
     # on different calendars. Defaults to the primary calendar's zone.
     time_zone: str | None = None
-    # Days per date directory. 7 and 30 tile a fixed grid (7 runs Monday to
-    # Sunday), so one listing answers a week or a month of events.
     bucket_days: Literal[1, 7, 30] = 1
     # Keep only calendars at or above this accessRole, e.g. "writer" for
     # ones the agent can actually schedule into.

@@ -27,8 +27,9 @@ import {
 import type { JsonValue, PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
-import { globSpan } from '../../utils/glob_walk.ts'
+import { globPrefix, literalSpan } from '../../utils/glob_walk.ts'
 import {
+  SPAN_SEP,
   bucketName,
   bucketStart,
   clampedHhmm,
@@ -129,7 +130,9 @@ export function bucketZone(
  * is unbounded in both directions and the API offers no descending
  * startTime order. A glob escapes it by pushing its own bounds down, widened
  * to whole buckets so a bucket the glob reaches into is decided on all of
- * its days, not only on the ones it named.
+ * its days, not only on the ones it named. A glob is read up to its first
+ * span separator: a bucket name is keyed on its first day, so
+ * `2027-03-01--2027-03-07*` bounds the listing as `2027-03-01*` does.
  */
 function daySpan(
   pattern: string | null,
@@ -138,7 +141,7 @@ function daySpan(
   scope: TimeRange,
   size: number,
 ): [string | null, string, string, string] {
-  const span = globSpan(pattern)
+  const span = literalSpan(globPrefix(pattern).split(SPAN_SEP, 1)[0] ?? '')
   let lo = scope.start
   let hi = scope.end
   if (span !== null) {

@@ -14,6 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { EVENTS, HK, gcalConfig } from '../../core/gcal/_test_util.ts'
+import { parseBucket } from '../../core/gcal/day.ts'
 import { compactJsonBytes } from '../../core/render/json.ts'
 import { Workspace } from '../../workspace/workspace/workspace.ts'
 import { GCalVFS } from './gcal.ts'
@@ -47,10 +48,12 @@ describe('gcal VFS', () => {
     expect(JSON.parse(text)).toMatchObject({ bucketTimeZone: HK })
   })
 
-  it.each([1, 7, 30])('describes the buckets only on a multi-day mount (%i)', (size) => {
-    const prompt = new GCalVFS(gcalConfig({ bucket_days: size })).prompt
-    const described = `bucket_days=${String(size)}, so each date directory holds ${String(size)} days`
-    expect(prompt.includes(described)).toBe(size > 1)
-    expect(prompt).not.toContain('{days}')
+  it.each([1, 7, 30])('shows the mount its own tree (%i)', (size) => {
+    const vfs = new GCalVFS(gcalConfig({ bucket_days: size }))
+    const text = new Workspace({ '/cal': vfs }).filePrompt
+    const [, bucket = '', name = ''] = /\/primary\/([^/]+)\/<eventId>__(\S+)/.exec(text) ?? []
+    expect(parseBucket(bucket, size)).not.toBeNull()
+    expect(name.startsWith('2026-08-11_')).toBe(size > 1)
+    expect(text).toContain(`--params '{"calendarId":"primary"}'`)
   })
 })

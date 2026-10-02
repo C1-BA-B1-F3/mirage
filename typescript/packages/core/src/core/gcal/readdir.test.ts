@@ -71,12 +71,23 @@ describe('gcal readdir', () => {
   })
 
   it.each([
-    [1, '2025-01-05', ['2024-12-31T16:00:00.000Z', '2025-01-31T16:00:00.000Z']],
+    [1, '2025-01-*', '2025-01-05', ['2024-12-31T16:00:00.000Z', '2025-01-31T16:00:00.000Z']],
     // Widened to whole weeks: January 1st falls in the week of Dec 30.
-    [7, '2024-12-30--2025-01-05', ['2024-12-29T16:00:00.000Z', '2025-02-02T16:00:00.000Z']],
-  ])('moves a %i-day window to a date glob', async (size, bucket, window) => {
+    [
+      7,
+      '2025-01-*',
+      '2024-12-30--2025-01-05',
+      ['2024-12-29T16:00:00.000Z', '2025-02-02T16:00:00.000Z'],
+    ],
+    [
+      7,
+      '2024-12-30--2025-01-05*',
+      '2024-12-30--2025-01-05',
+      ['2024-12-29T16:00:00.000Z', '2025-01-05T16:00:00.000Z'],
+    ],
+  ])('moves a %i-day window to the glob %s', async (size, glob, bucket, window) => {
     const accessor = makeAccessor({ bucket_days: size })
-    const out = await readdir(accessor, spec('/primary/2025-01-*', '2025-01-*'), index)
+    const out = await readdir(accessor, spec(`/primary/${glob}`, glob), index)
     expect(names(out)).toContain(bucket)
     expect(API.listed.at(-1)?.slice(1)).toEqual(window)
   })

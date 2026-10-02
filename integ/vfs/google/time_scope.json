@@ -727,6 +727,32 @@
         "stdout": "All day\nAt start\nCross end\nCross start\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gcal_scope_full_week_window_ends_at_the_horizon",
+      "seq": 880055,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls /fullweek/primary",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-12-30--2025-01-05\ncalendar.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_full_week_span_glob_reaches_past_the_horizon",
+      "seq": 880056,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls -d /fullweek/primary/2026-06-01--2026-06-07*; cat /fullweek/primary/2026-06-01--2026-06-0?/*At_start* | jq -r .summary",
+      "expect": {
+        "exit": 0,
+        "stdout": "/fullweek/primary/2026-06-01--2026-06-07\nAt start\n",
+        "stderr": ""
+      }
     }
   ]
 }

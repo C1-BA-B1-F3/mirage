@@ -3574,6 +3574,15 @@
             "time_zone": "UTC",
             "bucket_days": 7
           }
+        },
+        {
+          "path": "/fullweek",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "time_zone": "UTC",
+            "bucket_days": 7
+          }
         }
       ]
     }

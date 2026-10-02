@@ -601,6 +601,31 @@ describe('Ops is one door with the dispatcher', () => {
     expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
   })
 
+  // A renderer one RAM mount ships is that instance's own: a sibling mount
+  // of the same kind that does not ship it is still served warm.
+  it('serves a sibling mount warm when only the other ships a renderer', async () => {
+    const shipping = new RAMVFS()
+    const plain = new RAMVFS()
+    Object.assign(shipping, { cachesReads: true })
+    Object.assign(plain, { cachesReads: true })
+    const rendering: RegisteredOp = {
+      name: 'read',
+      vfs: shipping.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    }
+    const own = shipping.ops.bind(shipping)
+    Object.assign(shipping, { ops: () => [...own(), rendering] })
+    const ops = new OpsRegistry()
+    ops.registerVfs(shipping)
+    ops.registerVfs(plain)
+    const ws = new Workspace({ '/a': shipping, '/b': plain }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/b/books.tally', 'stored')
+    await ws.cache.set('/b/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
+    expect(await ws.vfs.readFileText('/b/books.tally')).toBe('cached')
+  })
+
   it('refuses a write to a read-only mount at the door', async () => {
     const vfs = new RAMVFS()
     const ops = new OpsRegistry()

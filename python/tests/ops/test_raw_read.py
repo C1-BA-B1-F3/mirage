@@ -256,3 +256,18 @@ async def test_a_renderer_registered_mid_read_is_never_served_warm():
 
     ws.cache.get = get_then_register
     assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
+
+
+@op("stat", vfs="ram", filetype=".tally")
+async def _stat_tally(accessor, path: PathSpec, **kwargs) -> FileStat:
+    return await ram_stat(accessor, path)
+
+
+@pytest.mark.asyncio
+async def test_a_filetype_op_other_than_read_leaves_the_read_warm():
+    # Only a filetype-scoped read op renders; a stat scoped to the same
+    # extension changes nothing about what the cache may serve.
+    ws = Workspace({"/data/": _CachingRAM()}, mode=MountMode.WRITE)
+    ws.mount("/data/").register_fns([_stat_tally])
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"CACHED"

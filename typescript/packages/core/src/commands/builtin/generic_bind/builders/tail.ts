@@ -16,7 +16,7 @@ import { headerAggregate } from '../../aggregators.ts'
 import { tailGeneric } from '../../generic/tail.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const TAIL_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tail',
   read: true,
   aggregate: headerAggregate,

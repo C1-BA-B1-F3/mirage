@@ -348,6 +348,61 @@
         "stderr": "cat: /scratch/private/k: private\n"
       },
       "explain_blind": true
+    },
+    {
+      "id": "dispatched_op_prep_links",
+      "seq": 13740101,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "mkdir -p /scratch/lw/real && echo s > /scratch/lw/real/secret && echo s > /scratch/lw/secret && ln -s /scratch/lw/real/secret /scratch/lw/flink && ln -s /scratch/lw/secret /scratch/lw/alias && echo o > /scratch/lw/f",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "dispatched_write_through_a_link_into_hidden_space_is_missing",
+      "seq": 13740102,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "linkwalled",
+      "command": "sed -n 'w /scratch/lw/flink' /scratch/lw/f",
+      "expect": {
+        "exit": 4,
+        "stdout": "",
+        "stderr": "sed: couldn't open file /scratch/lw/flink: No such file or directory\n"
+      }
+    },
+    {
+      "id": "dispatched_write_behind_a_missing_directory_is_missing",
+      "seq": 13740103,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "linkwalled",
+      "command": "awk 'BEGIN { print \"x\" > \"/scratch/lw/missing/../alias\" }'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: cannot open \"/scratch/lw/missing/../alias\" for output (No such file or directory)\n"
+      }
+    },
+    {
+      "id": "dispatched_write_through_a_link_meets_the_target_rule",
+      "seq": 13740104,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "linkwalled",
+      "command": "awk 'BEGIN { print \"x\" > \"/scratch/lw/alias\" }'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: cannot open \"/scratch/lw/alias\" for output (Permission denied)\n"
+      }
     }
   ]
 }

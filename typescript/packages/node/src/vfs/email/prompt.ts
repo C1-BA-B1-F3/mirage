@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const EMAIL_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   <folder>/
     <yyyy-mm-dd>/
       <subject>__<uid>.email.json
@@ -25,6 +25,6 @@ export const EMAIL_PROMPT = `{prefix}
   To act on mail (list/search/read/compose/reply/forward), use the
   himalaya CLI if installed: himalaya --help`
 
-export const EMAIL_WRITE_PROMPT = `  Sending mail goes through the himalaya CLI if installed:
+export const WRITE_PROMPT = `  Sending mail goes through the himalaya CLI if installed:
     himalaya message compose --to "to@email.com" --subject "Hi" \\
       --body "..." --send`

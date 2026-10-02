@@ -22,9 +22,9 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { headGeneric } from '../generic/head.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { AIRTABLE_IO } from './io.ts'
+import { IO } from './io.ts'
 
-const resolveGlob = resolveGlobOf(AIRTABLE_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 // A record renders as exactly one line, so the first N lines of a records
 // file are its first N records: the count rides maxRecords instead of paging

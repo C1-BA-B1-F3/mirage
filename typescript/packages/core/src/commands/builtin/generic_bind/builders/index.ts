@@ -13,148 +13,148 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Builder } from '../adapter.ts'
-import { AWK_BUILDER } from './awk.ts'
-import { BASE64_BUILDER } from './base64.ts'
-import { BASENAME_BUILDER } from './basename.ts'
-import { CAT_BUILDER } from './cat.ts'
-import { CMP_BUILDER } from './cmp.ts'
-import { COLUMN_BUILDER } from './column.ts'
-import { COMM_BUILDER } from './comm.ts'
-import { CP_BUILDER } from './cp.ts'
-import { CSPLIT_BUILDER } from './csplit.ts'
-import { CUT_BUILDER } from './cut.ts'
-import { DIFF_BUILDER } from './diff.ts'
-import { DIRNAME_BUILDER } from './dirname.ts'
-import { DU_BUILDER } from './du.ts'
-import { EXPAND_BUILDER } from './expand.ts'
-import { FILE_BUILDER } from './file.ts'
-import { FIND_BUILDER } from './find.ts'
-import { FMT_BUILDER } from './fmt.ts'
-import { FOLD_BUILDER } from './fold.ts'
-import { GREP_BUILDER } from './grep.ts'
-import { GUNZIP_BUILDER } from './gunzip.ts'
-import { GZIP_BUILDER } from './gzip.ts'
-import { HEAD_BUILDER } from './head.ts'
-import { ICONV_BUILDER } from './iconv.ts'
-import { JOIN_BUILDER } from './join.ts'
-import { JQ_BUILDER } from './jq.ts'
-import { LOOK_BUILDER } from './look.ts'
-import { LS_BUILDER } from './ls.ts'
-import { MD5_BUILDER } from './md5.ts'
-import { MD5SUM_BUILDER } from './md5sum.ts'
-import { MKDIR_BUILDER } from './mkdir.ts'
-import { MKTEMP_BUILDER } from './mktemp.ts'
-import { MV_BUILDER } from './mv.ts'
-import { NL_BUILDER } from './nl.ts'
-import { NUMFMT_BUILDER } from './numfmt.ts'
-import { OD_BUILDER } from './od.ts'
-import { PASTE_BUILDER } from './paste.ts'
-import { PATCH_BUILDER } from './patch.ts'
-import { READLINK_BUILDER } from './readlink.ts'
-import { REALPATH_BUILDER } from './realpath.ts'
-import { REV_BUILDER } from './rev.ts'
-import { RG_BUILDER } from './rg.ts'
-import { RM_BUILDER } from './rm.ts'
-import { RMDIR_BUILDER } from './rmdir.ts'
-import { SED_BUILDER } from './sed.ts'
-import { SHA1SUM_BUILDER } from './sha1sum.ts'
-import { SHA256SUM_BUILDER } from './sha256sum.ts'
-import { SHA384SUM_BUILDER } from './sha384sum.ts'
-import { SHA512SUM_BUILDER } from './sha512sum.ts'
-import { SHUF_BUILDER } from './shuf.ts'
-import { SORT_BUILDER } from './sort.ts'
-import { SPLIT_BUILDER } from './split.ts'
-import { STAT_BUILDER } from './stat.ts'
-import { STRINGS_BUILDER } from './strings.ts'
-import { TAC_BUILDER } from './tac.ts'
-import { TAIL_BUILDER } from './tail.ts'
-import { TAR_BUILDER } from './tar.ts'
-import { TEE_BUILDER } from './tee.ts'
-import { TOUCH_BUILDER } from './touch.ts'
-import { TRUNCATE_BUILDER } from './truncate.ts'
-import { TR_BUILDER } from './tr.ts'
-import { TREE_BUILDER } from './tree.ts'
-import { TSORT_BUILDER } from './tsort.ts'
-import { UNEXPAND_BUILDER } from './unexpand.ts'
-import { UNIQ_BUILDER } from './uniq.ts'
-import { UNLINK_BUILDER } from './unlink.ts'
-import { UNZIP_BUILDER } from './unzip.ts'
-import { WC_BUILDER } from './wc.ts'
-import { XXD_BUILDER } from './xxd.ts'
-import { ZCAT_BUILDER } from './zcat.ts'
-import { ZGREP_BUILDER } from './zgrep.ts'
-import { ZIP_BUILDER } from './zip_cmd.ts'
+import * as awk from './awk.ts'
+import * as base64 from './base64.ts'
+import * as basename from './basename.ts'
+import * as cat from './cat.ts'
+import * as cmp from './cmp.ts'
+import * as column from './column.ts'
+import * as comm from './comm.ts'
+import * as cp from './cp.ts'
+import * as csplit from './csplit.ts'
+import * as cut from './cut.ts'
+import * as diff from './diff.ts'
+import * as dirname from './dirname.ts'
+import * as du from './du.ts'
+import * as expand from './expand.ts'
+import * as file from './file.ts'
+import * as find from './find.ts'
+import * as fmt from './fmt.ts'
+import * as fold from './fold.ts'
+import * as grep from './grep.ts'
+import * as gunzip from './gunzip.ts'
+import * as gzip from './gzip.ts'
+import * as head from './head.ts'
+import * as iconv from './iconv.ts'
+import * as join from './join.ts'
+import * as jq from './jq.ts'
+import * as look from './look.ts'
+import * as ls from './ls.ts'
+import * as md5 from './md5.ts'
+import * as md5sum from './md5sum.ts'
+import * as mkdir from './mkdir.ts'
+import * as mktemp from './mktemp.ts'
+import * as mv from './mv.ts'
+import * as nl from './nl.ts'
+import * as numfmt from './numfmt.ts'
+import * as od from './od.ts'
+import * as paste from './paste.ts'
+import * as patch from './patch.ts'
+import * as readlink from './readlink.ts'
+import * as realpath from './realpath.ts'
+import * as rev from './rev.ts'
+import * as rg from './rg.ts'
+import * as rm from './rm.ts'
+import * as rmdir from './rmdir.ts'
+import * as sed from './sed.ts'
+import * as sha1sum from './sha1sum.ts'
+import * as sha256sum from './sha256sum.ts'
+import * as sha384sum from './sha384sum.ts'
+import * as sha512sum from './sha512sum.ts'
+import * as shuf from './shuf.ts'
+import * as sort from './sort.ts'
+import * as split from './split.ts'
+import * as stat from './stat.ts'
+import * as strings from './strings.ts'
+import * as tac from './tac.ts'
+import * as tail from './tail.ts'
+import * as tar from './tar.ts'
+import * as tee from './tee.ts'
+import * as touch from './touch.ts'
+import * as truncate from './truncate.ts'
+import * as tr from './tr.ts'
+import * as tree from './tree.ts'
+import * as tsort from './tsort.ts'
+import * as unexpand from './unexpand.ts'
+import * as uniq from './uniq.ts'
+import * as unlink from './unlink.ts'
+import * as unzip from './unzip.ts'
+import * as wc from './wc.ts'
+import * as xxd from './xxd.ts'
+import * as zcat from './zcat.ts'
+import * as zgrep from './zgrep.ts'
+import * as zipCmd from './zip_cmd.ts'
 
 export const BUILDERS: readonly Builder[] = [
-  AWK_BUILDER,
-  BASE64_BUILDER,
-  BASENAME_BUILDER,
-  CAT_BUILDER,
-  CMP_BUILDER,
-  COLUMN_BUILDER,
-  COMM_BUILDER,
-  CP_BUILDER,
-  CSPLIT_BUILDER,
-  CUT_BUILDER,
-  DIFF_BUILDER,
-  DIRNAME_BUILDER,
-  DU_BUILDER,
-  EXPAND_BUILDER,
-  FILE_BUILDER,
-  FIND_BUILDER,
-  FMT_BUILDER,
-  FOLD_BUILDER,
-  GREP_BUILDER,
-  GUNZIP_BUILDER,
-  GZIP_BUILDER,
-  HEAD_BUILDER,
-  ICONV_BUILDER,
-  JOIN_BUILDER,
-  JQ_BUILDER,
-  LOOK_BUILDER,
-  LS_BUILDER,
-  MD5_BUILDER,
-  MD5SUM_BUILDER,
-  MKDIR_BUILDER,
-  MKTEMP_BUILDER,
-  MV_BUILDER,
-  NL_BUILDER,
-  NUMFMT_BUILDER,
-  OD_BUILDER,
-  PASTE_BUILDER,
-  PATCH_BUILDER,
-  READLINK_BUILDER,
-  REALPATH_BUILDER,
-  REV_BUILDER,
-  RG_BUILDER,
-  RM_BUILDER,
-  RMDIR_BUILDER,
-  SED_BUILDER,
-  SHA1SUM_BUILDER,
-  SHA256SUM_BUILDER,
-  SHA384SUM_BUILDER,
-  SHA512SUM_BUILDER,
-  SHUF_BUILDER,
-  SORT_BUILDER,
-  SPLIT_BUILDER,
-  STAT_BUILDER,
-  STRINGS_BUILDER,
-  TAC_BUILDER,
-  TAIL_BUILDER,
-  TAR_BUILDER,
-  TEE_BUILDER,
-  TOUCH_BUILDER,
-  TRUNCATE_BUILDER,
-  TR_BUILDER,
-  TREE_BUILDER,
-  TSORT_BUILDER,
-  UNEXPAND_BUILDER,
-  UNIQ_BUILDER,
-  UNLINK_BUILDER,
-  UNZIP_BUILDER,
-  WC_BUILDER,
-  XXD_BUILDER,
-  ZCAT_BUILDER,
-  ZGREP_BUILDER,
-  ZIP_BUILDER,
+  awk.BUILDER,
+  base64.BUILDER,
+  basename.BUILDER,
+  cat.BUILDER,
+  cmp.BUILDER,
+  column.BUILDER,
+  comm.BUILDER,
+  cp.BUILDER,
+  csplit.BUILDER,
+  cut.BUILDER,
+  diff.BUILDER,
+  dirname.BUILDER,
+  du.BUILDER,
+  expand.BUILDER,
+  file.BUILDER,
+  find.BUILDER,
+  fmt.BUILDER,
+  fold.BUILDER,
+  grep.BUILDER,
+  gunzip.BUILDER,
+  gzip.BUILDER,
+  head.BUILDER,
+  iconv.BUILDER,
+  join.BUILDER,
+  jq.BUILDER,
+  look.BUILDER,
+  ls.BUILDER,
+  md5.BUILDER,
+  md5sum.BUILDER,
+  mkdir.BUILDER,
+  mktemp.BUILDER,
+  mv.BUILDER,
+  nl.BUILDER,
+  numfmt.BUILDER,
+  od.BUILDER,
+  paste.BUILDER,
+  patch.BUILDER,
+  readlink.BUILDER,
+  realpath.BUILDER,
+  rev.BUILDER,
+  rg.BUILDER,
+  rm.BUILDER,
+  rmdir.BUILDER,
+  sed.BUILDER,
+  sha1sum.BUILDER,
+  sha256sum.BUILDER,
+  sha384sum.BUILDER,
+  sha512sum.BUILDER,
+  shuf.BUILDER,
+  sort.BUILDER,
+  split.BUILDER,
+  stat.BUILDER,
+  strings.BUILDER,
+  tac.BUILDER,
+  tail.BUILDER,
+  tar.BUILDER,
+  tee.BUILDER,
+  touch.BUILDER,
+  truncate.BUILDER,
+  tr.BUILDER,
+  tree.BUILDER,
+  tsort.BUILDER,
+  unexpand.BUILDER,
+  uniq.BUILDER,
+  unlink.BUILDER,
+  unzip.BUILDER,
+  wc.BUILDER,
+  xxd.BUILDER,
+  zcat.BUILDER,
+  zgrep.BUILDER,
+  zipCmd.BUILDER,
 ]

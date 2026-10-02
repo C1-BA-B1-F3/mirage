@@ -15,7 +15,7 @@
 import { gunzipGeneric } from '../../generic/gunzip.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const GUNZIP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'gunzip',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

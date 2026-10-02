@@ -23,7 +23,7 @@ import type { MCPNotionTransportOptions } from '@struktoai/mirage-core/core/noti
 import { NOTION_OPS } from '@struktoai/mirage-core/ops/notion/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import { NOTION_PROMPT, NOTION_WRITE_PROMPT } from '@struktoai/mirage-core/vfs/notion/prompt'
+import { PROMPT, WRITE_PROMPT } from '@struktoai/mirage-core/vfs/notion/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { redactNotionConfig, type NotionConfig, type NotionConfigRedacted } from './config.ts'
@@ -36,8 +36,8 @@ export interface NotionVFSState {
 export class NotionVFS extends BaseVFS {
   override readonly name: string = VFSName.NOTION
   override readonly cachesReads: boolean = true
-  override readonly prompt: string = NOTION_PROMPT
-  override readonly writePrompt: string = NOTION_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: NotionConfig
   override readonly accessor: NotionAccessor
 

@@ -20,7 +20,7 @@ import { readdir as gdocsReaddir } from '../../../core/gdocs/readdir.ts'
 import { stat as gdocsStat } from '../../../core/gdocs/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GDOCS_IO: CommandIO<GDocsAccessor> = new VFSAdapter<GDocsAccessor>({
+export const IO: CommandIO<GDocsAccessor> = new VFSAdapter<GDocsAccessor>({
   read: { readdir: gdocsReaddir, readBytes: gdocsRead, stat: gdocsStat },
   native: { readStream: gdocsStream },
   isMounted: () => true,

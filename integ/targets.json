@@ -738,6 +738,47 @@
       }
     },
     {
+      "id": "s3-walled",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "s3",
+      "mounts": [
+        {
+          "path": "/data",
+          "vfs": "s3",
+          "backend": "s3",
+          "bucket": "data"
+        }
+      ],
+      "sessions": {
+        "walled": {
+          "commands": {
+            "deny": [
+              {
+                "reason": "held for review",
+                "commands": {
+                  "grep": [
+                    "/data/warmwalk/locked.txt"
+                  ],
+                  "tar": [
+                    "/data/warmwalk/locked.txt"
+                  ]
+                }
+              },
+              {
+                "reason": "kept off limits",
+                "paths": [
+                  "/data/warmwalk/sealed.txt"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
       "id": "s3-prefix",
       "hosts": [
         "python",
@@ -2948,7 +2989,8 @@
         "keeper": "keeper",
         "opener": "opener",
         "pruner": "pruner",
-        "speaker": "speaker"
+        "speaker": "speaker",
+        "linkwalled": "linkwalled"
       },
       "profile": "default",
       "profiles": {
@@ -3180,6 +3222,32 @@
           "commands": {
             "allow": [
               "echo"
+            ]
+          }
+        },
+        "linkwalled": {
+          "paths": {
+            "hide": [
+              "/scratch/lw/real"
+            ]
+          },
+          "commands": {
+            "allow": [
+              "sed",
+              "awk"
+            ],
+            "deny": [
+              {
+                "reason": "kept behind the link",
+                "commands": {
+                  "sed": [
+                    "/scratch/lw/flink"
+                  ],
+                  "awk": [
+                    "/scratch/lw/secret"
+                  ]
+                }
+              }
             ]
           }
         }

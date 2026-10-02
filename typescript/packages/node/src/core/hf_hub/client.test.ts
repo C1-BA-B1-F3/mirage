@@ -21,6 +21,7 @@ import {
   encodePath,
   errorOf,
   etagValue,
+  hubBytes,
   hubBytesTagged,
   hubHeaders,
   hubPost,
@@ -314,6 +315,14 @@ describe('stallFetch', () => {
     expect(stallFetch(0)).toBe(fetch)
     expect(stallFetch(-1)).toBe(fetch)
     expect(await drain(hubStream(undefined, `${base}/drip`, undefined, 0))).toBe('abcdefgh')
+  })
+
+  it('bounds a whole-file read', async () => {
+    const data = await hubBytes(undefined, `${base}/drip`, undefined, STALL_MS)
+    expect(new TextDecoder().decode(data)).toBe('abcdefgh')
+    await expect(hubBytes(undefined, `${base}/stall`, undefined, STALL_MS)).rejects.toMatchObject({
+      name: 'TimeoutError',
+    })
   })
 
   it('bounds the streamed read', async () => {

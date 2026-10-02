@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from mirage.runtime.python.monty.binding import StatResult
+from mirage.runtime.python.monty.loader import StatResult
 from mirage.runtime.types import VFSStat
 
 

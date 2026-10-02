@@ -16,8 +16,8 @@ import type { JaegerAccessor } from '../../../accessor/jaeger.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { JAEGER_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const JAEGER_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<JaegerAccessor>(VFSName.JAEGER, JAEGER_IO),
+  ...makeGenericCommands<JaegerAccessor>(VFSName.JAEGER, IO),
 ]

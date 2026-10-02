@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { ByteSource } from '../io/types.ts'
 import type { ArithWrite } from './types.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
@@ -54,6 +55,11 @@ export class ExitSignal extends Error {
   // exits 127 on a fatal expansion error but a subshell wrapping one
   // returns 1; `exit N` uses N in both positions (the default).
   readonly containedCode: number
+  // The id of the command whose own words were being expanded when it was
+  // raised. bash expands a simple command's words before it applies the
+  // command's redirects, so that diagnostic goes around them; any other
+  // goes through the redirects it was written under.
+  expanding: number | null = null
 
   constructor(
     exitCode = 0,
@@ -71,6 +77,21 @@ export class ExitSignal extends Error {
 }
 
 /**
+ * An error that discards the rest of the line: bash's `DISCARD`. A bad
+ * substitution, an arithmetic or assignment error, a write the shell refuses:
+ * the command never runs, and neither do the statements after it on its line,
+ * but the next line does, with `$?` at 1. The line loop of a shell, of `eval`
+ * and of `source` resumes there; a child shell ends on it with status 1, and
+ * so does `set -e`. Mirrors Python's mirage.shell.errors.DiscardSignal.
+ */
+export class DiscardSignal extends ExitSignal {
+  constructor(stderr: Uint8Array = new Uint8Array()) {
+    super(1, stderr, null, 1)
+    this.name = 'DiscardSignal'
+  }
+}
+
+/**
  * `set -u` reading a name that is not set: `$x`, `${a[i]}`, or a variable
  * an arithmetic expression reads. GNU bash dies on it the way it dies on
  * `${x:?}`: status 127 at top level, 1 from a containing subshell or
@@ -83,14 +104,64 @@ export class UnboundVariable extends ExitSignal {
   }
 }
 
+/**
+ * A `${...}` bash cannot read, found as its word expands. bash names the text
+ * of the expansion it was running: the whole word, a double-quoted part's
+ * inside, an operator's word, an arithmetic expression, a heredoc's body.
+ * Each level the error leaves renames it (`within`) until one of those fixes
+ * the name. Mirrors Python's mirage.shell.errors.BadSubstitution.
+ */
+export class BadSubstitution extends DiscardSignal {
+  private fixed = false
+
+  constructor(text: string) {
+    super()
+    this.name = 'BadSubstitution'
+    this.within(text)
+  }
+
+  /** Name the word being expanded, unless a boundary already has. */
+  within(word: string, fixed = false): this {
+    if (!this.fixed) {
+      this.stderr = new TextEncoder().encode(`bash: ${word}: bad substitution\n`)
+      this.fixed = fixed
+    }
+    return this
+  }
+}
+
+/**
+ * Await an expansion of `word`, which a bad substitution names: a
+ * double-quoted part's inside, an operator's word, an arithmetic expression.
+ * Mirrors Python's mirage.shell.errors.named.
+ */
+export async function named<T>(word: string, pending: Promise<T>): Promise<T> {
+  try {
+    return await pending
+  } catch (err) {
+    if (err instanceof BadSubstitution) throw err.within(word, true)
+    throw err
+  }
+}
+
+/**
+ * `return` unwinding to the function or sourced file it ends; `stdout` is the
+ * output the constructs it left had produced before it.
+ */
 export class ReturnSignal extends Error {
   readonly exitCode: number
-  readonly stderr: Uint8Array
-  constructor(exitCode: number, stderr: Uint8Array = new Uint8Array()) {
+  stderr: Uint8Array
+  readonly stdout: ByteSource | null
+  constructor(
+    exitCode: number,
+    stderr: Uint8Array = new Uint8Array(),
+    stdout: ByteSource | null = null,
+  ) {
     super('return')
     this.name = 'ReturnSignal'
     this.exitCode = exitCode
     this.stderr = stderr
+    this.stdout = stdout
   }
 }
 

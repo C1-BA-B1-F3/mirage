@@ -103,7 +103,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     limits: { fileSize: 10 * 1024 * 1024 * 1024 },
   })
   registerHealthRoutes(app, { registry, startedAt, exit: exitFn })
-  registerWorkspacesRoutes(app, { registry, snapshotRoot, stateRoot })
+  registerWorkspacesRoutes(app, { registry, snapshotRoot, stateRoot, versionBackend })
   registerVersionsRoutes(app, { registry, versionBackend })
   registerSessionsRoutes(app, { registry })
   registerAsksRoutes(app, { registry })
@@ -126,7 +126,11 @@ export function buildApp(options: BuildAppOptions = {}) {
   }
   app.addHook('onClose', async () => {
     if (ssh.listener !== null) await ssh.listener.close()
-    await registry.closeAll()
+    try {
+      await jobs.close()
+    } finally {
+      await registry.closeAll()
+    }
   })
   return Object.assign(app, { registry, jobs, versionBackend, pidFile, ssh })
 }

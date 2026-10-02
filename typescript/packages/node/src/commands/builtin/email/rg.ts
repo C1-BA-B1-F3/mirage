@@ -39,10 +39,10 @@ import { readdir as emailReaddir } from '../../../core/email/readdir.ts'
 import { stat as emailStat } from '../../../core/email/stat.ts'
 import { detectScope, NATIVE_KINDS } from '../../../core/email/scope.ts'
 import { searchAndFormat } from '../../../core/email/search.ts'
-import { EMAIL_IO } from './io.ts'
+import { IO } from './io.ts'
 import { RG_SEARCH_HONORED, messageLines } from './grep.ts'
 
-const resolveGlob = resolveGlobOf(EMAIL_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 const ENC = new TextEncoder()
 

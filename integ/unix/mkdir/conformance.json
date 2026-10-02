@@ -207,6 +207,28 @@
         "stdout": "",
         "stderr": "mkdir: cannot create directory 'f.txt': File exists\n"
       }
+    },
+    {
+      "id": "mkdir_p_passes_only_a_directory",
+      "seq": 601083,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix"
+      ],
+      "command": "mkdir -p /data/mkpf && touch /data/mkpf/f.txt && mkdir -p /data/mkpf/f.txt; echo rc=$?; mkdir -p /data/mkpf; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=0\n",
+        "stderr": "mkdir: cannot create directory '/data/mkpf/f.txt': File exists\n"
+      }
     }
   ]
 }

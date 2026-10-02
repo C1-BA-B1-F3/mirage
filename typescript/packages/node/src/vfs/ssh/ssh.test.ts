@@ -19,7 +19,7 @@ import { SSH_COMMANDS } from '../../commands/builtin/ssh/index.ts'
 import { type FakeSftp, makeFakeAccessor } from '../../core/ssh/_test_utils.ts'
 import { SSH_OPS } from '../../ops/ssh/index.ts'
 import type { SSHConfig } from './config.ts'
-import { SSH_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { SSHVFS } from './ssh.ts'
 
 function makeVfs(state: FakeSftp, config?: Partial<SSHConfig>): SSHVFS {
@@ -49,9 +49,9 @@ describe('SSHVFS — identity', () => {
     expect(res.cachesReads).toBe(true)
   })
 
-  it('prompt equals SSH_PROMPT', () => {
+  it('prompt equals PROMPT', () => {
     const res = makeVfs(state)
-    expect(res.prompt).toBe(SSH_PROMPT)
+    expect(res.prompt).toBe(PROMPT)
   })
 
   it('commands() length matches SSH_COMMANDS', () => {

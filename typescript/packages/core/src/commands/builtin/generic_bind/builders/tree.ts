@@ -15,7 +15,7 @@
 import { treeGeneric } from '../../generic/tree.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const TREE_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tree',
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined

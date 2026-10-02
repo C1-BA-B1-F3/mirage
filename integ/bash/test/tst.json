@@ -643,7 +643,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n",
-        "stderr": "[: -bogus: binary operator expected\n"
+        "stderr": "bash: [: -bogus: binary operator expected\n"
       }
     },
     {
@@ -677,7 +677,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n",
-        "stderr": "[: -bogus: unary operator expected\n"
+        "stderr": "bash: [: -bogus: unary operator expected\n"
       }
     },
     {
@@ -711,7 +711,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n",
-        "stderr": "[: too many arguments\n"
+        "stderr": "bash: [: too many arguments\n"
       }
     },
     {
@@ -745,7 +745,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n",
-        "stderr": "[: x: integer expression expected\n"
+        "stderr": "bash: [: x: integer expression expected\n"
       }
     },
     {
@@ -779,7 +779,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n",
-        "stderr": "test: x: integer expression expected\n"
+        "stderr": "bash: test: x: integer expression expected\n"
       }
     },
     {
@@ -813,7 +813,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n",
-        "stderr": "[: -p: unsupported operator\n"
+        "stderr": "bash: [: -p: unsupported operator\n"
       }
     },
     {
@@ -847,7 +847,7 @@
       "expect": {
         "exit": 0,
         "stdout": "2\n2\n2\n2\n",
-        "stderr": "[: too many arguments\n[: qa: unary operator expected\n"
+        "stderr": "bash: [: too many arguments\nbash: [: qa: unary operator expected\n"
       }
     },
     {

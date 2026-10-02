@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const DATABRICKS_VOLUME_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote Databricks Unity Catalog volume filesystem.
   IMPORTANT: This is a remote mount - every file/dir access is an API round-trip.
   Prefer targeted reads (ls, head, grep, rg, find with a path/glob) over full

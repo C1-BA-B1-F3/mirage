@@ -21,7 +21,7 @@ import { readdir as githubReaddir } from '../../../core/github/readdir.ts'
 import { stat as githubStat } from '../../../core/github/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GITHUB_IO: CommandIO<GitHubAccessor> = new VFSAdapter<GitHubAccessor>({
+export const IO: CommandIO<GitHubAccessor> = new VFSAdapter<GitHubAccessor>({
   read: { readdir: githubReaddir, readBytes: githubRead, stat: githubStat },
   native: { readStream: githubStream },
   isMounted: () => true,

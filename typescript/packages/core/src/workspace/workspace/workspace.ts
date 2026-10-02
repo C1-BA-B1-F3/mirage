@@ -167,6 +167,11 @@ export class Workspace {
   private readonly lineLock = new KeyLock()
   private readonly closers: (() => Promise<void>)[] = []
   private closing: Promise<void> | null = null
+  private stateDropped = false
+  // The stores this workspace's state lives in, whether the state store
+  // built them or the caller passed one in directly: delete clears these,
+  // not only what the state store would hand out.
+  private readonly planes: { clear(): Promise<void> }[]
 
   /**
    * Whether no new work should be accepted.
@@ -353,6 +358,7 @@ export class Workspace {
       this.registry.clis.install(cliName, cliSpec, cliConfig)
     }
     this.observer = new Observer(stores.observe)
+    this.planes = [stores.namespace, stores.observe, stores.sessions]
     // Explicit at the construction site: the history view does not cache
     // reads, so its policy can only ever be bounded.
     this.registry.mount(
@@ -682,7 +688,7 @@ export class Workspace {
   // the same path as shell commands — cache read-through on
   // reads, post-write invalidation, and mount-mode enforcement narrowed
   // by the current session all come from the Dispatcher. Reads are raw
-  // bytes (no filetype rendering), matching the Python WasmVFS. An
+  // bytes (no filetype rendering), matching the Python WasmView. An
   // `issuer` rides every op as the `issuer` kwarg, which the dispatcher
   // lifts onto the op door's context and never forwards to a backend:
   // it is how a profile policy's own reads reach its `preOps` marked as
@@ -1018,7 +1024,8 @@ export class Workspace {
    * the refusal an agent would read come out of one place and cannot
    * disagree. It runs no command, expands nothing, spends no grant and
    * puts no question to a host, which is what makes it safe to call
-   * about a line nobody typed.
+   * about a line nobody typed. The line is judged on the static bindings'
+   * route; a route policy is not consulted.
    *
    * Host-side only. The structure of a profile's rules is an operator's
    * business, so there is no builtin an agent can type to read it.
@@ -1028,7 +1035,15 @@ export class Workspace {
     const session = this.getSession(sessionId === '' ? this.defaultSessionId : sessionId)
     const parser = await this.getShellParser()
     const reparse = (text: string): TSNodeLike => parser.parse(text)
-    return explainLine(parser.parse(line), session, this.registry, this.namespace, '', reparse)
+    return explainLine(
+      parser.parse(line),
+      session,
+      this.registry,
+      this.namespace,
+      '',
+      reparse,
+      this.runtimeWorld.wholeLineFor(null) !== null,
+    )
   }
 
   get workspaceId(): string {
@@ -1551,7 +1566,7 @@ export class Workspace {
     overrides: Record<string, BaseVFS | Mount> = {},
     cliOverrides: CLIOverrides = {},
   ): Promise<InstanceType<T>> {
-    const bytes = typeof source === 'string' ? readFileBytes(source) : source
+    const bytes = typeof source === 'string' ? await readFileBytes(source) : source
     const state = (await readSnapshotTar(bytes)) as WorkspaceStateDict
     return this.fromState(state, options, overrides, cliOverrides)
   }
@@ -1675,23 +1690,44 @@ export class Workspace {
     // Awaiting the memoized attempt rather than short-circuiting on `closed`
     // keeps every caller told: teardown runs once, and if it raised, each
     // caller sees why instead of the second one reading success.
-    this.closing ??= this.runClose()
+    this.closing ??= this.runClose(false)
     await this.closing
   }
 
-  private async runClose(): Promise<void> {
-    await this.sessionManager.settle()
-    await this.scriptPolicy.close()
+  /**
+   * Close the workspace and delete its state from the store.
+   *
+   * Links, history, sessions and the metadata record all go, so a
+   * workspace created later under this id starts empty. `close` keeps
+   * them, which is how a daemon's workspace survives a restart. Throws
+   * when the workspace was closed first: that closed the stores its
+   * state lives in, so nothing was deleted.
+   */
+  async delete(): Promise<void> {
+    this.closing ??= this.runClose(true)
+    await this.closing
+    if (!this.stateDropped) throw new Error('workspace was closed before delete; its state is kept')
+  }
+
+  private async runClose(dropState: boolean): Promise<void> {
+    this.stateDropped = dropState
     try {
       await closeWorkspace({
         watch: this.watchManager,
         cache: this.cache,
         ownsStateStore: this.ownsStateStore,
         stateStore: this.stateStoreInternal,
-        closers: this.closers,
+        closers: [
+          () => this.sessionManager.settle(),
+          () => this.scriptPolicy.close(),
+          ...this.closers.splice(0),
+        ],
         jobTable: this.jobTable,
         registry: this.registry,
         sharedMounts: this.sharedMounts,
+        dropState,
+        workspaceId: this.workspaceId,
+        planes: this.planes,
       })
     } finally {
       // Teardown has run either way, and `closing` is memoized, so it will

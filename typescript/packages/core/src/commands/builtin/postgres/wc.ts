@@ -15,7 +15,7 @@
 import type { PostgresAccessor } from '../../../accessor/postgres.ts'
 import { countRows } from '../../../core/postgres/client.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { POSTGRES_IO } from './io.ts'
+import { IO } from './io.ts'
 import { readStream } from '../../../core/postgres/read.ts'
 import { entityExists } from '../../../core/postgres/readdir.ts'
 import { detectScope } from '../../../core/postgres/scope.ts'
@@ -32,7 +32,7 @@ import {
 
 const ENC = new TextEncoder()
 
-const resolveGlob = resolveGlobOf(POSTGRES_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 function rowsScope(p: PathSpec): { schema: string; entity: string } | null {
   const scope = detectScope(p)

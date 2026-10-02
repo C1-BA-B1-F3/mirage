@@ -32,7 +32,7 @@ import {
 } from '../../../../utils/errors.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const RM_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'rm',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

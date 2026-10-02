@@ -85,6 +85,14 @@ export class RAMWorkspaceStateStore extends WorkspaceStateStore {
     return Promise.resolve(true)
   }
 
+  protected forgetSelf(workspaceId: string): Promise<void> {
+    this.namespaces.delete(workspaceId)
+    this.observers.delete(workspaceId)
+    this.sessionTables.delete(workspaceId)
+    this.meta.delete(workspaceId)
+    return Promise.resolve()
+  }
+
   protected closeSelf(): Promise<void> {
     return Promise.resolve()
   }

@@ -11,7 +11,7 @@ import { ONEDRIVE_OPS } from '../../ops/onedrive/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
-import { ONEDRIVE_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import type { DeltaHook } from '../../watch/base.ts'
 import { buildDeltaHook } from '../../core/onedrive/watch.ts'
 
@@ -32,7 +32,7 @@ export class OneDriveVFS extends BaseVFS {
   // read taking it before the bytes, so the gate compares like with like.
   override readonly readRevalidatable: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = ONEDRIVE_PROMPT
+  override readonly prompt: string = PROMPT
   override readonly accessor: OneDriveAccessor
   private readonly config: OneDriveConfig
 

@@ -162,41 +162,32 @@ describe('getProcessSubBody', () => {
 })
 
 describe('getRedirects herestring ordering', () => {
-  const commandName = node(NT.COMMAND_NAME, 'cat')
-  const inputWord = node(NT.WORD, 'input.txt')
-  const hereWord = node(NT.WORD, 'here')
-  const input = node(NT.FILE_REDIRECT, '< input.txt', {
-    children: [node(NT.REDIRECT_IN, '<', { isNamed: false }), inputWord],
-    namedChildren: [inputWord],
-  })
-  const herestring = node(NT.HERESTRING_REDIRECT, '<<< here', {
-    children: [node(NT.HERESTRING_TOKEN, '<<<', { isNamed: false }), hereWord],
-    namedChildren: [hereWord],
+  // The parser's redirect shield reads every `<<<` the way bash does, so a
+  // herestring keeps its place among the statement's redirects.
+  async function redirectsOf(line: string): Promise<Redirect[]> {
+    const parser = await getTestParser()
+    return getRedirects(parser.parse(line).children[0] as TSNodeLike)[1]
+  }
+
+  it('keeps a herestring before an outer file redirect', async () => {
+    expect((await redirectsOf('cat <<< here < input.txt')).map((r) => r.kind)).toEqual([
+      RedirectKind.HERESTRING,
+      RedirectKind.STDIN,
+    ])
   })
 
-  it('hoists a command-nested herestring before an outer file redirect', () => {
-    const command = node(NT.COMMAND, 'cat <<< here', {
-      namedChildren: [commandName, herestring],
-    })
-    const statement = node(NT.REDIRECTED_STATEMENT, 'cat <<< here < input.txt', {
-      namedChildren: [command, input],
-    })
-    const [, redirects] = getRedirects(statement)
-    expect(redirects.map((r) => r.kind)).toEqual([RedirectKind.HERESTRING, RedirectKind.STDIN])
-  })
-
-  it('recovers a herestring parsed as ERROR plus file redirect', () => {
-    const command = node(NT.COMMAND, 'cat', { namedChildren: [commandName] })
-    const recoveredHere = node(NT.FILE_REDIRECT, '< here', {
-      children: [node(NT.REDIRECT_IN, '<', { isNamed: false }), hereWord],
-      namedChildren: [hereWord],
-    })
-    const statement = node(NT.REDIRECTED_STATEMENT, 'cat < input.txt <<< here', {
-      namedChildren: [command, input, node(NT.ERROR, '<<'), recoveredHere],
-    })
-    const [, redirects] = getRedirects(statement)
+  it('keeps a herestring after a file redirect', async () => {
+    const redirects = await redirectsOf('cat < input.txt <<< here')
     expect(redirects.map((r) => r.kind)).toEqual([RedirectKind.STDIN, RedirectKind.HERESTRING])
     expect(redirects[1]?.target).toBe('here')
+  })
+
+  it('carries a raw_string herestring body', async () => {
+    const here = (await redirectsOf("cat <<< 'hi' > out.txt")).filter(
+      (r) => r.kind === RedirectKind.HERESTRING,
+    )
+    expect(here).toHaveLength(1)
+    expect(targetTypeOf(here[0])).toBe(NT.RAW_STRING)
   })
 })
 
@@ -227,29 +218,6 @@ describe('getRedirects quoted targets', () => {
       expect(targetTypeOf(redirects[0])).toBe(NT.RAW_STRING)
     },
   )
-
-  it('carries a raw_string herestring body', () => {
-    const body = node(NT.RAW_STRING, "'hi'")
-    const herestring = node(NT.HERESTRING_REDIRECT, "<<< 'hi'", {
-      children: [node(NT.HERESTRING_TOKEN, '<<<', { isNamed: false }), body],
-      namedChildren: [body],
-    })
-    const cmd = node(NT.COMMAND, "cat <<< 'hi'", {
-      namedChildren: [node(NT.COMMAND_NAME, 'cat'), herestring],
-    })
-    const outWord = node(NT.WORD, 'out.txt')
-    const outRedirect = node(NT.FILE_REDIRECT, '> out.txt', {
-      children: [node(NT.REDIRECT_OUT, '>', { isNamed: false }), outWord],
-      namedChildren: [outWord],
-    })
-    const statement = node(NT.REDIRECTED_STATEMENT, "cat <<< 'hi' > out.txt", {
-      namedChildren: [cmd, outRedirect],
-    })
-    const [, redirects] = getRedirects(statement)
-    const here = redirects.filter((r) => r.kind === RedirectKind.HERESTRING)
-    expect(here).toHaveLength(1)
-    expect(targetTypeOf(here[0])).toBe(NT.RAW_STRING)
-  })
 })
 
 describe('getPipelineCommands', () => {
@@ -534,7 +502,7 @@ describe('isBackgrounded', () => {
   })
 })
 
-describe('claimedDescriptor', () => {
+describe('a descriptor touching its operator', () => {
   function statement(parser: ShellParser, line: string): [TSNodeLike, TSNodeLike] {
     const stmt = parser.parse(line).children[0]
     const command = stmt?.namedChildren[0]

@@ -1100,3 +1100,166 @@ async def test_rmdir_keeps_a_link_created_while_the_backend_removes():
             reset_current_session(token)
         assert not ws.namespace.is_link("/data/d/old")
         assert ws.namespace.readlink("/data/d/late") == "nowhere"
+
+
+class _RefusingGate:
+    """An EntryGate that refuses one path and remembers what it was asked."""
+
+    scoped = True
+    granted = ()
+
+    def __init__(self, refused: str) -> None:
+        self.refused = refused
+        self.asked: list[str] = []
+
+    def check(self, virtual: str) -> None:
+        self.asked.append(virtual)
+        if virtual == self.refused:
+            raise PermissionError(errno.EACCES, "sealed", virtual)
+
+    def refuses(self, virtual: str) -> bool:
+        return virtual == self.refused
+
+
+async def _linked_ws() -> Workspace:
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
+    await ws.shell(
+        "mkdir -p /data/real && echo s > /data/real/secret && "
+        "ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink"
+    )
+    return ws
+
+
+async def _text(ws: Workspace, virtual: str) -> bytes:
+    data, _ = await ws.dispatch("read", _path(virtual))
+    return data
+
+
+@pytest.mark.asyncio
+async def test_a_marked_op_is_judged_on_every_path_it_reaches():
+    # Each spelling once, in the order the door meets it: as handed in,
+    # walked, then followed. A refused op leaves the bytes alone; an
+    # unmarked one is the door's alone.
+    ws = await _linked_ws()
+    await ws.shell(
+        "echo new > /data/real/other && echo o > /data/other && "
+        "ln -s /data/other /data/real/flink2"
+    )
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        for op, virtual, kwargs in (
+            ("unlink", "/data/alias/secret", {}),
+            (
+                "rename",
+                "/data/real/other",
+                {"dst": _path("/data/alias/secret")},
+            ),
+            ("read", "/data/flink", {}),
+            (
+                "write",
+                "/data/alias/secret",
+                {"data": b"x\n", "nofollow": True},
+            ),
+        ):
+            with pytest.raises(PermissionError):
+                await ws.dispatch(op, _path(virtual), rule_gate=gate, **kwargs)
+        assert gate.asked == [
+            "/data/alias/secret",
+            "/data/real/secret",
+            "/data/real/other",
+            "/data/alias/secret",
+            "/data/real/secret",
+            "/data/flink",
+            "/data/real/secret",
+            "/data/alias/secret",
+            "/data/real/secret",
+        ]
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+        assert await _text(ws, "/data/real/other") == b"new\n"
+        walked = _RefusingGate("/data/real/flink2")
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "read", _path("/data/alias/flink2"), rule_gate=walked
+            )
+        assert walked.asked == ["/data/alias/flink2", "/data/real/flink2"]
+        await ws.dispatch("unlink", _path("/data/alias/secret"))
+        with pytest.raises(FileNotFoundError):
+            await _text(ws, "/data/real/secret")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_marked_unlink_of_a_link_is_judged_on_the_link_entry():
+    # The link table answers unlink of a link: a rule on the link name
+    # holds before that answer, and one on the referent is never asked.
+    ws = await _linked_ws()
+    try:
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "unlink",
+                _path("/data/flink"),
+                rule_gate=_RefusingGate("/data/flink"),
+            )
+        referent = _RefusingGate("/data/real/secret")
+        await ws.dispatch("unlink", _path("/data/flink"), rule_gate=referent)
+        assert referent.asked == ["/data/flink"]
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_hidden_space_answers_a_marked_op_before_any_rule():
+    # A write into hidden space, a link there, a hidden rename endpoint
+    # and one behind a linked parent are missing, and the command's gate
+    # is never asked.
+    ws = await _linked_ws()
+    await ws.shell(
+        "mkdir -p /data/hid && echo h > /data/hid/h && "
+        "ln -s /data/hid /data/halias && ln -s /data/hid/h /data/hlink"
+    )
+    token = set_current_session(
+        SessionState(
+            session_id="hider", hidden_paths=HiddenPaths(paths=("/data/hid",))
+        )
+    )
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        for op, virtual, kwargs in (
+            ("write", "/data/hid/x", {"data": b"x\n"}),
+            ("read", "/data/hlink", {}),
+            ("rename", "/data/real/secret", {"dst": _path("/data/hid/x")}),
+            ("rename", "/data/hid/h", {"dst": _path("/data/real/moved")}),
+            ("rename", "/data/real/secret", {"dst": _path("/data/halias/x")}),
+        ):
+            with pytest.raises(FileNotFoundError):
+                await ws.dispatch(op, _path(virtual), rule_gate=gate, **kwargs)
+        assert gate.asked == []
+    finally:
+        reset_current_session(token)
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_the_mark_never_reaches_the_op(monkeypatch):
+    # The door lifts the mark at entry: the mount's op sees only its own
+    # arguments, whatever the command's dispatcher carried.
+    ws = await _linked_ws()
+    seen: list[dict] = []
+    real = MountEntry.execute_op
+
+    async def spy(self, op, *args, **kwargs):
+        seen.append(dict(kwargs))
+        return await real(self, op, *args, **kwargs)
+
+    monkeypatch.setattr(MountEntry, "execute_op", spy)
+    try:
+        gate = _RefusingGate("/nothing")
+        await ws.dispatch("read", _path("/data/real/secret"), rule_gate=gate)
+        assert seen and all("rule_gate" not in kw for kw in seen)
+        assert gate.asked == ["/data/real/secret"]
+    finally:
+        await ws.close()

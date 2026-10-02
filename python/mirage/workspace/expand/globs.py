@@ -18,7 +18,7 @@ import posixpath
 from mirage.ops.config import NamespaceLinks
 from mirage.ops.namespace_view import child_mount_names, namespace_names
 from mirage.shell.constants import SHOPT_DEFAULTS
-from mirage.shell.errors import ExitSignal
+from mirage.shell.errors import DiscardSignal
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import WALK_ERRORS
 from mirage.utils.glob_walk import (
@@ -357,11 +357,12 @@ async def _walk(
     listing, so each segment is matched against its (already expanded)
     parents with the owning backend's own single-level ``resolve_glob``,
     and an intermediate match that cannot be listed is skipped, as in
-    bash's directories-only descent. The fixed head is walked the way
-    the kernel walks it, a link before its ``..``. A ``.`` or ``..``
-    after a glob applies to each match that is a directory, ``..``
-    climbing from where a link leads, which is bash's existence test of
-    ``match/..``. Under ``globstar`` a ``**`` segment matches zero or
+    bash's directories-only descent. The walk starts at the first glob
+    or dot segment: a ``.`` or ``..`` applies to each parent that is a
+    directory, ``..`` climbing from where a link leads, which is the
+    kernel's walk of ``name/..`` that bash's opendir makes, so a missing
+    or plain-file name in front of one matches nothing. Under
+    ``globstar`` a ``**`` segment matches zero or
     more directory levels: the parent itself (spelled with a trailing
     slash when the word has a fixed head, ``d/**`` -> ``d/``, and left
     out for a bare ``**``) plus every descendant. The spelling is carried
@@ -375,19 +376,17 @@ async def _walk(
         globstar (bool): whether ``**`` reads as any depth.
     """
     typed = (item.dotted or item.virtual).strip("/").split("/")
-    first = next(i for i, seg in enumerate(typed) if has_glob(seg))
+    first = next(
+        i for i, seg in enumerate(typed) if has_glob(seg) or seg in (".", "..")
+    )
     raw = unmark_globs(item.raw_path).rstrip("/").split("/")
     spelled_head = "/".join(raw[: len(raw) - (len(typed) - first)])
     if item.raw_path.startswith("/") and not spelled_head:
         spelled_head = "/"
-    # The head above the first glob segment is a real directory, so a
-    # glob character quoted inside it is part of the name to list.
+    # The head above the first glob or dot segment is a real directory,
+    # so a glob character quoted inside it is part of the name to list.
     head = unmark_globs("/" + "/".join(typed[:first]))
-    try:
-        head = links.follow(head) if links and item.dotted else head
-    except CycleError:
-        return []
-    level = [(posixpath.normpath(head), spelled_head, False)]
+    level = [(head, spelled_head, False)]
     for seg in typed[first:]:
         gathered: list[tuple[str, str, bool]] = []
         for parent, spelled, _ in level:
@@ -668,15 +667,19 @@ async def resolve_globs(
                     # literal word (default), nothing at all under
                     # nullglob, and a fatal expansion error under
                     # failglob, which ends the line like a bad subscript.
+                    # The literal is resolved, or the command's backend
+                    # would glob it again over the simplified path
+                    # (`missing/../*` as `*`); the pattern stays, so a
+                    # push-down still reads it as no entity name.
                     if opts.failglob:
                         word = unmark_globs(typed.raw_path)
-                        raise ExitSignal(
-                            1,
-                            stderr=f"bash: no match: {word}\n".encode(),
-                            contained_code=1,
+                        raise DiscardSignal(
+                            f"bash: no match: {word}\n".encode()
                         )
                     if not opts.nullglob:
-                        result.append(typed)
+                        result.append(
+                            dataclasses.replace(typed, resolved=True)
+                        )
                     continue
                 for p in resolved:
                     spelled = _match_raw(item, _as_spec(p, prefix))

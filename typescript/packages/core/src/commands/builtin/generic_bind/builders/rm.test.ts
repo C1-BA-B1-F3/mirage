@@ -20,7 +20,7 @@ import { materialize } from '../../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../../types.ts'
 import { eacces, enoent } from '../../../../utils/errors.ts'
 import type { CommandIO } from '../adapter.ts'
-import { RM_BUILDER } from './rm.ts'
+import { BUILDER } from './rm.ts'
 
 const DEC = new TextDecoder()
 const INDEX = new RAMIndexCacheStore()
@@ -68,7 +68,7 @@ async function rm(
   paths: string[],
   flags: Record<string, boolean> = {},
 ): Promise<[number, string, string]> {
-  const result = await RM_BUILDER.fn(
+  const result = await BUILDER.fn(
     io,
     {} as Accessor,
     paths.map((p) => PathSpec.fromStrPath(p)),

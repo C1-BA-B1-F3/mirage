@@ -24,7 +24,7 @@ import type { LinearConfig, LinearConfigRedacted } from '../../core/linear/confi
 import { LINEAR_OPS } from '../../ops/linear/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { LINEAR_PROMPT, LINEAR_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 export interface LinearVFSState {
@@ -39,8 +39,8 @@ export class LinearVFS extends BaseVFS {
   // (comments.jsonl via one bounded comments call), so stat always reports
   // the rendered byte length and fskit mounts serve exact reads.
   override readonly sizesAlwaysKnown: boolean = true
-  override readonly prompt: string = LINEAR_PROMPT
-  override readonly writePrompt: string = LINEAR_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: LinearConfig
   override readonly accessor: LinearAccessor
 

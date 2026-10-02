@@ -27,7 +27,7 @@ import {
   type DifyConfig,
   type DifyConfigResolved,
 } from './config.ts'
-import { DIFY_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface DifyVFSOptions {
   config: DifyConfig
@@ -43,7 +43,7 @@ export class DifyVFS extends BaseVFS {
   override readonly name: string = VFSName.DIFY
   override readonly cachesReads: boolean = true
   override readonly supportsSnapshot: boolean = false
-  override readonly prompt: string = DIFY_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: DifyConfigResolved
   override readonly accessor: DifyAccessor
 

@@ -27,7 +27,7 @@ import {
   type ChromaConfig,
   type ChromaConfigResolved,
 } from './config.ts'
-import { CHROMA_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface ChromaVFSOptions {
   config: ChromaConfig
@@ -47,7 +47,7 @@ export class ChromaVFS extends BaseVFS {
   // stats; the path tree's own size is the producer's source number and
   // never becomes the reported byte length.
   override readonly sizesAlwaysKnown: boolean = true
-  override readonly prompt: string = CHROMA_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: ChromaConfigResolved
   override readonly accessor: ChromaAccessor
 

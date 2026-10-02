@@ -16,7 +16,13 @@ import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { GitHubAccessor } from '../../accessor/github.ts'
 import type { FindOptions } from '../../vfs/base.ts'
 import type { PathSpec } from '../../types.ts'
-import { buildTree, emitStartPath, keep, startBasename } from '../../commands/builtin/find_eval.ts'
+import {
+  emitStartPath,
+  keep,
+  optionsTree,
+  startBasename,
+  treeHasEmpty,
+} from '../../commands/builtin/find_eval.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { DIR_SIZE } from '../../utils/stat_view.ts'
@@ -33,25 +39,31 @@ export function find(
   path: PathSpec,
   options: FindOptions = {},
 ): Promise<string[]> {
+  // A git tree carries no timestamp, so every entry's mtime is unknown, which
+  // -mtime excludes: nothing here is ever in the window. Mirrors Python's find.
+  if (
+    (options.mtimeMin !== null && options.mtimeMin !== undefined) ||
+    (options.mtimeMax !== null && options.mtimeMax !== undefined)
+  ) {
+    return Promise.resolve([])
+  }
   const base = strip(path)
   const prefix = base === '' ? '' : `${base}/`
   const baseDepth = base === '' ? 0 : (base.match(/\//g) ?? []).length + 1
   const startName = startBasename(path.virtual)
   const results: string[] = []
-  const tree =
-    options.tree ??
-    buildTree({
-      name: options.name,
-      iname: options.iname,
-      pathPattern: options.pathPattern,
-      type: options.type,
-      nameExclude: options.nameExclude,
-      orNames: options.orNames,
-    })
+  const tree = optionsTree(options)
+  const needEmpty = treeHasEmpty(tree)
   let startKind: 'd' | 'f' | null = base === '' ? 'd' : null
   let startSize = 0
   let hasChild = false
   const sortedKeys = Object.keys(accessor.tree).sort(compareCodePoints)
+  // Every intermediate folder is itself an entry, so marking direct parents
+  // is enough to classify all non-empty directories; a top-level entry's
+  // parent is the root, keyed ''.
+  const nonEmptyDirs = new Set(
+    needEmpty ? sortedKeys.map((k) => (k.includes('/') ? k.slice(0, k.lastIndexOf('/')) : '')) : [],
+  )
   for (const p of sortedKeys) {
     const entry = accessor.tree[p]
     if (entry === undefined) continue
@@ -69,16 +81,17 @@ export function find(
       continue
     }
     const entryName = p.split('/').pop() ?? p
+    const size = isDir ? DIR_SIZE : (entry.size ?? 0)
+    const isEmpty = needEmpty ? (isDir ? !nonEmptyDirs.has(p) : size === 0) : null
     if (
       !keep(
-        { key: fullPath, name: entryName, kind: isDir ? 'd' : 'f', depth },
+        { key: fullPath, name: entryName, kind: isDir ? 'd' : 'f', depth, isEmpty },
         tree,
         options.minDepth,
       )
     ) {
       continue
     }
-    const size = isDir ? DIR_SIZE : (entry.size ?? 0)
     if (options.minSize !== null && options.minSize !== undefined && size < options.minSize) {
       continue
     }
@@ -91,7 +104,7 @@ export function find(
     const rootKind = startKind ?? 'd'
     emitStartPath(results, base === '' ? '/' : `/${base}`, startName, {
       kind: rootKind,
-      isEmpty: null,
+      isEmpty: rootKind === 'd' ? !hasChild : startSize === 0,
       exists: true,
       tree,
       maxDepth: options.maxDepth,

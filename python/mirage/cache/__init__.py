@@ -12,9 +12,28 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.cache.file import CacheEntry, FileCacheMixin
-from mirage.cache.index import IndexCacheStore, RAMIndexCacheStore
-from mirage.cache.lock import KeyLockMixin
+import importlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mirage.cache.file.entry import CacheEntry
+    from mirage.cache.file.mixin import FileCacheMixin
+    from mirage.cache.index.ram import RAMIndexCacheStore
+    from mirage.cache.index.redis import RedisIndexCacheStore
+    from mirage.cache.index.store import IndexCacheStore
+    from mirage.cache.lock import KeyLockMixin
+
+_EXPORTS: dict[str, tuple[str, ...]] = {
+    "mirage.cache.file.entry": ("CacheEntry",),
+    "mirage.cache.file.mixin": ("FileCacheMixin",),
+    "mirage.cache.index.ram": ("RAMIndexCacheStore",),
+    "mirage.cache.index.redis": ("RedisIndexCacheStore",),
+    "mirage.cache.index.store": ("IndexCacheStore",),
+    "mirage.cache.lock": ("KeyLockMixin",),
+}
+_MODULE_OF = {
+    name: module for module, names in _EXPORTS.items() for name in names
+}
 
 __all__ = [
     "CacheEntry",
@@ -26,9 +45,10 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    if name == "RedisIndexCacheStore":
-        from mirage.cache.index import RedisIndexCacheStore
-
-        return RedisIndexCacheStore
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+def __getattr__(name: str) -> Any:
+    module = _MODULE_OF.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value

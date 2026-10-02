@@ -31,7 +31,7 @@ import { unlink as boxUnlink } from '../../../core/box/unlink.ts'
 import { write as boxWrite } from '../../../core/box/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const BOX_IO: CommandIO<BoxAccessor> = new VFSAdapter<BoxAccessor>({
+export const IO: CommandIO<BoxAccessor> = new VFSAdapter<BoxAccessor>({
   read: { readdir: boxReaddir, readBytes: boxRead, stat: boxStat },
   native: {
     readRange: rangeOf(boxRead),

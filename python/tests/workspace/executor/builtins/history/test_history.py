@@ -56,13 +56,13 @@ def test_parse_args_collects_clustered_option_letters():
 
 def test_parse_args_rejects_an_unknown_option_letter():
     flags, texts, error = _parse_args(["-x"])
-    assert error == "history: -x: invalid option\n"
+    assert error == "bash: history: -x: invalid option\n"
     assert (flags, texts) == ({}, [])
 
 
 def test_parse_args_treats_a_digit_as_an_invalid_option_like_bash():
     _, _, error = _parse_args(["-1"])
-    assert error == "history: -1: invalid option\n"
+    assert error == "bash: history: -1: invalid option\n"
 
 
 def test_parse_args_takes_the_d_offset_attached_to_its_token():
@@ -85,7 +85,7 @@ def test_parse_args_takes_the_next_token_as_the_d_offset_when_detached():
 
 def test_parse_args_requires_an_argument_for_a_trailing_d():
     _, _, error = _parse_args(["-d"])
-    assert error == "history: -d: option requires an argument\n"
+    assert error == "bash: history: -d: option requires an argument\n"
 
 
 def test_parse_args_stops_option_parsing_at_the_first_operand():
@@ -115,7 +115,7 @@ async def test_history_reports_a_usage_error_with_status_2():
     )
     assert io.exit_code == 2
     assert node.exit_code == 2
-    assert io.stderr.startswith(b"history: -x: invalid option\n")
+    assert io.stderr.startswith(b"bash: history: -x: invalid option\n")
     assert b"history: usage: history [-c]" in io.stderr
 
 
@@ -123,7 +123,7 @@ async def test_history_reports_a_usage_error_with_status_2():
 async def test_history_reports_when_the_workspace_has_no_history_mount():
     _, io, _ = await handle_history(FakeRegistry(None), [], session())
     assert io.exit_code == 1
-    assert io.stderr == b"history: not enabled for this workspace\n"
+    assert io.stderr == b"bash: history: not enabled for this workspace\n"
 
 
 @pytest.mark.asyncio
@@ -145,7 +145,7 @@ async def test_history_routes_flags_and_operands_to_the_view_mount():
 
 @pytest.mark.asyncio
 async def test_history_resolves_the_mounts_stderr_before_building_the_node():
-    mount = FakeMount(IOResult(exit_code=1, stderr=b"history: boom\n"))
+    mount = FakeMount(IOResult(exit_code=1, stderr=b"bash: history: boom\n"))
     _, _, node = await handle_history(FakeRegistry(mount), [], session())
-    assert node.stderr == b"history: boom\n"
+    assert node.stderr == b"bash: history: boom\n"
     assert node.exit_code == 1

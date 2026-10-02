@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { AIRTABLE_IO } from '../../commands/builtin/airtable/io.ts'
+import { IO } from '../../commands/builtin/airtable/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const AIRTABLE_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.AIRTABLE, AIRTABLE_IO)
+export const AIRTABLE_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.AIRTABLE, IO)

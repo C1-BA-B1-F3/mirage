@@ -36,7 +36,7 @@ import { truncate as diskTruncate } from '../../../core/disk/truncate.ts'
 import { unlink as diskUnlink } from '../../../core/disk/unlink.ts'
 import { writeBytes as diskWrite } from '../../../core/disk/write.ts'
 
-export const DISK_IO: CommandIO<DiskAccessor> = new VFSAdapter<DiskAccessor>({
+export const IO: CommandIO<DiskAccessor> = new VFSAdapter<DiskAccessor>({
   read: { readdir: diskReaddir, readBytes: diskRead, stat: diskStat },
   native: {
     readRange: diskReadRange,

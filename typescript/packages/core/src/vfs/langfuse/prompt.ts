@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const LANGFUSE_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   traces/
     <trace-id>.json
   sessions/

@@ -34,9 +34,4 @@ class ChromaVFS(BaseVFS):
         return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
-        return {
-            "type": self.name,
-            "needs_override": True,
-            "redacted_fields": [],
-            "config": self.config.model_dump(),
-        }
+        return self.config_state(self.config, needs_override=True)

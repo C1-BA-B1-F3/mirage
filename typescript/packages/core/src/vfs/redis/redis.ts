@@ -22,7 +22,7 @@ import { stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { BaseVFS } from '../base.ts'
 import { REDACTED_SECRET } from '../secrets.ts'
-import { REDIS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import type { RedisStoreLike } from './store.ts'
 export interface RedisVFSState {
   type: string
@@ -51,7 +51,7 @@ export class RedisResourceBase extends BaseVFS {
   // byte store: stat() sizes every file from metadata
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 0
-  override readonly prompt: string = REDIS_PROMPT
+  override readonly prompt: string = PROMPT
   readonly store: RedisStoreLike
   override readonly accessor: RedisAccessor
   constructor(store: RedisStoreLike) {

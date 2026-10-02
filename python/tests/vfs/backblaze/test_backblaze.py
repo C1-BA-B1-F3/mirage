@@ -15,8 +15,7 @@
 import pytest
 from pydantic import ValidationError
 
-from mirage.types import VFSName
-from mirage.vfs.backblaze import BackblazeConfig, BackblazeVFS
+from mirage.vfs.backblaze import BackblazeConfig
 from mirage.vfs.s3 import S3Config
 from mirage.vfs.secrets import reveal_secret
 
@@ -60,16 +59,3 @@ def test_backblaze_to_s3_config():
     assert isinstance(s3, S3Config)
     assert s3.endpoint_url == "https://s3.eu-central-003.backblazeb2.com"
     assert reveal_secret(s3.aws_secret_access_key) == "secret"
-
-
-def test_backblaze_resource_uses_s3_resource_type():
-    vfs = BackblazeVFS(
-        BackblazeConfig(
-            bucket="b",
-            region="us-west-002",
-            access_key_id="k",
-            secret_access_key="s",
-        )
-    )
-    assert vfs.name == VFSName.S3
-    assert isinstance(vfs.config, S3Config)

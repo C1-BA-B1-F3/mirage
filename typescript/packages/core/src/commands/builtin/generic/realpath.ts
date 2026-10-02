@@ -16,19 +16,19 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { missingOperandError } from '../../spec/usage.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { FileStat } from '../../../types.ts'
-import { FileType, PathSpec } from '../../../types.ts'
+import { FileType, PathSpec, type StatFn } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import type { DispatchFn } from '../../../runtime/types.ts'
 import { eloop, enoent, enotdir, fsErrorLine, isMissingPath } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
-import { CycleError, parent } from '../../../utils/path.ts'
-import { dispatchStat, linkFollow } from '../utils/paths.ts'
-
-type PathStat = (path: string) => Promise<FileStat>
+import { parent } from '../../../utils/path.ts'
+import { pathAllowed } from '../../../context/session_context.ts'
+import { dispatchStat, linkTarget } from '../utils/paths.ts'
 
 const ENC = new TextEncoder()
 const MODES: Record<string, string> = { canonicalize_existing: 'e', canonicalize_missing: 'm' }
 const LINKS: Record<string, string> = { logical: 'L', physical: 'P', strip: 's', no_symlinks: 's' }
+const LOOP_CHECK_AFTER = 20
+const LINK_CEILING = 1024
 
 /**
  * GNU realpath's options, the last of each family winning: `mode` is `e`
@@ -60,52 +60,69 @@ export function parseFlags(flags: CommandOpts['flags']): RealpathFlags {
   }
 }
 
-async function directory(stat: PathStat, path: string, word: string): Promise<void> {
-  if ((await stat(path)).type !== FileType.DIRECTORY) throw enotdir(word)
+async function directory(stat: StatFn, path: string, word: string): Promise<void> {
+  if ((await stat(PathSpec.fromStrPath(path))).type !== FileType.DIRECTORY) throw enotdir(word)
 }
 
 /**
  * gnulib's canonicalize_filename_mode, over the workspace, which `realpath`
- * and `readlink -f` share. A relative word
- * starts at the working directory. Each named component is appended and,
- * unless `nolinks`, taken through its links, so a `..` climbs from where a
- * link leads. A component followed by `.` or `..` must be a directory.
- * A trailing slash rejects an existing non-directory. GNU 9.7's default mode
- * accepts a missing final component with a slash; `nolinks` also accepts
- * missing parents. `e` requires existence, while `m` checks nothing and leaves a looping
- * link unresolved. Throws the first check the walk fails. Mirrors Python.
+ * and `readlink -f` share. A relative word starts at the working directory.
+ * Each named component is appended and, unless `nolinks`, a link there is
+ * read (`readlink`, one link's target or null) and its target put in front
+ * of the names left, so a `..` climbs from where a link leads. A link the
+ * session cannot see is no link, as a hidden path is no path. A component
+ * followed by `.` or `..` must be a directory. A trailing slash rejects an
+ * existing non-directory. GNU 9.7's default mode accepts a missing final
+ * component with a slash; `nolinks` also accepts missing parents. `e`
+ * requires existence, while `m` checks nothing. A loop is a link met again
+ * with the same names left, looked for once 20 links are behind, as gnulib
+ * does; a link that grows the names it leaves (`a -> a/x`) never repeats,
+ * and GNU walks it until memory runs out, so the walk stops at
+ * LINK_CEILING links. `m` leaves the looping link unresolved. Throws the
+ * first check the walk fails. Mirrors Python.
  */
 export async function canonicalize(
   word: string,
   cwd: string,
   mode: string,
   nolinks: boolean,
-  follow: ((path: string) => string) | null,
-  stat: PathStat,
+  readlink: ((path: string) => string | null) | null,
+  stat: StatFn,
 ): Promise<string> {
   if (word === '') throw enoent(word)
   const names = (word.startsWith('/') ? word : `${cwd}/${word}`).split('/').filter((n) => n !== '')
+  let slash = word.endsWith('/')
   let path = '/'
-  for (const [i, name] of names.entries()) {
+  let last: string | undefined
+  let links = 0
+  const seen = new Set<string>()
+  for (let name = names.shift(); name !== undefined; name = names.shift()) {
+    last = name
     if (name === '.' || name === '..') {
       if (name === '..') path = parent(path)
       continue
     }
     path = path === '/' ? `/${name}` : `${path}/${name}`
-    try {
-      if (!nolinks && follow !== null) path = follow(path)
-    } catch (err) {
-      if (!(err instanceof CycleError)) throw err
+    const target = nolinks || readlink === null || !pathAllowed(path) ? null : readlink(path)
+    if (target !== null) {
+      links++
+      const key = JSON.stringify([path, names])
+      if (links <= LOOP_CHECK_AFTER || (!seen.has(key) && links <= LINK_CEILING)) {
+        if (links > LOOP_CHECK_AFTER) seen.add(key)
+        slash = slash || (names.length === 0 && target.endsWith('/'))
+        names.unshift(...target.split('/').filter((n) => n !== ''))
+        path = target.startsWith('/') ? '/' : parent(path)
+        continue
+      }
       if (mode !== 'm') throw eloop(word)
     }
-    const next = names[i + 1]
+    const next = names[0]
     if (mode !== 'm' && (next === '.' || next === '..')) await directory(stat, path, word)
   }
-  const last = names[names.length - 1]
   if (mode === 'm' || last === undefined || last === '.' || last === '..') return path
   try {
-    if (word.endsWith('/')) await directory(stat, path, word)
-    else await stat(path)
+    if (slash) await directory(stat, path, word)
+    else await stat(PathSpec.fromStrPath(path))
   } catch (err) {
     if (!isMissingPath(err) || mode === 'e') throw err
     if (!nolinks) await directory(stat, parent(path), word)
@@ -133,16 +150,16 @@ function relative(path: string, base: string): string {
  */
 export async function realpath(
   paths: readonly PathSpec[],
-  stat: PathStat,
+  stat: StatFn,
   cwd = '/',
-  follow: ((path: string) => string) | null = null,
+  readlink: ((path: string) => string | null) | null = null,
   flags: RealpathFlags = parseFlags({}),
 ): Promise<[ByteSource | null, IOResult]> {
   if (paths.length === 0) throw missingOperandError('realpath', null)
   const canon = async (word: string): Promise<string> => {
-    const path = await canonicalize(word, cwd, flags.mode, flags.links !== 'P', follow, stat)
+    const path = await canonicalize(word, cwd, flags.mode, flags.links !== 'P', readlink, stat)
     if (flags.links !== 'L') return path
-    return canonicalize(path, cwd, flags.mode, false, follow, stat)
+    return canonicalize(path, cwd, flags.mode, false, readlink, stat)
   }
   const relativeTo = flags.relativeTo ?? flags.relativeBase
   let to: string | null = null
@@ -187,11 +204,6 @@ export async function realpath(
   return [out, new IOResult({ stderr, exitCode: failed ? 1 : 0 })]
 }
 
-/** The workspace's stat of one path, through the op door. */
-export function doorStat(dispatch: DispatchFn): PathStat {
-  return (path) => dispatchStat(dispatch)(PathSpec.fromStrPath(path))
-}
-
 export async function realpathGeneric(
   paths: PathSpec[],
   texts: string[],
@@ -200,9 +212,12 @@ export async function realpathGeneric(
 ): Promise<CommandFnResult> {
   const first = paths[0]
   const prefix = first !== undefined ? mountPrefixOf(first.virtual, first.vfsPath) : ''
-  const pathStat: PathStat =
+  const pathStat: StatFn =
     opts.dispatch !== undefined
-      ? doorStat(opts.dispatch)
-      : async (path) => (await stat(PathSpec.fromStrPath(path, mountKey(path, prefix)))) as FileStat
-  return realpath(paths, pathStat, opts.cwd, linkFollow(opts.ns?.links), parseFlags(opts.flags))
+      ? dispatchStat(opts.dispatch)
+      : async (path) =>
+          (await stat(
+            PathSpec.fromStrPath(path.virtual, mountKey(path.virtual, prefix)),
+          )) as FileStat
+  return realpath(paths, pathStat, opts.cwd, linkTarget(opts.ns?.links), parseFlags(opts.flags))
 }

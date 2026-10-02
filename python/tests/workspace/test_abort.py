@@ -121,12 +121,14 @@ async def test_an_externally_cancelled_caller_gets_the_same_grace():
             finally:
                 steps.append("released")
 
+    before = asyncio.all_tasks()
     started = asyncio.get_running_loop().time()
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(run_cancellable(body(), cancel), 0.01)
     elapsed = asyncio.get_running_loop().time() - started
     assert steps == ["epilogue", "released"]
     assert ABORT_JOIN_SECONDS <= elapsed < ABORT_JOIN_SECONDS + 1
+    assert not (asyncio.all_tasks() - before)
 
 
 @pytest.mark.asyncio

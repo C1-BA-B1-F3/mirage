@@ -21,10 +21,10 @@ from mirage.runtime.config import RuntimeConfig
 from mirage.runtime.mixin import EvaluatorMixin
 from mirage.runtime.python.base import PythonRuntime
 from mirage.runtime.python.flags import unhonored_notice
-from mirage.runtime.python.monty.binding import pydantic_monty
 from mirage.runtime.python.monty.constants import MISSING_EXTRA_HINT
 from mirage.runtime.python.monty.execution import MontyExecution
-from mirage.runtime.python.monty.osaccess import MirageOSAccess
+from mirage.runtime.python.monty.fs import MontyFs
+from mirage.runtime.python.monty.loader import pydantic_monty
 from mirage.runtime.types import (
     EvalResult,
     EvalValue,
@@ -116,7 +116,7 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
         )
         execution = MontyExecution() if nested else self._execution
         try:
-            result = await execution.run(args, self._bridge(args.env, context))
+            result = await execution.run(args, self._fs(args.env, context))
         finally:
             if execution is not self._execution:
                 await execution.close()
@@ -132,7 +132,7 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
         session: str | None = None,
     ) -> EvalResult:
         context = self._capture_context()
-        bridge = self._bridge({}, context)
+        fs = self._fs({}, context)
         nested = (
             context is not None
             and context.processes is not None
@@ -144,7 +144,7 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
         try:
             return await execution.eval(
                 code,
-                bridge,
+                fs,
                 inputs=inputs,
                 session=session,
                 cwd=context.cwd if context is not None else None,
@@ -156,9 +156,9 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
     async def close(self) -> None:
         await self._execution.close()
 
-    def _bridge(
+    def _fs(
         self, env: dict[str, str], context: RuntimeContext | None
-    ) -> MirageOSAccess:
-        return MirageOSAccess(
+    ) -> MontyFs:
+        return MontyFs(
             RuntimeVFS.of(context) if context is not None else None, env
         )

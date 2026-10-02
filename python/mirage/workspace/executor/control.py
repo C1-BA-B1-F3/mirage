@@ -12,25 +12,33 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 from collections.abc import Callable
 from typing import Any
 
 from mirage.io import IOResult
 from mirage.io.async_line_iterator import line_buffer
 from mirage.io.stream import async_chain
-from mirage.io.types import ByteSource
+from mirage.io.types import ByteSource, materialize
 from mirage.policy import Policies, PolicyDenied
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
-from mirage.shell.errors import ArithError, ReadonlyError
+from mirage.shell.errors import (
+    ArithError,
+    ExitSignal,
+    ReadonlyError,
+    ReturnSignal,
+)
 from mirage.shell.job_table import JobTable
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec, word_text
 from mirage.utils.fnmatch import fnmatch
+from mirage.workspace.executor.builtins.read.read import read_reply
 from mirage.workspace.executor.jobs import run_statement
 from mirage.workspace.executor.statement import (
     fd0_binding,
@@ -38,7 +46,7 @@ from mirage.workspace.executor.statement import (
     record_status,
 )
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import session_view
+from mirage.workspace.session.state import session_view, visible_env
 from mirage.workspace.types import ExecutionNode
 
 # Safety cap on while/until iterations. Independent of stdin size:
@@ -83,25 +91,13 @@ async def _execute_body(
                 handed,
                 decisions,
             )
-        except BreakSignal as sig:
+        except UNWINDING as sig:
             # The control builtin is a statement the loop leaves through
-            # rather than closes, so its own status (0) is recorded here:
+            # rather than closes, so its own status is recorded here:
             # bash leaves `${PIPESTATUS[@]}` at `0` after `break`.
-            record_status(session, 0)
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            combined = _chain_streams(all_stdout)
-            raise BreakSignal(stdout=combined, io=merged_io, levels=sig.levels)
-        except ContinueSignal as sig:
-            record_status(session, 0)
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            combined = _chain_streams(all_stdout)
-            raise ContinueSignal(
-                stdout=combined, io=merged_io, levels=sig.levels
-            )
+            if isinstance(sig, (BreakSignal, ContinueSignal)):
+                record_status(session, sig.io.exit_code)
+            raise await carried(sig, _chain_streams(all_stdout), merged_io)
         stdout = await finish_statement(stdout, io, session, cmd)
         all_stdout.append(stdout)
         merged_io = await merged_io.merge(io)
@@ -133,6 +129,100 @@ class ContinueSignal(Exception):
 def _chain_streams(all_stdout: list[ByteSource | None]) -> ByteSource | None:
     non_empty = [s for s in all_stdout if s is not None]
     return async_chain(non_empty) if non_empty else None
+
+
+UNWINDING = (BreakSignal, ContinueSignal, ReturnSignal, ExitSignal)
+
+
+async def carried(
+    sig: Exception, stdout: ByteSource | None, io: IOResult
+) -> Exception:
+    """An unwinding ``break``, ``continue``, ``return`` or ``exit`` with
+    the output the construct it leaves had produced put in front of its
+    own, which that construct would otherwise drop on the way out (bash
+    wrote it as it went).
+
+    Args:
+        sig (Exception): one of ``UNWINDING``.
+        stdout (ByteSource | None): the construct's output so far.
+        io (IOResult): the construct's result so far, its stderr.
+    """
+    if isinstance(sig, (BreakSignal, ContinueSignal)):
+        sig.stdout = _chain_streams([stdout, sig.stdout])
+        sig.io = await io.merge(sig.io)
+        return sig
+    if isinstance(sig, (ReturnSignal, ExitSignal)):
+        sig.stderr = (await materialize(io.stderr) or b"") + sig.stderr
+        sig.stdout = (
+            (await materialize(stdout) or b"") + (sig.stdout or b"")
+            if isinstance(sig, ExitSignal)
+            else _chain_streams([stdout, sig.stdout])
+        )
+    return sig
+
+
+def ended(sig: Exception) -> IOResult:
+    """What a child shell reports when one of ``UNWINDING`` ends it:
+    what it wrote, its diagnostic, and its status, ``exit``'s contained
+    one, ``return``'s own, or that of ``break`` or ``continue``.
+
+    Args:
+        sig (Exception): one of ``UNWINDING``.
+    """
+    if isinstance(sig, (BreakSignal, ContinueSignal)):
+        return IOResult(
+            stdout=sig.stdout, stderr=sig.io.stderr, exit_code=sig.io.exit_code
+        )
+    assert isinstance(sig, (ExitSignal, ReturnSignal))
+    return IOResult(
+        stdout=sig.stdout,
+        stderr=sig.stderr or None,
+        exit_code=(
+            sig.contained_code
+            if isinstance(sig, ExitSignal)
+            else sig.exit_code
+        ),
+    )
+
+
+async def take_stderr(sig: Exception) -> bytes:
+    """Take the diagnostic one of ``UNWINDING`` carries, for the
+    redirects it was written under to route.
+
+    Args:
+        sig (Exception): one of ``UNWINDING``.
+    """
+    if isinstance(sig, (BreakSignal, ContinueSignal)):
+        diagnostic = await materialize(sig.io.stderr) or b""
+        sig.io.stderr = None
+        return diagnostic
+    assert isinstance(sig, (ExitSignal, ReturnSignal))
+    diagnostic, sig.stderr = sig.stderr, b""
+    return diagnostic
+
+
+async def _absorbed(
+    sig: BreakSignal | ContinueSignal,
+    all_stdout: list[ByteSource | None],
+    merged_io: IOResult,
+) -> IOResult:
+    """Fold a ``break`` or ``continue`` into the loop it reached; one
+    aimed further out (``break 2``) goes on with a level spent and the
+    loop's output in front of its own.
+
+    Args:
+        sig (BreakSignal | ContinueSignal): what the body raised.
+        all_stdout (list[ByteSource | None]): the loop's output so far,
+            extended in place.
+        merged_io (IOResult): the loop's result so far.
+    """
+    all_stdout.append(sig.stdout)
+    merged_io = await merged_io.merge(sig.io)
+    if sig.levels > 1:
+        sig.stdout, sig.io = _chain_streams(all_stdout), merged_io
+        sig.levels -= 1
+        raise sig
+    return merged_io
 
 
 def _collect_loop_result(
@@ -261,27 +351,10 @@ async def handle_for(
                 handed,
                 decisions,
             )
-        except BreakSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise BreakSignal(
-                    stdout=_chain_streams(all_stdout),
-                    io=merged_io,
-                    levels=sig.levels - 1,
-                )
-            break
-        except ContinueSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise ContinueSignal(
-                    stdout=_chain_streams(all_stdout),
-                    io=merged_io,
-                    levels=sig.levels - 1,
-                )
+        except (BreakSignal, ContinueSignal) as sig:
+            merged_io = await _absorbed(sig, all_stdout, merged_io)
+            if isinstance(sig, BreakSignal):
+                break
             continue
         merged_io = await merged_io.merge(io)
         all_stdout.append(stdout)
@@ -349,28 +422,11 @@ async def _condition_loop(
                 handed,
                 decisions,
             )
-        except BreakSignal as sig:
-            hit_limit = False
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise BreakSignal(
-                    stdout=_chain_streams(all_stdout),
-                    io=merged_io,
-                    levels=sig.levels - 1,
-                )
-            break
-        except ContinueSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise ContinueSignal(
-                    stdout=_chain_streams(all_stdout),
-                    io=merged_io,
-                    levels=sig.levels - 1,
-                )
+        except (BreakSignal, ContinueSignal) as sig:
+            merged_io = await _absorbed(sig, all_stdout, merged_io)
+            if isinstance(sig, BreakSignal):
+                hit_limit = False
+                break
             continue
         merged_io = await merged_io.merge(io)
         all_stdout.append(stdout)
@@ -446,28 +502,11 @@ async def handle_cfor(
                     handed,
                     decisions,
                 )
-            except BreakSignal as sig:
-                hit_limit = False
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise BreakSignal(
-                        stdout=_chain_streams(all_stdout),
-                        io=merged_io,
-                        levels=sig.levels - 1,
-                    )
-                break
-            except ContinueSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise ContinueSignal(
-                        stdout=_chain_streams(all_stdout),
-                        io=merged_io,
-                        levels=sig.levels - 1,
-                    )
+            except (BreakSignal, ContinueSignal) as sig:
+                merged_io = await _absorbed(sig, all_stdout, merged_io)
+                if isinstance(sig, BreakSignal):
+                    hit_limit = False
+                    break
                 # bash runs the update expression after `continue`.
                 await eval_expr(exprs[2], 0)
                 continue
@@ -579,18 +618,23 @@ async def handle_case(
             continue
         ran = True
         for stmt in body:
-            stdout, io, last_exec = await run_statement(
-                execute_node,
-                stmt,
-                session,
-                stdin,
-                bound,
-                call_stack,
-                job_table,
-                agent_id,
-                handed,
-                decisions,
-            )
+            try:
+                stdout, io, last_exec = await run_statement(
+                    execute_node,
+                    stmt,
+                    session,
+                    stdin,
+                    bound,
+                    call_stack,
+                    job_table,
+                    agent_id,
+                    handed,
+                    decisions,
+                )
+            except UNWINDING as sig:
+                raise await carried(
+                    sig, _chain_streams(list(all_stdout)), merged_io
+                )
             stdout = await finish_statement(stdout, io, session, stmt)
             if stdout is not None:
                 all_stdout.append(stdout)
@@ -611,6 +655,41 @@ async def handle_case(
     return combined, merged_io, last_exec
 
 
+def _select_menu(words: list[str], columns: str) -> str:
+    """bash's select menu (print_select_list, bash 5.2): column-major in
+    ``$COLUMNS`` (80 when unset or not positive), each cell padded with
+    tabs to an 8-wide stop, one entry per row when they all fit on one.
+
+    Args:
+        words (list[str]): the menu entries.
+        columns (str): ``$COLUMNS`` as set.
+    """
+    width = (
+        int(match.group())
+        if (match := re.match(r"\s*[+-]?\d+", columns))
+        else 0
+    )
+    index_len = len(str(len(words)))
+    cell = max(map(len, words)) + index_len + 4
+    rows = -(-len(words) // max((width if width > 0 else 80) // cell, 1))
+    if rows == 1:
+        rows = len(words)
+    lines: list[str] = []
+    for row in range(rows):
+        line = ""
+        for pos, ind in enumerate(range(row, len(words), rows)):
+            while len(line.expandtabs()) < pos * cell:
+                line += (
+                    "\t"
+                    if (pos * cell) // 8 > len(line.expandtabs()) // 8
+                    else " "
+                )
+            label = len(str(rows)) if pos == 0 else index_len
+            line += f"{ind + 1:>{label}}) {words[ind]}"
+        lines.append(line + "\n")
+    return "".join(lines)
+
+
 async def handle_select(
     execute_node: Callable[..., Any],
     variable: str,
@@ -624,14 +703,16 @@ async def handle_select(
     agent_id: str | None = None,
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run bash's select loop: menu to stderr, choice read from stdin.
 
-    Each iteration prompts with PS3's default ``#? ``, reads one line,
-    stores it raw in REPLY, and sets the variable to the chosen value
-    (empty for an out-of-range or non-numeric reply, like bash). An
-    empty reply redisplays the menu without running the body; EOF ends
-    the loop.
+    Each iteration prompts with ``$PS3`` (``#? `` when unset), takes a
+    line the way a bare ``read`` does into REPLY, and sets the variable
+    to the chosen entry (empty for an out-of-range or non-numeric reply,
+    like bash). An empty reply redisplays the menu without running the
+    body, and so does a body that empties REPLY; end of input prints a
+    newline and ends the loop with status 1. An empty list runs nothing.
 
     Args:
         execute_node (Callable): recursive node executor.
@@ -646,50 +727,52 @@ async def handle_select(
         agent_id (str | None): agent identity for job bookkeeping.
         handed (HandOff | None): approval claims inherited by a job.
         decisions (Decisions | None): ledger that holds those claims.
+        sink (JobConsole | None): where the body's statements write as
+            they finish, so the loop's own newline lands in order.
     """
     merged_io = IOResult()
     all_stdout: list[ByteSource | None] = []
     view = session_view(session, policies)
-
     lines = line_buffer(stdin) if stdin is not None else None
-    menu = "".join(
-        f"{i + 1}) {word_text(v)}\n" for i, v in enumerate(values)
-    ).encode()
-    merged_io = await merged_io.merge(IOResult(stderr=menu))
-    for _ in range(_MAX_WHILE):
+    words = [word_text(v) for v in values]
+    show_menu = bool(words)
+    for _ in range(_MAX_WHILE if words else 0):
         if session.shell_options.get("noexec"):
             break
-        merged_io = await merged_io.merge(IOResult(stderr=b"#? "))
-        line_bytes = await lines.readline() if lines is not None else None
-        if line_bytes is None:
-            # bash terminates the prompt line with a newline when
-            # the choice read hits EOF.
-            all_stdout.append(b"\n")
-            break
-        reply = line_bytes.decode(errors="replace").rstrip("\n")
-        if not reply:
-            merged_io = await merged_io.merge(IOResult(stderr=menu))
-            continue
-        choice = ""
-        if reply.strip().isdigit():
-            idx = int(reply.strip())
-            if 1 <= idx <= len(values):
-                choice = word_text(values[idx - 1])
-        # REPLY and the select variable go through the session door
-        # like the for-loop variable; readonly is the shell's own
-        # rule, checked before the door is asked.
-        frozen = next(
-            (n for n in ("REPLY", variable) if view.is_readonly(n)), None
+        env = visible_env(session)
+        menu = _select_menu(words, env.get("COLUMNS", "")) if show_menu else ""
+        merged_io = await merged_io.merge(
+            IOResult(stderr=(menu + env.get("PS3", "#? ")).encode() or None)
         )
-        if frozen is not None:
-            err = f"bash: {frozen}: readonly variable\n".encode()
+        reply = await read_reply(lines) if lines is not None else None
+        # A failed choice read (end of input, a readonly REPLY) ends the
+        # prompt line; a readonly loop variable fails after it.
+        frozen = None
+        if reply is not None and view.is_readonly("REPLY"):
+            frozen = "REPLY"
+        elif reply and view.is_readonly(variable):
+            frozen = variable
+        if reply is None or frozen == "REPLY":
+            if sink is not None:
+                await sink.emit(Channel.STDOUT, b"\n")
+            else:
+                all_stdout.append(b"\n")
+        if reply is None or frozen is not None:
+            err = f"bash: {frozen}: readonly variable\n" if frozen else ""
             merged_io = await merged_io.merge(
-                IOResult(exit_code=1, stderr=err)
+                IOResult(exit_code=1, stderr=err.encode() or None)
             )
             break
+        number = re.fullmatch(r"\s*([+-]?\d+)[ \t]*", reply)
+        index = int(number.group(1)) if number else 0
         try:
             await view.set("REPLY", reply)
-            await view.set(variable, choice)
+            show_menu = not reply
+            if show_menu:
+                continue
+            await view.set(
+                variable, words[index - 1] if 1 <= index <= len(words) else ""
+            )
         except PolicyDenied as exc:
             merged_io = await merged_io.merge(
                 IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode())
@@ -707,29 +790,13 @@ async def handle_select(
                 handed,
                 decisions,
             )
-        except BreakSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise BreakSignal(
-                    stdout=_chain_streams(all_stdout),
-                    io=merged_io,
-                    levels=sig.levels - 1,
-                )
-            break
-        except ContinueSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise ContinueSignal(
-                    stdout=_chain_streams(all_stdout),
-                    io=merged_io,
-                    levels=sig.levels - 1,
-                )
-            continue
-        merged_io = await merged_io.merge(io)
-        all_stdout.append(stdout)
+        except (BreakSignal, ContinueSignal) as sig:
+            merged_io = await _absorbed(sig, all_stdout, merged_io)
+            if isinstance(sig, BreakSignal):
+                break
+        else:
+            merged_io = await merged_io.merge(io)
+            all_stdout.append(stdout)
+        show_menu = not visible_env(session).get("REPLY")
     # As with `for`, the selection variable keeps its last value.
     return _collect_loop_result(all_stdout, merged_io, "select")

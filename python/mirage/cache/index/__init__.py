@@ -12,30 +12,53 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
+import importlib
+from typing import TYPE_CHECKING, Any
 
-from mirage.cache.index.config import (
-    Evicted,
-    IndexConfig,
-    IndexEntry,
-    ListResult,
-    LookupResult,
-    LookupStatus,
-    RedisIndexConfig,
-    ResourceType,
-)
-from mirage.cache.index.null import NULL_INDEX, NullIndexCacheStore
-from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.cache.index.store import IndexCacheStore
+if TYPE_CHECKING:
+    from mirage.cache.index.config import (
+        Evicted,
+        IndexConfig,
+        IndexEntry,
+        ListResult,
+        LookupResult,
+        LookupStatus,
+        RedisIndexConfig,
+        ResourceType,
+    )
+    from mirage.cache.index.null import NULL_INDEX, NullIndexCacheStore
+    from mirage.cache.index.ram import RAMIndexCacheStore
+    from mirage.cache.index.redis import RedisIndexCacheStore
+    from mirage.cache.index.store import IndexCacheStore
+
+_EXPORTS: dict[str, tuple[str, ...]] = {
+    "mirage.cache.index.config": (
+        "Evicted",
+        "IndexConfig",
+        "IndexEntry",
+        "ListResult",
+        "LookupResult",
+        "LookupStatus",
+        "RedisIndexConfig",
+        "ResourceType",
+    ),
+    "mirage.cache.index.null": ("NULL_INDEX", "NullIndexCacheStore"),
+    "mirage.cache.index.ram": ("RAMIndexCacheStore",),
+    "mirage.cache.index.redis": ("RedisIndexCacheStore",),
+    "mirage.cache.index.store": ("IndexCacheStore",),
+}
+_MODULE_OF = {
+    name: module for module, names in _EXPORTS.items() for name in names
+}
 
 __all__ = [
     "Evicted",
     "IndexCacheStore",
+    "IndexConfig",
     "IndexEntry",
     "ListResult",
     "LookupResult",
     "LookupStatus",
-    "IndexConfig",
     "NULL_INDEX",
     "NullIndexCacheStore",
     "RAMIndexCacheStore",
@@ -46,8 +69,9 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    if name == "RedisIndexCacheStore":
-        from mirage.cache.index.redis import RedisIndexCacheStore
-
-        return RedisIndexCacheStore
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = _MODULE_OF.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value

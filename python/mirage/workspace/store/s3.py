@@ -88,6 +88,12 @@ class S3WorkspaceStateStore(WorkspaceStateStore):
             workspace_id, fields, expected_generation
         )
 
+    async def _forget(self, workspace_id: str) -> None:
+        handle = self._sessions.pop(workspace_id, None)
+        if handle is not None:
+            await handle.close()
+        await self._meta.delete([workspace_id])
+
     async def _close(self) -> None:
         for sess in self._sessions.values():
             await sess.close()

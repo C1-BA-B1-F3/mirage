@@ -1,0 +1,5 @@
+[
+  {"id": "monty_slack_release", "command": "python3 /work/hold.py", "finish": "release", "gate": "slack"},
+  {"id": "monty_slack_cancel", "command": "python3 /work/hold.py", "finish": "cancel", "gate": "slack"},
+  {"id": "monty_cpu_cancel", "command": "python3 /work/busy.py", "finish": "cancel", "gate": "file"}
+]

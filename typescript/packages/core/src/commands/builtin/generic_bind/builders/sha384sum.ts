@@ -15,7 +15,7 @@
 import { sha384sumGeneric } from '../../generic/sha384sum.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const SHA384SUM_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'sha384sum',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

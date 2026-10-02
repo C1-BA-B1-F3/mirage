@@ -95,11 +95,11 @@
         "sharepoint-prefix",
         "ssh"
       ],
-      "command": "i=orig; for i in; do :; done; echo \"$i\"",
+      "command": "i=orig; for i in; do :; done; echo \"$i\"; (set -- a 'b c'; for f do printf '[%s]' \"$f\"; done; for f; do printf '<%s>' \"$f\"; done; for f\ndo printf '{%s}' \"$f\"; done; g() { for y do printf '(%s)' \"$y\"; done; }; g 1 2; for f do for h do printf '%s%s ' \"$f\" \"$h\"; done; done; echo); sh -c 'for file do echo \"sh $file\"; done' sh x y; for 1x in a; do :; done; for x-y in a; do :; done; for \"x\" do :; done; select a.b in c; do :; done; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "orig\n",
-        "stderr": ""
+        "stdout": "orig\n[a][b c]<a><b c>{a}{b c}(1)(2)aa ab c b ca b cb c \nsh x\nsh y\nrc=1\n",
+        "stderr": "bash: `1x': not a valid identifier\nbash: `x-y': not a valid identifier\nbash: `\"x\"': not a valid identifier\nbash: `a.b': not a valid identifier\n"
       }
     },
     {
@@ -163,10 +163,10 @@
         "sharepoint-prefix",
         "ssh"
       ],
-      "command": "select sx in aa bb; do break; done <<< '1'; echo \"$sx\"",
+      "command": "select sx in aa bb; do break; done <<< '1'; echo \"$sx\"; fna() { echo \"${FUNCNAME[*]} ${#FUNCNAME[@]} $FUNCNAME\"; fnb; }; fnb() { echo \"${FUNCNAME[@]}\"; fnx=$(echo \"$FUNCNAME\"); echo \"$fnx\"; echo \"${FUNCNAME[1]}\" | cat; }; fna; FUNCNAME=zz; echo \"top=[${FUNCNAME[*]}]\"; ( fnu() { unset FUNCNAME; echo \"[$FUNCNAME]\"; }; fnu; fnv() { echo \"[$FUNCNAME]\"; }; fnv; FUNCNAME=own; fnv )",
       "expect": {
         "exit": 0,
-        "stdout": "aa\n",
+        "stdout": "aa\nfna 1 fna\nfnb fna\nfnb\nfna\ntop=[]\n[]\n[]\n[own]\n",
         "stderr": "1) aa\n2) bb\n#? "
       }
     },

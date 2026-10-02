@@ -19,6 +19,7 @@ _INTEG_DIR = str(Path(__file__).parent.parent)
 sys.path[:] = [p for p in sys.path if p not in (_INTEG_DIR, "")]
 
 import asyncio  # noqa: E402
+import copy  # noqa: E402
 import json  # noqa: E402
 import logging  # noqa: E402
 import os  # noqa: E402
@@ -65,6 +66,12 @@ HOST = "python"
 SUITE_DIR = Path(__file__).parent
 DB = "mirage_integ_runtime"
 BUCKET = "mirage-integ-runtime"
+# What a case's `backends` entry needs on this host before it can run.
+BACKEND_REQUIRES: dict[str, list[str]] = {
+    "ram": [],
+    "redis": ["env:REDIS_URL"],
+    "s3": ["s3"],
+}
 
 _moto_server: Any = None
 _s3_endpoint: str | None = None
@@ -303,12 +310,13 @@ def _requirement_met(req: str) -> bool:
     raise ValueError(f"unknown requirement: {req!r}")
 
 
-def _s3_config() -> Any:
+def _s3_config(key_prefix: str | None = None) -> Any:
     from mirage.vfs.s3 import S3Config
 
     endpoint = _ensure_s3()
     return S3Config(
         bucket=BUCKET,
+        key_prefix=key_prefix,
         region="us-east-1",
         endpoint_url=endpoint,
         aws_access_key_id="testing",
@@ -455,7 +463,10 @@ async def _build_vfs(spec: dict[str, Any], run_id: str) -> Any:
     if kind == "s3":
         from mirage.vfs.s3 import S3VFS
 
-        return S3VFS(_s3_config())
+        scoped = spec.get("scoped", False)
+        return S3VFS(
+            _s3_config(f"mirage-integ-runtime-{run_id}/" if scoped else None)
+        )
     if kind == "mongodb":
         from mirage.vfs.mongodb import MongoDBConfig, MongoDBVFS
 
@@ -754,6 +765,41 @@ async def _run_step(
     return problems
 
 
+def _variants(case: dict[str, Any]) -> list[dict[str, Any]]:
+    """The case once per backend it names, its RAM mounts swapped for each.
+
+    A case lists ``backends`` to pin that one behavior holds whatever
+    serves the mount: each variant replaces every ``ram`` mount with that
+    backend (an S3 one under a key prefix of its own, so variants never
+    see each other's objects) and takes the backend's requirements. A
+    step's ``expect_on`` holds what a backend answers differently, merged
+    over its ``expect`` for that variant only.
+
+    Args:
+        case (dict[str, Any]): the case as the suite spells it.
+    """
+    backends = case.get("backends")
+    if backends is None:
+        return [case]
+    variants = []
+    for backend in backends:
+        world = copy.deepcopy(case.get("world", {}))
+        for spec in world.get("mounts", {}).values():
+            if spec.get("vfs") == "ram":
+                spec["vfs"] = backend
+                spec["scoped"] = True
+        variants.append(
+            {
+                **case,
+                "id": f"{case['id']}@{backend}",
+                "backend": backend,
+                "world": world,
+                "requires": BACKEND_REQUIRES[backend],
+            }
+        )
+    return variants
+
+
 async def _run_case(suite: str, case: dict[str, Any]) -> list[str]:
     case_id = f"{suite}/{case['id']}"
     world = case.get("world", {})
@@ -783,6 +829,12 @@ async def _run_case(suite: str, case: dict[str, Any]) -> list[str]:
                         f"expected {expected}, got {operation in supported}"
                     )
         for index, step in enumerate(case["steps"]):
+            if "expect_on" in step:
+                override = step["expect_on"].get(case.get("backend"), {})
+                step = {
+                    **step,
+                    "expect": {**step.get("expect", {}), **override},
+                }
             problems.extend(await _run_step(ws, case_id, index, step))
     finally:
         await ws.close()
@@ -816,17 +868,35 @@ async def main() -> int:
                 print(f"skip {name} (unmet: {', '.join(unmet)})")
                 skipped += 1
             continue
-        for case in suite["cases"]:
-            if HOST not in case.get("hosts", ["python", "typescript"]):
+        for listed in suite["cases"]:
+            if HOST not in listed.get("hosts", ["python", "typescript"]):
                 continue
-            problems = await _run_case(name, case)
-            if problems:
-                failed += 1
-                failures.extend(problems)
-                print(f"FAIL {name}/{case['id']}")
-            else:
-                passed += 1
-                print(f"ok {name}/{case['id']}")
+            for case in _variants(listed):
+                unmet = [
+                    r
+                    for r in case.get("requires", [])
+                    if not _requirement_met(r)
+                ]
+                if unmet:
+                    if strict:
+                        failures.append(
+                            f"{name}/{case['id']}: unmet requirements {unmet} "
+                            "(INTEG_RUNTIME_STRICT=1)"
+                        )
+                        failed += 1
+                    else:
+                        print(
+                            f"skip {name}/{case['id']} (unmet: {', '.join(unmet)})"
+                        )
+                    continue
+                problems = await _run_case(name, case)
+                if problems:
+                    failed += 1
+                    failures.extend(problems)
+                    print(f"FAIL {name}/{case['id']}")
+                else:
+                    passed += 1
+                    print(f"ok {name}/{case['id']}")
     if _moto_server is not None:
         _moto_server.stop()
     print(f"\n{passed} passed, {failed} failed, {skipped} suites skipped")

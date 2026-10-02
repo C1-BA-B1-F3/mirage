@@ -16,7 +16,7 @@ import {
   type NextcloudConfig,
   type NextcloudConfigRedacted,
 } from './config.ts'
-import { NEXTCLOUD_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface NextcloudVFSState {
   type: string
@@ -30,7 +30,7 @@ export class NextcloudVFS extends BaseVFS {
   // backfills any lister-omitted size with one stat per affected file.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot = true
-  override readonly prompt = NEXTCLOUD_PROMPT
+  override readonly prompt = PROMPT
   override readonly accessor: NextcloudAccessor
 
   constructor(readonly config: NextcloudConfig) {

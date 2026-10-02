@@ -18,8 +18,8 @@ import type { Accessor } from '../../../accessor/base.ts'
 import { activeCacheManager } from '../../../cache/context.ts'
 import { cacheAwareReadBytes, cacheAwareReadStream } from '../../../cache/read_through.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
-import { type FileStat, FileType, type PathSpec } from '../../../types.ts'
-import { eisdir, enotdir, isMissingPath } from '../../../utils/errors.ts'
+import { type PathSpec } from '../../../types.ts'
+import { eisdir } from '../../../utils/errors.ts'
 import type { ChildMounts, LinkView } from '../../../ops/types.ts'
 import { type CommandFn, type RegisteredCommand, command } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -78,63 +78,6 @@ export function withProbeAnswers<A extends Accessor>(ops: CommandIO<A>): Command
   }
 }
 
-// Honor a trailing slash on an operand. POSIX resolves `x/` as `x/.`, so
-// the operand has to name a directory: GNU answers `cat reg/` with "Not
-// a directory" where plain `cat reg` reads the file. Enforcing it on
-// `stat` covers every family at once, because the read chokepoint
-// (dirAwareStat) and the metadata commands (ls/du/find/stat) all reach
-// the backend through this slot, and each one already renders whatever
-// strerror it gets in its own GNU voice.
-//
-// A missing path is left alone on the read side: its own ENOENT is
-// already GNU's answer (`cat dangle/` is "No such file or directory").
-// On the write side it is not: `write` and `append` refuse a slashed
-// operand with EISDIR whether or not anything is there, as open(2) does
-// with O_CREAT, so `tee missing/` cannot leave a regular file named
-// `missing` behind. The link half is the router's, not this wrapper's:
-// by the time an operand arrives here a trailing slash has already
-// resolved the final symlink, so `dlink/` stats the directory it points
-// at and passes.
-function slashCheckedStat<A extends Accessor>(stat: StatOp<A>): StatOp<A> {
-  return async (accessor: A, path: PathSpec, index?: IndexCacheStore) => {
-    const result = await stat(accessor, path, index)
-    if (path.rawPath.endsWith('/') && result.type !== FileType.DIRECTORY) {
-      throw enotdir(path)
-    }
-    return result
-  }
-}
-
-// A listing never reaches the stat wrapper, and on a keyed store it cannot tell
-// "not a directory" from "no keys under this prefix" on its own: `ls flink/`
-// answered with an empty listing and exit 0 where GNU says "Not a directory".
-// One stat decides it, and only for an operand actually typed with a slash.
-function slashCheckedReaddir<A extends Accessor>(
-  readdir: CommandIO<A>['readdir'],
-  stat: StatOp<A>,
-): CommandIO<A>['readdir'] {
-  return async (accessor: A, path: PathSpec, index?: IndexCacheStore) => {
-    if (path.rawPath.endsWith('/')) {
-      // Only a stat that ANSWERS can refuse. On a prefix or synthetic
-      // store a directory is the set of keys under it rather than an
-      // object, so a miss here is not evidence of a non-directory and
-      // the listing is the authority (see "absence takes two
-      // channels"); slack's per-channel directories stat as nothing.
-      // The index rides along: a synthetic backend resolves a path
-      // through it and cannot stat without one (chroma answers "missing
-      // index"), so dropping it here turns the probe into a crash.
-      let entry: FileStat | null = null
-      try {
-        entry = await stat(accessor, path, index)
-      } catch (err) {
-        if (!isMissingPath(err)) throw err
-      }
-      if (entry !== null && entry.type !== FileType.DIRECTORY) throw enotdir(path)
-    }
-    return readdir(accessor, path, index)
-  }
-}
-
 // open(2) with O_CREAT refuses a slash-terminated name outright, before
 // looking anything up: `x/` can only ever be a directory, so there is
 // nothing to create and nothing to truncate. GNU tee and truncate both
@@ -152,11 +95,12 @@ function slashCheckedWrite<A extends Accessor, T>(
   }
 }
 
+// The read side is the walk guard's: a slashed operand carries a `dotted`
+// spelling, so dotRefusal proves the name a directory there (`cat reg/` is
+// "Not a directory", `cat dangle/` keeps its own ENOENT).
 export function withSlashGuard<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
   return {
     ...ops,
-    stat: slashCheckedStat(ops.stat),
-    readdir: slashCheckedReaddir(ops.readdir, ops.stat),
     ...(ops.write === undefined ? {} : { write: slashCheckedWrite(ops.write) }),
     ...(ops.append === undefined ? {} : { append: slashCheckedWrite(ops.append) }),
     ...(ops.truncate === undefined ? {} : { truncate: slashCheckedWrite(ops.truncate) }),

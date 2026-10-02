@@ -48,6 +48,9 @@ describe('HfBucketsAccessor', () => {
       repo_id: 'ns/store',
       root: '/lead/trail/',
     })
+    // A root-spelled prefix is no prefix, so no root, as in python.
+    const root = new HfBucketsAccessor({ bucket: 'ns/store', keyPrefix: '/' })
+    expect(root.operatorOptions()).toEqual({ repo_type: 'bucket', repo_id: 'ns/store' })
   })
 
   it('exposes python-parity bucket uris', () => {

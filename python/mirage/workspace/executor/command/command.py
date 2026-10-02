@@ -29,6 +29,9 @@ from mirage.commands.builtin.generic.program import (
     prepare_program,
     program_files,
 )
+from mirage.commands.builtin.generic_bind.adapter import (
+    with_dispatch_rule_guard,
+)
 from mirage.commands.builtin.utils.identity import identity_from
 from mirage.commands.builtin.utils.limit import maybe_with_timeout
 from mirage.commands.errors import FindParseError
@@ -45,6 +48,7 @@ from mirage.policy.types import HandOff
 from mirage.runtime.routing import RouteDecision
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.shell.job_table import JobTable
 from mirage.types import PathSpec, Producer
 from mirage.workspace.executor.command.cli import (
@@ -201,13 +205,14 @@ async def handle_command(
     agent_id: str | None = None,
     execute_fn: ExecuteLine | None = None,
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Execute a simple command.
 
     Parts are already classified: strings for text,
     PathSpec for paths. Dispatches to mount.execute_cmd. ``execute_fn``
     runs a line in the session, which is how find's ``-exec`` runs its
-    command.
+    command. ``sink`` is where a function body writes its statements.
     """
     if not parts:
         return None, IOResult(), ExecutionNode(command="", exit_code=0)
@@ -242,6 +247,7 @@ async def handle_command(
             agent_id,
             handed,
             registry.decisions,
+            sink,
         )
 
     # Installed CLIs: dispatch by name, never by operand path. Sits
@@ -286,6 +292,10 @@ async def handle_command(
                 else None
             ),
         )
+
+    # Every op the command issues from here carries its gate to the door.
+    if dispatch is not None:
+        dispatch = with_dispatch_rule_guard(dispatch)
 
     if cmd_name in CWD_DEFAULT_RAW:
         operand = default_cwd_operand(

@@ -13,7 +13,17 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { classify, type FsCondition } from '../../../errors/index.ts'
-import type { MontyDisplayableError } from './binding.ts'
+
+export class MontyUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'MontyUnavailableError'
+  }
+}
+
+export interface MontyDisplayableError extends Error {
+  display?: (format?: string) => string
+}
 
 /**
  * The error as guest CPython raises it for one condition: the builtin
@@ -88,7 +98,7 @@ export function guestError(code: GuestCode, path: string, target?: string): Erro
 
 /**
  * Re-throw a mount failure under its python exception name: the monty
- * binding raises `err.name` as the matching guest exception type
+ * engine raises `err.name` as the matching guest exception type
  * (PYTHON_EXC_NAMES), so agent code can `except FileNotFoundError`
  * exactly as it does on the python host. Every named condition
  * converts (a non-empty rmdir is an OSError with errno 39, not a raw

@@ -15,6 +15,7 @@
 from mirage.commands.config import ExecContext
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
+from mirage.shell.errors import ExitSignal
 from mirage.vfs.history import HISTORY_PREFIX
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.mount.registry import MountRegistry
@@ -70,7 +71,7 @@ def _parse_args(
             while j < len(token):
                 ch = token[j]
                 if ch not in _OPTION_CHARS:
-                    return {}, [], f"history: -{ch}: invalid option\n"
+                    return {}, [], f"bash: history: -{ch}: invalid option\n"
                 flags[ch] = True
                 if ch == "d":
                     rest = token[j + 1 :]
@@ -83,7 +84,7 @@ def _parse_args(
                         return (
                             {},
                             [],
-                            "history: -d: option requires an argument\n",
+                            "bash: history: -d: option requires an argument\n",
                         )
                     break
                 j += 1
@@ -111,9 +112,13 @@ async def handle_history(
     flags, texts, error = _parse_args(args)
     if error is not None:
         return _usage_error(error)
+    if not flags and len(texts) > 1:
+        # bash abandons everything still to run, as `exit 1 2` does;
+        # `-p` and `-s` take any number of words.
+        raise ExitSignal(1, stderr=b"bash: history: too many arguments\n")
     mount = registry.try_mount_for(HISTORY_PREFIX)
     if mount is None:
-        err = b"history: not enabled for this workspace\n"
+        err = b"bash: history: not enabled for this workspace\n"
         return (
             None,
             IOResult(exit_code=1, stderr=err),

@@ -61,11 +61,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf '9\\n' | select sx in aa bb; do echo got:${sx:-none}; break; done",
+      "command": "printf '9\\n' | select sx in aa bb; do echo got:${sx:-none}; break; done; select x in a b; do echo got=$x; [ -n \"$x\" ] && break; done <<< $'\\n3\\n2'; (readonly REPLY; select x in a; do echo body; done <<< 1; echo rc=$?); (readonly x; select x in a; do echo body; done <<< 1; echo rc=$?)",
       "expect": {
         "exit": 0,
-        "stdout": "got:none\n",
-        "stderr": "1) aa\n2) bb\n#? "
+        "stdout": "got:none\ngot=\ngot=b\n\nrc=1\nrc=1\n",
+        "stderr": "1) aa\n2) bb\n#? 1) a\n2) b\n#? 1) a\n2) b\n#? #? 1) a\n#? bash: REPLY: readonly variable\n1) a\n#? bash: x: readonly variable\n"
       }
     },
     {
@@ -129,11 +129,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf '' | select sx in aa bb; do echo body; done; echo after",
+      "command": "printf '' | select sx in aa bb; do echo body; done; echo after; (select x in a b c d e f g h i j k l m n o p q r s t u v w x y z; do break; done <<< 1; PS3='pick: '; select x in 'a b' c; do echo \"[$x][$REPLY]\"; REPLY=; done <<< ' 2 '; echo rc=$?; set -- p q; select x; do echo \"<$x>\"; break; done <<< 2; select x in; do :; done; echo rc=$?)",
       "expect": {
         "exit": 0,
-        "stdout": "\nafter\n",
-        "stderr": "1) aa\n2) bb\n#? "
+        "stdout": "\nafter\n[c][ 2 ]\n\nrc=1\n<q>\nrc=0\n",
+        "stderr": "1) aa\n2) bb\n#? 1) a    4) d   7) g  10) j  13) m  16) p  19) s\t 22) v\t25) y\n2) b    5) e   8) h  11) k  14) n  17) q  20) t\t 23) w\t26) z\n3) c    6) f   9) i  12) l  15) o  18) r  21) u\t 24) x\n#? 1) a b\n2) c\npick: 1) a b\n2) c\npick: 1) p\n2) q\npick: "
       }
     }
   ]

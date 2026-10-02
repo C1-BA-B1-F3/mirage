@@ -15,7 +15,7 @@
 import type { DiscordAccessor } from '../../../accessor/discord.ts'
 import type { IndexCacheStore } from '../../../cache/index/index.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { DISCORD_IO } from './io.ts'
+import { IO } from './io.ts'
 import { read as discordRead } from '../../../core/discord/read.ts'
 import { stat as discordStat } from '../../../core/discord/stat.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
@@ -23,7 +23,7 @@ import { command, type CommandFnResult, type CommandOpts } from '../../config.ts
 import { specOf } from '../../spec/builtins.ts'
 import { headGeneric } from '../generic/head.ts'
 
-const resolveDiscordGlob = resolveGlobOf(DISCORD_IO)
+const resolveDiscordGlob = resolveGlobOf(IO)
 
 async function* discordStream(
   accessor: DiscordAccessor,

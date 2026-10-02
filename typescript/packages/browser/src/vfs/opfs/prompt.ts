@@ -12,6 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const OPFS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Browser Origin Private File System. Persistent per-origin storage that survives page reloads.
   Standard commands: ls, cat, head, tail, grep, wc, find, tree, mkdir, touch, cp, mv, rm, tee.`

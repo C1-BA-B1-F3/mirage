@@ -18,7 +18,7 @@ import { mktempGeneric } from '../../generic/mktemp.ts'
 import { pathExists } from '../../utils/copy.ts'
 import { requireOp, type Builder } from '../adapter.ts'
 
-export const MKTEMP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'mktemp',
   write: true,
   fn: (ops, accessor, _paths, texts, opts) => {

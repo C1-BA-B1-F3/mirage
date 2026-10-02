@@ -471,6 +471,8 @@ HOISTED = [
     "echo x | cat < /data/secret",
     "echo a && echo x | cat < /data/secret",
     "echo a && cat < /data/secret | cat",
+    "time cat < /data/secret",
+    "! { time cat < /data/secret; }",
 ]
 
 
@@ -632,6 +634,13 @@ def test_the_admitted_gate_judges_what_the_line_did_not_name():
         scoped=True,
     )
     granted.check("/data/asked/a")
+    # refuses answers exactly where check raises, without raising.
+    assert [
+        gate.refuses(p)
+        for p in ("/data", "/data/open/o", "/data/sealed/s", "/data/asked/a")
+    ] == [False, False, True, True]
+    assert not judged.refuses("/data/asked/a")
+    assert not granted.refuses("/data/asked/a")
 
 
 @pytest.mark.asyncio

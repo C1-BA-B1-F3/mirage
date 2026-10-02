@@ -15,11 +15,15 @@
 from pathlib import PurePosixPath
 
 
-def merge_entries(
-    path: PurePosixPath, local: list[PurePosixPath], remote: list[str]
-) -> list[PurePosixPath]:
-    merged = {str(p): p for p in local}
-    for name in remote:
-        child = path / name.rstrip("/")
-        merged.setdefault(str(child), child)
-    return sorted(merged.values())
+def child_paths(path: PurePosixPath, names: list[str]) -> list[PurePosixPath]:
+    """A listing's entries as the guest's paths, sorted as pathlib sorts.
+
+    Backends spell entries differently (bare names, slash-marked
+    directories, full paths); joining each onto the directory takes all
+    three to one path.
+
+    Args:
+        path (PurePosixPath): the directory listed.
+        names (list[str]): the entries as the door returned them.
+    """
+    return sorted({path / name.rstrip("/") for name in names})

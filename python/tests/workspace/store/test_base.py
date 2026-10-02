@@ -69,3 +69,36 @@ async def test_close_is_idempotent_and_deduplicates_overrides():
     await base.close()
     await base.close()
     assert closed == ["probe"]
+
+
+async def _fill(store, workspace_id):
+    await store.namespace(workspace_id).set("/a", {"mode": 0o600})
+    await store.observer(workspace_id).append("d/s1.jsonl", b"{}\n")
+    await store.sessions(workspace_id).set("s1", {"session_id": "s1"})
+    await store.set_meta(workspace_id, {"workspace_id": workspace_id})
+
+
+async def _held(store, workspace_id):
+    planes = {
+        "meta": await store.load_meta(workspace_id),
+        "namespace": await store.namespace(workspace_id).load(),
+        "observer": await store.observer(workspace_id).read_all(),
+        "sessions": await store.sessions(workspace_id).load(),
+    }
+    return sorted(name for name, held in planes.items() if held)
+
+
+@pytest.mark.asyncio
+async def test_drop_deletes_one_workspace_from_every_plane_and_provider():
+    store = RAMWorkspaceStateStore(observer=RAMWorkspaceStateStore())
+    await _fill(store, "ws1")
+    await _fill(store, "ws2")
+    await store.drop("ws1")
+    assert await _held(store, "ws1") == []
+    assert await _held(store, "ws2") == [
+        "meta",
+        "namespace",
+        "observer",
+        "sessions",
+    ]
+    await store.close()

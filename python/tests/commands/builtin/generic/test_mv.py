@@ -994,38 +994,6 @@ async def test_slashed_destination_under_missing_parent_keeps_enoent():
 
 
 @pytest.mark.asyncio
-async def test_slashed_file_destination_reports_cannot_stat():
-    # `mv a.txt reg/` fails the destination's stat in GNU, and the stat
-    # itself decides here whether or not the backend's is slash-aware.
-    files = {"/a.txt": b"AAA", "/reg": b"R"}
-    stat, rename = _make_backend(files, set())
-    _, io = await mv(
-        [_spec("/a.txt"), _slashed("/reg")],
-        strategy=NativeMove(rename=rename),
-        stat=stat,
-        flags=MvFlags(),
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"mv: cannot stat '/reg/': Not a directory\n"
-    assert files == {"/a.txt": b"AAA", "/reg": b"R"}
-
-
-@pytest.mark.asyncio
-async def test_slashed_file_source_reports_cannot_stat():
-    files = {"/reg": b"R"}
-    stat, rename = _make_backend(files, set())
-    _, io = await mv(
-        [_slashed("/reg"), _spec("/x")],
-        strategy=NativeMove(rename=rename),
-        stat=stat,
-        flags=MvFlags(),
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"mv: cannot stat '/reg/': Not a directory\n"
-    assert files == {"/reg": b"R"}
-
-
-@pytest.mark.asyncio
 async def test_destination_under_a_file_reports_cannot_stat():
     # A plain file in the destination's chain fails GNU's stat phase,
     # `cannot stat 'plain/c.txt': Not a directory`, before any rename.

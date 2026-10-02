@@ -132,6 +132,16 @@ async function recorded(fn: () => Promise<void>): Promise<[string, string][]> {
 }
 
 describe('object_store remove retraction records', () => {
+  it('unlink refuses a missing name and a directory', async () => {
+    // unlink(2) answers ENOENT and EISDIR; a store's delete is silent for
+    // both, so the op stats first and deletes nothing it refuses.
+    const store = new FakeStore({ 'a/b/c.txt': 'hi' })
+    const unlink = makeUnlink(makeDriver(store))
+    expect(await codeOf(unlink(accessor, spec('/a/nope.txt')))).toBe('ENOENT')
+    expect(await codeOf(unlink(accessor, spec('/a/b')))).toBe('EISDIR')
+    expect(store.contents()).toEqual({ 'a/b/c.txt': 'hi' })
+  })
+
   it('unlink records a retraction', async () => {
     const store = new FakeStore()
     store.objects.set('a/b.txt', new Uint8Array(1))
@@ -168,7 +178,7 @@ describe('a retraction records even when the driver call throws', () => {
     // A delete that fails part-way has already removed keys; an
     // over-drop costs a refetch, a surviving pin fails the next load.
     const driver = {
-      ...makeDriver(new FakeStore()),
+      ...makeDriver(new FakeStore({ 'a/b.txt': 'b' })),
       deleteFile: () => Promise.reject(new Error('store on fire')),
     }
     const [, records] = await runWithRecording(async () => {
@@ -186,7 +196,7 @@ describe('a retraction evicts the cache even when the driver call throws', () =>
     // body left behind would be served by a restored snapshot with
     // nothing left to check it.
     const driver = {
-      ...makeDriver(new FakeStore()),
+      ...makeDriver(new FakeStore({ 'a/b.txt': 'b' })),
       deleteFile: () => Promise.reject(new Error('store on fire')),
     }
     const manager = await managed(async () => {

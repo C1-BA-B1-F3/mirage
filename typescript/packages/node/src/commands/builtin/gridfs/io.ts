@@ -35,7 +35,7 @@ import { truncate as gridfsTruncate } from '../../../core/gridfs/truncate.ts'
 import { unlink as gridfsUnlink } from '../../../core/gridfs/unlink.ts'
 import { write as gridfsWrite } from '../../../core/gridfs/write.ts'
 
-export const GRIDFS_IO: CommandIO<GridFSAccessor> = new VFSAdapter<GridFSAccessor>({
+export const IO: CommandIO<GridFSAccessor> = new VFSAdapter<GridFSAccessor>({
   read: { readdir: gridfsReaddir, readBytes: gridfsRead, stat: gridfsStat },
   native: {
     readRange: rangeOf(gridfsRead),

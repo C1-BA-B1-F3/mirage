@@ -15,7 +15,7 @@
 import type { GitHubAccessor } from '../../../accessor/github.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { withPathGuards, withPolicyGuard } from '../generic_bind/adapter.ts'
-import { GITHUB_IO } from './io.ts'
+import { IO } from './io.ts'
 import { ensureLiveTree } from '../../../core/github/tree.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
@@ -28,7 +28,7 @@ import { stripSlash } from '../../../utils/slash.ts'
 import { mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
-const resolveGlob = resolveGlobOf(GITHUB_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 /**
  * Every blob and every directory at or under `path`, and the blobs' sum.
@@ -71,7 +71,7 @@ async function duCommand(
   let probe: Promise<void> | undefined
   const live = (): Promise<void> =>
     (probe ??= ensureLiveTree(accessor, idx, opts.mountPrefix ?? ''))
-  const budget = new WalkBudget(GITHUB_IO.maxDuEntries ?? DEFAULT_MAX_DU_ENTRIES)
+  const budget = new WalkBudget(IO.maxDuEntries ?? DEFAULT_MAX_DU_ENTRIES)
   const out = await runDu(
     paths,
     opts,
@@ -81,20 +81,20 @@ async function duCommand(
     },
     async (p) => {
       await live()
-      return GITHUB_IO.stat(accessor, p, idx)
+      return IO.stat(accessor, p, idx)
     },
     // A truncated tree names only some paths and is never refetched, so it
     // is walked folder by folder, as a backend with no tree would be.
     async (p) => {
       await live()
       if (accessor.truncated)
-        return walkSize(withPolicyGuard(withPathGuards(GITHUB_IO)), accessor, idx, budget, p)
+        return walkSize(withPolicyGuard(withPathGuards(IO)), accessor, idx, budget, p)
       return subtree(accessor, p)[0][1]
     },
     async (p) => {
       await live()
       if (accessor.truncated)
-        return walkEntries(withPolicyGuard(withPathGuards(GITHUB_IO)), accessor, idx, budget, p)
+        return walkEntries(withPolicyGuard(withPathGuards(IO)), accessor, idx, budget, p)
       const [entries, directories] = subtree(accessor, p)
       const mount = mountPrefixOf(p.virtual, p.vfsPath)
       budget.directories.push(...directories.map((d) => `${mount}${d}`))

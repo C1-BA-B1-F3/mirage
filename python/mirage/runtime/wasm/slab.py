@@ -15,17 +15,7 @@
 import threading
 from typing import Any
 
-wasmtime_func: Any
-wasmtime_slab: Any
-try:
-    from wasmtime import _func as _wasmtime_func
-    from wasmtime import _slab as _wasmtime_slab
-except ImportError:
-    wasmtime_func = None
-    wasmtime_slab = None
-else:
-    wasmtime_func = _wasmtime_func
-    wasmtime_slab = _wasmtime_slab
+from mirage.runtime.wasm.loader import wasmtime_func, wasmtime_slab
 
 _INSTALL_LOCK = threading.Lock()
 _installed = False

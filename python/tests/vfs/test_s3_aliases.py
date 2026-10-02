@@ -24,6 +24,8 @@ from mirage.vfs.minio.config import MinIOConfig
 from mirage.vfs.oci.config import OCIConfig
 from mirage.vfs.qingstor.config import QingStorConfig
 from mirage.vfs.r2.config import R2Config
+from mirage.vfs.registry import build_vfs
+from mirage.vfs.s3 import S3Config
 from mirage.vfs.scaleway.config import ScalewayConfig
 from mirage.vfs.seaweedfs.config import SeaweedFSConfig
 from mirage.vfs.supabase.config import SupabaseConfig
@@ -254,8 +256,50 @@ def test_supabase_forwards_the_session_token():
     assert s3.aws_session_token.get_secret_value() == "tok"
 
 
-@pytest.mark.parametrize("name,cls,region,expected", REGION_DERIVED)
-def test_configs_are_frozen(name, cls, region, expected):
-    cfg = cls(bucket="b", region=region, **_CREDS)
-    with pytest.raises(Exception):
-        cfg.bucket = "other"
+# One minimal registry block per alias. Each is an S3VFS under its own
+# name, as on TypeScript: the mount registers S3's ops and commands under
+# it, a snapshot records it as the `type` (whose entry takes the alias's own
+# config back), and the storage location leads with it.
+ALIASES = {
+    "aliyun": {"bucket": "b", "region": "cn-hangzhou"},
+    "backblaze": {"bucket": "b", "region": "us-west-002"},
+    "ceph": {"bucket": "b", "endpoint_url": "https://ceph.example.com"},
+    "digitalocean": {"bucket": "b", "region": "nyc3"},
+    "gcs": {"bucket": "b"},
+    "minio": {"bucket": "b", "endpoint_url": "http://localhost:9000"},
+    "oci": {"bucket": "b", "namespace": "ns", "region": "us-ashburn-1"},
+    "qingstor": {"bucket": "b", "region": "pek3b"},
+    "r2": {"bucket": "b", "account_id": "acc"},
+    "scaleway": {"bucket": "b", "region": "fr-par"},
+    "seaweedfs": {"bucket": "b", "endpoint_url": "http://localhost:8333"},
+    "supabase": {"bucket": "b", "region": "us-east-1", "project_ref": "ref"},
+    "tencent": {"bucket": "b", "region": "ap-guangzhou"},
+    "wasabi": {"bucket": "b"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(ALIASES))
+def test_an_alias_carries_its_own_name(name):
+    vfs = build_vfs(name, ALIASES[name])
+    assert vfs.name == name
+    assert isinstance(vfs.config, S3Config)
+    assert vfs.ops()
+    assert {ro.vfs for ro in vfs.ops()} == {name}
+    assert {rc.vfs for rc in vfs.commands()} == {name}
+    assert vfs.storage_location() == f"s3:{vfs.config.endpoint_url}:b"
+    state = vfs.get_state()
+    assert state["type"] == name
+    rebuilt = build_vfs(state["type"], state["config"])
+    assert type(rebuilt) is type(vfs)
+    assert rebuilt.alias_config == vfs.alias_config
+
+
+def test_an_alias_and_s3_on_one_endpoint_are_one_store():
+    minio = build_vfs("minio", ALIASES["minio"])
+    s3 = build_vfs("s3", {**ALIASES["minio"], "region": "us-east-1"})
+    assert minio.storage_location() == s3.storage_location()
+    r2 = build_vfs("r2", {**ALIASES["r2"], "key_prefix": "/team/x/"})
+    assert r2.storage_location() == (
+        "s3:https://acc.r2.cloudflarestorage.com:b/team/x"
+    )
+    assert build_vfs("s3", {"bucket": "b"}).storage_location() == "s3:aws:b"

@@ -18,7 +18,6 @@ from mirage.workspace.executor.builtins.control.control import (
     handle_false,
     handle_return,
     handle_true,
-    loop_levels,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "handle_false",
     "handle_return",
     "handle_true",
-    "loop_levels",
 ]

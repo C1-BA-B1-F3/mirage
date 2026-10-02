@@ -19,7 +19,8 @@ from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.array import build_assoc_literal, build_indexed_literal
-from mirage.shell.errors import ArithError, ExitSignal
+from mirage.shell.errors import ArithError, DiscardSignal
+from mirage.shell.printer import function_text
 from mirage.shell.variable import ShellValue, VarAttr, attr_letters
 from mirage.utils.hidden import var_hidden
 from mirage.workspace.executor.builtins.declare.constants import (
@@ -136,8 +137,9 @@ async def store_staged_arrays(
     for name, append, items in arrays:
         if view.is_readonly(name):
             if fatal:
-                err = f"bash: {name}: readonly variable\n".encode()
-                raise ExitSignal(1, stderr=err, contained_code=1)
+                raise DiscardSignal(
+                    f"bash: {name}: readonly variable\n".encode()
+                )
             return readonly_refusal(cmd, name)
         note_local_array(session, name)
         try:
@@ -430,13 +432,11 @@ def handle_declare_functions(
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run the function half of ``declare``: ``-f`` / ``-F`` / ``-rf``.
 
-    ``-F NAME`` prints the name; ``-f NAME`` prints ``declare -f NAME``
-    where GNU prints the reformatted body (mirage carries no
-    pretty-printer, so the name row is the deliberate stand-in, the
-    same shape ``-F`` and ``readonly -f`` list in). A missing name is
-    exit 1 with no message. With ``-r`` the named functions freeze, as
-    ``readonly -f`` does. With no names, ``-F`` lists every function
-    and ``-f`` lists them the same way.
+    ``-F NAME`` prints the name; ``-f NAME`` prints the body as bash
+    renders it (``function_text``). A missing name is exit 1 with no
+    message. With ``-r`` the named functions freeze, as ``readonly -f``
+    does. With no names, ``-F`` lists every function as
+    ``declare -f NAME`` and ``-f`` prints every body.
 
     Args:
         cmd (str): the builtin's own name for a diagnostic.
@@ -456,7 +456,7 @@ def handle_declare_functions(
         if "F" in flags:
             lines.append(name if names else f"declare -f {name}")
         else:
-            lines.append(f"declare -f {name}")
+            lines.append(function_text(name, session.functions[name]))
     out = (("\n".join(lines) + "\n") if lines else "").encode()
     code = 1 if missing else 0
     return (

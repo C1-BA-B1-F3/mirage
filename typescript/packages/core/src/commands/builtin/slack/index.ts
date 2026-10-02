@@ -17,13 +17,13 @@ import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { SLACK_GREP } from './grep.ts'
-import { SLACK_IO } from './io.ts'
+import { IO } from './io.ts'
 import { SLACK_RG } from './rg.ts'
 
 const SLACK_OVERRIDES = new Set(['grep', 'rg'])
 
 export const SLACK_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<SlackAccessor>(VFSName.SLACK, SLACK_IO, {
+  ...makeGenericCommands<SlackAccessor>(VFSName.SLACK, IO, {
     overrides: SLACK_OVERRIDES,
   }),
   ...SLACK_GREP,

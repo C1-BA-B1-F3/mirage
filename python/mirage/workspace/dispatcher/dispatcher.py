@@ -47,6 +47,7 @@ from mirage.policy.errors import PolicyDenied, PolicyError
 from mirage.types import (
     DEFAULT_READ_TTL,
     CacheFacts,
+    EntryGate,
     FileStat,
     FileType,
     PathSpec,
@@ -54,6 +55,7 @@ from mirage.types import (
 )
 from mirage.utils.errors import (
     MISS_ERRORS,
+    eisdir,
     eloop,
     enoent,
     no_mount,
@@ -67,6 +69,8 @@ from mirage.utils.remnants import remove_remnants, visible_below
 from mirage.workspace.dispatcher.constants import (
     DISPATCH_READ_OPS,
     DISPATCH_WRITE_OPS,
+    ENTRY_CREATE_OPS,
+    FILE_CREATE_OPS,
     HIDDEN_CREATE_OPS,
     LINK_ENTRY_OPS,
     NAMESPACE_TABLE_OPS,
@@ -224,6 +228,20 @@ class _MountChannel:
             await self.invalidate(spec)
 
 
+def _judge(gate: EntryGate, *paths: PathSpec | None) -> None:
+    """Ask a command's gate once about each distinct path an op reaches.
+
+    Args:
+        gate (EntryGate): the gate the command was admitted under.
+        *paths (PathSpec | None): the spellings in the order the door
+            met them; None (no rename destination) is skipped.
+    """
+    for virtual in dict.fromkeys(
+        p.virtual for p in paths if isinstance(p, PathSpec)
+    ):
+        gate.check(virtual)
+
+
 class Dispatcher:
     """Route a single VFS op to its mount and keep the file cache + index
     consistent.
@@ -312,6 +330,8 @@ class Dispatcher:
         report: OpReport | None = None,
         **kwargs: Any,
     ) -> tuple[Any, IOResult]:
+        # with_dispatch_rule_guard's mark, never forwarded to an op.
+        rule_gate: EntryGate | None = kwargs.pop("rule_gate", None)
         await self._namespace.ensure_loaded()
         # Pending fingerprint checks from a strict snapshot restore run
         # before the op can touch a mount, whichever surface called:
@@ -342,9 +362,15 @@ class Dispatcher:
         # A `.` or `..` resolves against the directory it sits in, so
         # every name in front of one has to be a directory: `virtual`
         # simplified the dots away and reaches `f` through a missing
-        # `nope/..`, the typed spelling (`dotted`) does not.
+        # `nope/..`, the typed spelling (`dotted`) does not. A trailing
+        # slash is part of that spelling: `x/` must be a directory, so a
+        # create of one is EISDIR before anything is looked up.
+        if op in FILE_CREATE_OPS and (path.dotted or "").endswith("/"):
+            raise eisdir(path)
         follow = self._namespace.follow
-        refusal = await dot_refusal(self._walk_stat, path, follow)
+        refusal = await dot_refusal(
+            self._walk_stat, path, follow, op in ENTRY_CREATE_OPS
+        )
         if refusal is None and op == "rename" and isinstance(dst, PathSpec):
             refusal = await dot_refusal(self._walk_stat, dst, follow)
         if refusal is not None:
@@ -357,9 +383,17 @@ class Dispatcher:
         # os.symlink), so a link made, read or removed under a linked
         # directory lands in the directory the link names, not under a
         # name nothing else would look up.
+        typed, typed_dst = path, dst
         path = self._walked(path, op in HIDDEN_CREATE_OPS)
         if op == "rename" and isinstance(dst, PathSpec):
             dst = kwargs["dst"] = self._walked(dst, True)
+        # The command's gate judges each spelling, as handed in and as
+        # walked, once both walks have answered for hidden space: here
+        # for an op on the name itself, below the follow for the rest.
+        no_follow = op in NO_FOLLOW_OPS or bool(kwargs.get("nofollow"))
+        if rule_gate is not None and no_follow:
+            _judge(rule_gate, typed, path, typed_dst, dst)
+        if op == "rename" and isinstance(dst, PathSpec):
             # A rename re-anchors everything below its source while the
             # hides stay where they are written, so hidden content would
             # land at paths the session can see. Destroying hidden
@@ -403,6 +437,7 @@ class Dispatcher:
         # `nofollow` is the caller's AT_SYMLINK_NOFOLLOW: an op that acts
         # on a link entry itself (chown -h writing the link's own attrs)
         # keeps the typed path. Consumed here, never forwarded.
+        walked = path
         if op not in NO_FOLLOW_OPS and not kwargs.pop("nofollow", False):
             try:
                 followed = self._namespace.follow(path.virtual)
@@ -412,6 +447,8 @@ class Dispatcher:
                 path = PathSpec.from_str_path(followed)
                 if not path_allowed(path.virtual):
                     raise hidden_refusal(path.virtual, op in HIDDEN_CREATE_OPS)
+        if rule_gate is not None and not no_follow:
+            _judge(rule_gate, typed, walked, path)
         if op in XATTR_OPS:
             return await self._xattr_op(op, path, kwargs, report), IOResult()
         mount = self._namespace.try_mount_for(path.virtual)
@@ -1301,6 +1338,9 @@ class Dispatcher:
         if self._namespace.is_link(path.virtual) or not mount.supports_op(
             "setattr", path.virtual
         ):
+            # No backend inode answers for the path here, so nothing
+            # would refuse a missing one: the overlay would stamp it.
+            await self._xattr_target(mount, path)
             return await self._overlay_setattr(path, kwargs)
         residual = await mount.execute_op("setattr", path.virtual, **kwargs)
         applied = [

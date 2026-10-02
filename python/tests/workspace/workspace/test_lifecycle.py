@@ -15,6 +15,7 @@
 import asyncio
 import errno
 import os
+import threading
 from fnmatch import fnmatchcase
 from uuid import uuid4
 
@@ -46,11 +47,34 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.shared import expand_operands
 from mirage.workspace.executor.command.run import drop_mount_caches
+from mirage.workspace.mount.namespace import RAMNamespaceStore
 from mirage.workspace.mount.spec import Mount
 from mirage.workspace.snapshot import to_state_dict
 from mirage.workspace.types import ExecutionNode
 
 _RELEASE: list[asyncio.Event] = []
+
+
+@pytest.mark.asyncio
+async def test_close_keeps_loop_responsive_while_kernel_unmount_blocks(
+    monkeypatch,
+):
+    entered, release = threading.Event(), threading.Event()
+    ws = Workspace({})
+
+    def unmount():
+        entered.set()
+        assert release.wait(2)
+
+    monkeypatch.setattr(ws._kernel_mounts, "close", unmount)
+    closing = asyncio.create_task(ws.close())
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        await asyncio.sleep(0)
+        assert not closing.done()
+    finally:
+        release.set()
+        await closing
 
 
 @pytest.mark.asyncio
@@ -1128,3 +1152,69 @@ async def test_restored_workspace_leaves_borrowed_mounts_open(
     finally:
         await replica.close()
         await ws.close()
+
+
+def test_delete_clears_a_namespace_store_passed_in_directly():
+    # A store handed in directly is where this workspace's links live,
+    # so delete clears it too, not only the planes the state store owns.
+    async def go():
+        namespace = RAMNamespaceStore()
+        ws = Workspace(
+            {"/data/": RAMVFS()},
+            mode=MountMode.WRITE,
+            namespace_store=namespace,
+        )
+        await namespace.set("/data/l", {"mode": 0o600})
+        await ws.delete()
+        return await namespace.load()
+
+    assert asyncio.run(go()) == {}
+
+
+def test_delete_after_close_refuses_rather_than_keep_the_state_quietly():
+    # close() closed the stores the state lives in, so a later delete
+    # has nothing it can drop; it says so instead of answering success.
+    async def go():
+        ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+        await ws.close()
+        await ws.delete()
+
+    with pytest.raises(RuntimeError, match="closed before delete"):
+        asyncio.run(go())
+
+
+@pytest.mark.asyncio
+async def test_close_releases_later_resources_after_multiple_errors(
+    monkeypatch,
+):
+    vfs = RAMVFS()
+    ws = Workspace(mounts={"/data": vfs}, runtimes=[])
+    closed = []
+
+    async def runtime_close():
+        closed.append("runtime")
+        raise ValueError("runtime close failed")
+
+    async def vfs_close():
+        closed.append("vfs")
+        raise RuntimeError("vfs close failed")
+
+    async def store_close():
+        closed.append("store")
+
+    def processes_stop():
+        closed.append("processes")
+        raise OSError("process cancellation failed")
+
+    monkeypatch.setattr(ws.processes, "stop", processes_stop)
+    monkeypatch.setattr(ws._runtimes, "close", runtime_close)
+    monkeypatch.setattr(vfs, "close", vfs_close)
+    monkeypatch.setattr(ws._state_store, "close", store_close)
+    with pytest.raises(BaseExceptionGroup) as error:
+        await ws.close()
+    assert closed == ["processes", "runtime", "vfs", "store"]
+    assert len(error.value.exceptions) == 3
+    with pytest.raises(BaseExceptionGroup) as repeated:
+        await ws.close()
+    assert repeated.value is error.value
+    assert closed == ["processes", "runtime", "vfs", "store"]

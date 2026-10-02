@@ -17,14 +17,7 @@ import { CallStack } from '../../../../shell/call_stack.ts'
 import { ExitSignal } from '../../../../shell/errors.ts'
 import { SessionState } from '../../../session/session.ts'
 import { ReturnSignal } from '../../../../shell/errors.ts'
-import {
-  handleColon,
-  handleExit,
-  handleFalse,
-  handleReturn,
-  handleTrue,
-  loopLevels,
-} from './control.ts'
+import { handleColon, handleExit, handleFalse, handleReturn, handleTrue } from './control.ts'
 
 const DEC = new TextDecoder()
 
@@ -43,14 +36,6 @@ describe('control builtins', () => {
     expect(handleFalse()[1].exitCode).toBe(1)
     expect(handleFalse()[2].command).toBe('false')
     expect(handleFalse()[0]).toBeNull()
-  })
-
-  it('loopLevels reads a positive count and defaults to one', () => {
-    expect(loopLevels([])).toBe(1)
-    expect(loopLevels(['3'])).toBe(3)
-    expect(loopLevels(['0'])).toBe(1)
-    expect(loopLevels(['x'])).toBe(1)
-    expect(loopLevels(['2', '9'])).toBe(2)
   })
 
   it('return outside a function fails with 2 and no signal', () => {

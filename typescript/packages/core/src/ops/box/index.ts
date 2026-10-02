@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BOX_IO } from '../../commands/builtin/box/io.ts'
+import { IO } from '../../commands/builtin/box/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const BOX_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.BOX, BOX_IO, {})
+export const BOX_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.BOX, IO, {})

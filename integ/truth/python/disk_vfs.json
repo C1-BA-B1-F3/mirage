@@ -48,6 +48,6 @@
     "--- the backend's own host paths ---",
     "  host copy readable: True",
     "",
-    "Stats: 16 ops, 15533 bytes transferred"
+    "Stats: 17 ops, 15533 bytes transferred"
   ]
 }

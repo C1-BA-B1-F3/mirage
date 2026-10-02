@@ -35,6 +35,7 @@ from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index import IndexConfig
 from mirage.commands.cli import CLISpec
 from mirage.commands.cli.specs import cli_spec_for
+from mirage.concurrency.limiter import run_blocking
 from mirage.context import (
     get_current_session_for,
     get_current_session_unless_foreign,
@@ -77,7 +78,8 @@ from mirage.secrets.registry import source_for
 from mirage.secrets.sources import resolve_sources
 from mirage.secrets.types import ResolvedSource
 from mirage.shell import parse
-from mirage.shell.console import Channel
+from mirage.shell.call_stack import CallStack
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import BIN_PREFIX
 from mirage.shell.job_table import ConsoleFactory, JobTable
 from mirage.shell.literal import literal_tree
@@ -102,6 +104,7 @@ from mirage.vfs.history import HISTORY_PREFIX, HistoryViewVFS
 from mirage.workspace.abort import MirageAbortError, run_cancellable
 from mirage.workspace.cli import CLIInstall
 from mirage.workspace.dispatcher import Dispatcher
+from mirage.workspace.execution import ExecutionScope
 from mirage.workspace.executor.statement import restore_status
 from mirage.workspace.file_prompt import build_file_prompt
 from mirage.workspace.lookup import lookup, program, program_note, programs
@@ -251,6 +254,8 @@ class Workspace:
         self._closed = False
         self._closing = False
         self._async_closed = False
+        self._state_dropped = False
+        self._close_error: BaseException | None = None
         self._close_lock = asyncio.Lock()
         # mounts reused from another live workspace (copy() / load
         # VFS overrides) stay open here; their origin closes them.
@@ -379,6 +384,10 @@ class Workspace:
         )
 
         self.observer = Observer(store=stores.observe)
+        # The stores this workspace's state lives in, whether the state
+        # store built them or the caller passed one in directly: delete
+        # clears these, not only what the state store would hand out.
+        self._planes = (stores.namespace, stores.observe, stores.sessions)
         # Explicit at the construction site: the history view does not
         # cache reads, so its policy can only ever be bounded.
         self._registry.mount(
@@ -468,7 +477,8 @@ class Workspace:
         and the refusal an agent would read come out of one place and
         cannot disagree. It runs no command, expands nothing, spends no
         grant and puts no question to a host, which is what makes it
-        safe to call about a line nobody typed.
+        safe to call about a line nobody typed. The line is judged on
+        the static bindings' route; a route policy is not consulted.
 
         Host-side only. The structure of a profile's rules is an
         operator's business, so there is no builtin an agent can type
@@ -486,7 +496,11 @@ class Workspace:
         await self.ensure_sessions_loaded()
         session = self.get_session(session_id or self.default_session_id)
         return await explain_line(
-            parse(line), session, self._registry, self._namespace
+            parse(line),
+            session,
+            self._registry,
+            self._namespace,
+            whole_line=self._runtimes.whole_line(None) is not None,
         )
 
     @property
@@ -1115,6 +1129,23 @@ class Workspace:
     async def close(self) -> None:
         await close_async(self)
 
+    async def delete(self) -> None:
+        """Close the workspace and delete its state from the store.
+
+        Links, history, sessions and the metadata record all go, so a
+        workspace created later under this id starts empty. ``close``
+        keeps them, which is how a daemon's workspace survives a restart.
+
+        Raises:
+            RuntimeError: the workspace was closed first, which closed
+                the stores its state lives in, so nothing was deleted.
+        """
+        await close_async(self, drop_state=True)
+        if not self._state_dropped:
+            raise RuntimeError(
+                "workspace was closed before delete; its state is kept"
+            )
+
     # ── snapshot / load / copy ─────────────────────────────────────────────
 
     async def snapshot(self, target, *, compress: str | None = None) -> None:
@@ -1196,7 +1227,7 @@ class Workspace:
                 drop.
         """
         return await cls.from_state(
-            read_tar(source),
+            await run_blocking(read_tar, source),
             mounts=mounts,
             clis=clis,
             secrets=secrets,
@@ -1707,6 +1738,9 @@ class Workspace:
         runtime: str | None = None,
         routing_decision: RouteDecision | None = None,
         handed: HandOff | None = None,
+        sink: JobConsole | None = None,
+        call_stack: CallStack | None = None,
+        execution_scope: ExecutionScope | None = None,
     ) -> IOResult:
         """Execute a shell command in the workspace.
 
@@ -1749,6 +1783,20 @@ class Workspace:
                 executor's nested evals under the outer line's so an
                 inner line spends the grants the outer line's pass
                 claimed for it.
+            sink: Internal. The console the executor's nested lines
+                (``eval``, ``source``, a nested shell) write to as each
+                statement finishes, stdout and stderr in the order they
+                were produced. Every path answers there, a refusal or a
+                syntax error included, so the result carries the exit
+                status and no output.
+            call_stack: Internal. The frames of the caller a nested line
+                runs in place of (``eval``): its commands see the
+                caller's positional parameters and locals, and an
+                ``exit``, ``return``, ``break`` or ``continue`` in it
+                unwinds into the caller instead of ending the line.
+            execution_scope: Internal. Scheduling and admission shared by
+                nested foreground evaluations. Background jobs start a
+                separate scope.
         """
         # The one cancellation seam: the whole line is one task, so a
         # cancel set while a store is still loading, a secret is still
@@ -1758,7 +1806,7 @@ class Workspace:
         # sets it.
         frame = LineFrame()
         try:
-            return await run_cancellable(
+            result = await run_cancellable(
                 self._serialize_line(
                     session_id,
                     partial(
@@ -1776,6 +1824,9 @@ class Workspace:
                         routing_decision,
                         handed,
                         frame,
+                        sink=sink,
+                        call_stack=call_stack,
+                        execution_scope=execution_scope,
                     ),
                 ),
                 cancel,
@@ -1791,3 +1842,12 @@ class Workspace:
                     frame.session, frame.status_before, frame.writer
                 )
             raise
+        if sink is not None and isinstance(result, IOResult):
+            for channel, data in (
+                (Channel.STDOUT, await result.materialize_stdout()),
+                (Channel.STDERR, await result.materialize_stderr()),
+            ):
+                if data:
+                    await sink.emit(channel, data)
+            result.stdout = result.stderr = None
+        return result

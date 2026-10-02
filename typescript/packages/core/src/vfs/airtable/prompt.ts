@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const AIRTABLE_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   bases/
     <base-name>__<base-id>/
       base.json                    base id, name, permission, table list
@@ -38,7 +38,7 @@ export const AIRTABLE_PROMPT = `{prefix}
   filters (airtable record list --formula or --view), one record by id
   (airtable record get), and comments (airtable comment list).`
 
-export const AIRTABLE_WRITE_PROMPT = `  Writes go through the airtable CLI if installed; a record line is the
+export const WRITE_PROMPT = `  Writes go through the airtable CLI if installed; a record line is the
   records.jsonl shape, and the ids are the ones after the LAST "__":
     airtable record create --base <base-id> --table <table-id> \\
       --fields '{"Name": "New feature"}'

@@ -22,7 +22,7 @@ import { DropboxTokenManager } from '../../core/dropbox/client.ts'
 import { DROPBOX_OPS } from '../../ops/dropbox/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { DROPBOX_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactDropboxConfig, type DropboxConfig, type DropboxConfigRedacted } from './config.ts'
@@ -41,7 +41,7 @@ export class DropboxVFS extends BaseVFS {
   // Paper docs 409 on raw download, a loud error, never a silent empty read.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = DROPBOX_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: DropboxConfig
   override readonly accessor: DropboxAccessor
 

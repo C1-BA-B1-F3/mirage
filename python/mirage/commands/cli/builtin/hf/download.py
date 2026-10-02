@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
 import logging
 import posixpath
 from fnmatch import fnmatch
@@ -27,7 +26,7 @@ from mirage.commands.cli.builtin.hf.accessor import (
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
-from mirage.concurrency.limiter import ConcurrencyLimiter
+from mirage.concurrency.limiter import bounded_map
 from mirage.core.hf_hub.cache import (
     blob_path,
     cache_root,
@@ -189,13 +188,11 @@ async def fetch_all(
     Returns:
         list[str]: the virtual paths written, in the order selected.
     """
-    limiter = ConcurrencyLimiter(max(1, workers))
 
     async def one(path: str) -> str:
-        async with limiter.acquire():
-            return await write_file(dispatch, accessor, path, local_dir)
+        return await write_file(dispatch, accessor, path, local_dir)
 
-    return list(await asyncio.gather(*(one(path) for path in paths)))
+    return await bounded_map(paths, one, workers)
 
 
 async def path_exists(dispatch: DispatchFn, path: str) -> bool:
@@ -306,15 +303,13 @@ async def fetch_into_cache(
         ref = ref_path(cache_dir, folder, accessor.revision)
         await ensure_dir(dispatch, posixpath.dirname(ref))
         await dispatch("write", PathSpec.from_str_path(ref), data=sha.encode())
-    limiter = ConcurrencyLimiter(max(1, workers))
 
     async def one(path: str) -> str:
-        async with limiter.acquire():
-            return await cache_file(
-                dispatch, accessor, tree[path], cache_dir, folder, sha, force
-            )
+        return await cache_file(
+            dispatch, accessor, tree[path], cache_dir, folder, sha, force
+        )
 
-    written = list(await asyncio.gather(*(one(path) for path in paths)))
+    written = await bounded_map(paths, one, workers)
     return snapshot_dir(cache_dir, folder, sha), written
 
 

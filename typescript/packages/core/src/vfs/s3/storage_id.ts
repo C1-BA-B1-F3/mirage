@@ -25,19 +25,19 @@ import type { S3Config } from './config.ts'
  *
  * Endpoint, bucket and key prefix pin the object namespace. The endpoint
  * matters because the same bucket name on two providers (AWS vs MinIO vs R2)
- * is two different stores. The prefix joins path-like so two mounts whose
- * prefixes nest still resolve to one key once the mount-relative path is
- * appended.
+ * is two different stores, so it, not an alias's name, tells them apart: an
+ * s3 mount and a minio mount of one endpoint and bucket are one store. The
+ * prefix joins path-like so two mounts whose prefixes nest still resolve to
+ * one key once the mount-relative path is appended.
  *
  * Both runtimes call this rather than each writing it out: the node VFS
  * had it and the browser one did not, so the same two buckets compared equal
  * under node and distinct under the browser.
  *
- * @param kind the VFS kind, which distinguishes the S3-compatible clones
  * @param config the mount's S3 config
  */
-export function s3StorageLocation(kind: string, config: S3Config): string {
+export function s3StorageLocation(config: S3Config): string {
   const prefix = stripSlash(config.keyPrefix ?? '')
-  const base = `${kind}:${config.endpoint ?? 'aws'}:${config.bucket}`
+  const base = `s3:${config.endpoint ?? 'aws'}:${config.bucket}`
   return prefix === '' ? base : `${base}/${prefix}`
 }

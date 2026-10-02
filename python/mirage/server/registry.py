@@ -15,6 +15,7 @@
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, Iterable
 
 from mirage import Workspace, WorkspaceRunner
@@ -57,6 +58,7 @@ class WorkspaceRegistry:
                 idle timer fires. Defaults to a fresh event.
         """
         self._entries: dict[str, WorkspaceEntry] = {}
+        self._removals: dict[str, asyncio.Task[WorkspaceEntry]] = {}
         self.idle_grace_seconds = idle_grace_seconds
         self.exit_event = (
             exit_event if exit_event is not None else asyncio.Event()
@@ -104,11 +106,26 @@ class WorkspaceRegistry:
         self._cancel_idle_timer()
         return entry
 
-    async def remove(self, workspace_id: str) -> WorkspaceEntry:
-        """Stop the runner for ``workspace_id`` and drop it.
+    async def remove(
+        self,
+        workspace_id: str,
+        cleanup: Callable[[], Awaitable[None]] | None = None,
+    ) -> WorkspaceEntry:
+        """Delete ``workspace_id``: stop its runner and drop its state.
+
+        The workspace's links, history, sessions and metadata leave its
+        state store with it, so a workspace created later under the same
+        id starts empty. ``close_all`` (daemon shutdown) keeps them. The
+        id stays registered until the deletion is done, so a create under
+        it is refused rather than registering a workspace whose state this
+        deletion would then remove; ``cleanup`` runs inside that window.
+        An overlapping remove of the same id joins the deletion in flight,
+        so it never unregisters a workspace created after it.
 
         Args:
             workspace_id (str): id to remove.
+            cleanup (Callable[[], Awaitable[None]] | None): more of the
+                workspace's state to remove before the id is released.
 
         Returns:
             WorkspaceEntry: the removed entry (after its runner is
@@ -117,12 +134,36 @@ class WorkspaceRegistry:
         Raises:
             KeyError: ``workspace_id`` is not registered.
         """
-        if workspace_id not in self._entries:
-            raise KeyError(workspace_id)
-        entry = self._entries.pop(workspace_id)
-        await entry.runner.stop()
-        if not self._entries:
-            self._start_idle_timer()
+        removal = self._removals.get(workspace_id)
+        if removal is None:
+            if workspace_id not in self._entries:
+                raise KeyError(workspace_id)
+            removal = asyncio.create_task(
+                self._remove(self._entries[workspace_id], cleanup)
+            )
+            self._removals[workspace_id] = removal
+        return await asyncio.shield(removal)
+
+    async def _remove(
+        self,
+        entry: WorkspaceEntry,
+        cleanup: Callable[[], Awaitable[None]] | None,
+    ) -> WorkspaceEntry:
+        """Run one deletion, releasing the id once it is done.
+
+        Args:
+            entry (WorkspaceEntry): the entry being deleted.
+            cleanup (Callable[[], Awaitable[None]] | None): see ``remove``.
+        """
+        try:
+            await entry.runner.stop(delete=True)
+            if cleanup is not None:
+                await cleanup()
+        finally:
+            del self._removals[entry.id]
+            self._entries.pop(entry.id, None)
+            if not self._entries:
+                self._start_idle_timer()
         return entry
 
     async def close_all(self) -> None:

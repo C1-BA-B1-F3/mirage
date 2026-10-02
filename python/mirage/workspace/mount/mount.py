@@ -55,9 +55,9 @@ from mirage.observe.context import (
     with_mount_context,
     with_revisions,
 )
-from mirage.ops.host_io import host_io, with_host_io
 from mirage.ops.registry import RegisteredOp
 from mirage.policy import resolve_limit
+from mirage.runtime.python.host.host_io import host_io, with_host_io
 from mirage.types import (
     FileType,
     Limit,
@@ -982,7 +982,7 @@ class MountEntry:
             try:
                 for op in levels:
                     # The backend's own paths are host paths, so the process
-                    # patch (ops/os_patch.py, ops/open.py) must not answer
+                    # patch (runtime/python/host/fs.py and open.py) must not answer
                     # them: a disk mount rooted at its own virtual prefix
                     # spells the two the same, and routing the physical one
                     # hands the op back to the backend serving it.

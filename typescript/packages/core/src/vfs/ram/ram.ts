@@ -19,7 +19,7 @@ import { RAM_OPS } from '../../ops/ram/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
 import { BaseVFS } from '../base.ts'
-import { RAM_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { RAMStore, type RAMAttrs } from './store.ts'
 export interface RAMVFSState {
   type: string
@@ -37,7 +37,7 @@ export class RAMVFS extends BaseVFS {
   override readonly indexTtl: number = 0
   readonly store = new RAMStore()
   override readonly accessor = new RAMAccessor(this.store)
-  override readonly prompt = RAM_PROMPT
+  override readonly prompt = PROMPT
   override ops(): readonly RegisteredOp[] {
     return RAM_OPS
   }

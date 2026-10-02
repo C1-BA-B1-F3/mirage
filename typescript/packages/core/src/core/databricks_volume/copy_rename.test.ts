@@ -18,7 +18,7 @@ import { runWithCacheManager } from '../../cache/context.ts'
 import { copy } from './copy.ts'
 import { rename } from './rename.ts'
 import { resolveGlobOf } from '../../commands/builtin/generic_bind/index.ts'
-import { DATABRICKS_VOLUME_IO } from '../../commands/builtin/databricks_volume/io.ts'
+import { IO } from '../../commands/builtin/databricks_volume/io.ts'
 import { PathSpec } from '../../types.ts'
 import {
   jsonResponse,
@@ -30,7 +30,7 @@ import {
   type FetchCall,
 } from './_test_util.ts'
 
-const resolveGlob = resolveGlobOf(DATABRICKS_VOLUME_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 class FakeManager {
   listingTrusted(_folder: string): boolean {

@@ -5,6 +5,7 @@ import type { HeredocSource } from './heredoc/types.ts'
 
 const PREFIX =
   /^time(?=[ \t\r\n;|&)]|$)[ \t]*(?:(-p)(?=[ \t\r\n;|&)]|$)[ \t]*)?(?:--(?=[ \t\r\n;|&)]|$)[ \t]*)?/
+const COMPOUND_HEADS = new Set(['{', 'if', 'for', 'select', 'while', 'until', 'case', '!', 'time'])
 const STATEMENTS = new Set([
   'command',
   'test_command',
@@ -18,8 +19,9 @@ const STATEMENTS = new Set([
   'for_statement',
   'while_statement',
   'case_statement',
+  'c_style_for_statement',
 ])
-export type TimingMark = readonly [number, boolean, number, number]
+export type TimingMark = readonly [number, string, boolean, number, number]
 
 function sourceOffset(source: HeredocSource, index: number): number {
   const offset = source.offsets[index]
@@ -40,13 +42,24 @@ export function lowerTiming(parser: Parser, source: HeredocSource): [HeredocSour
       const node = stack.pop()
       if (node === undefined) break
       stack.push(...node.children)
-      if (node.type !== 'command') continue
-      const name = node.childForFieldName('name')
-      if (name?.text !== 'time' || node.children[0]?.id !== name.id) continue
+      const negated = node.type === 'negated_command'
+      if (negated) {
+        const body = node.namedChildren[0]
+        const head = body?.childForFieldName('name')
+        const arith = body?.text.startsWith('((') === true
+        if (!arith && (head == null || !COMPOUND_HEADS.has(head.text))) continue
+      }
+      const name = negated ? node.children[0] : node.childForFieldName('name')
+      if (name == null) continue
+      if (
+        !negated &&
+        (node.type !== 'command' || name.text !== 'time' || node.children[0]?.id !== name.id)
+      )
+        continue
       if (node.parent?.type === 'pipeline' && node.parent.namedChildren[0]?.id !== node.id) continue
-      const match = PREFIX.exec(text.slice(name.startIndex))
-      if (match === null) continue
-      let end = name.startIndex + match[0].length
+      const match = negated ? null : PREFIX.exec(text.slice(name.startIndex))
+      if (!negated && match === null) continue
+      let end = match === null ? name.endIndex : name.startIndex + match[0].length
       while (end < text.length && [' ', '\t'].includes(text.charAt(end))) end += 1
       const empty = end === text.length || ['\n', ';', '&', ')'].includes(text.charAt(end))
       let replacement = ' '.repeat(end - name.startIndex)
@@ -55,15 +68,17 @@ export function lowerTiming(parser: Parser, source: HeredocSource): [HeredocSour
         replacement = ':' + replacement.slice(1)
         anchor = name.startIndex
       }
-      marks = marks.map(([position, flag, begin, finish]) => [
+      marks = marks.map(([position, kind, flag, begin, finish]) => [
         position === source.offsets[name.startIndex] ? sourceOffset(source, anchor) : position,
+        kind,
         flag,
         begin,
         finish,
       ])
       marks.push([
         sourceOffset(source, anchor),
-        match[1] !== undefined,
+        negated ? 'negated_command' : 'timed_statement',
+        match?.[1] !== undefined,
         sourceOffset(source, name.startIndex),
         sourceOffset(source, end),
       ])
@@ -76,19 +91,23 @@ export function lowerTiming(parser: Parser, source: HeredocSource): [HeredocSour
   return [{ ...source, source: text }, marks]
 }
 
-export class TimingNode implements ShellNode {
+export class PrefixNode implements ShellNode {
   readonly timing: readonly boolean[]
+  private readonly prefixes: readonly (readonly [string, boolean])[]
   constructor(
     private readonly node: HeredocNode,
-    private readonly targets: ReadonlyMap<number, readonly boolean[]>,
+    private readonly targets: ReadonlyMap<number, readonly (readonly [string, boolean])[]>,
     private readonly source: HeredocSource,
     private readonly spans: readonly (readonly [number, number])[],
-    skip = false,
+    private readonly skip = 0,
+    private readonly parentNode: PrefixNode | null = null,
   ) {
-    this.timing = skip ? [] : (targets.get(node.id) ?? [])
+    this.prefixes = (targets.get(node.id) ?? []).slice(skip)
+    const first = this.prefixes[0]
+    this.timing = first === undefined ? [] : [first[1]]
   }
   get type(): string {
-    return this.timing.length > 0 ? 'timed_statement' : this.node.type
+    return this.prefixes[0]?.[0] ?? this.node.type
   }
   get text(): string {
     return this.node.text
@@ -120,37 +139,39 @@ export class TimingNode implements ShellNode {
   get childCount(): number {
     return this.children.length
   }
-  child(index: number): TimingNode | null {
+  child(index: number): PrefixNode | null {
     return this.children[index] ?? null
   }
-  get children(): TimingNode[] {
+  get children(): PrefixNode[] {
     return this.timing.length > 0
-      ? [new TimingNode(this.node, this.targets, this.source, this.spans, true)]
+      ? [new PrefixNode(this.node, this.targets, this.source, this.spans, this.skip + 1, this)]
       : this.node.children.map(
-          (node) => new TimingNode(node, this.targets, this.source, this.spans),
+          (node) => new PrefixNode(node, this.targets, this.source, this.spans, 0, this),
         )
   }
-  get namedChildren(): TimingNode[] {
+  get namedChildren(): PrefixNode[] {
     return this.timing.length > 0
       ? this.children
       : this.node.namedChildren.map(
-          (node) => new TimingNode(node, this.targets, this.source, this.spans),
+          (node) => new PrefixNode(node, this.targets, this.source, this.spans, 0, this),
         )
   }
-  private wrap(node: HeredocNode | null): TimingNode | null {
-    return node === null ? null : new TimingNode(node, this.targets, this.source, this.spans)
+  private wrap(node: HeredocNode | null, parent: PrefixNode | null = null): PrefixNode | null {
+    return node === null
+      ? null
+      : new PrefixNode(node, this.targets, this.source, this.spans, 0, parent)
   }
-  get parent(): TimingNode | null {
-    return this.wrap(this.node.parent)
+  get parent(): PrefixNode | null {
+    return this.parentNode ?? this.wrap(this.node.parent)
   }
-  get previousSibling(): TimingNode | null {
+  get previousSibling(): PrefixNode | null {
     return this.wrap(this.node.previousSibling)
   }
-  get nextSibling(): TimingNode | null {
+  get nextSibling(): PrefixNode | null {
     return this.wrap(this.node.nextSibling)
   }
-  childForFieldName(name: string): TimingNode | null {
-    return this.wrap(this.node.childForFieldName(name))
+  childForFieldName(name: string): PrefixNode | null {
+    return this.wrap(this.node.childForFieldName(name), this)
   }
   get sourceText(): string {
     if (this.source.documents.some(([start]) => this.startIndex <= start && start < this.endIndex))
@@ -171,29 +192,50 @@ export class TimingNode implements ShellNode {
   }
 }
 
+function spansList(node: HeredocNode): boolean {
+  while (
+    (node.type === 'redirected_statement' || node.type === 'pipeline') &&
+    node.namedChildren.length > 0
+  ) {
+    const first = node.namedChildren[0]
+    if (first === undefined) break
+    node = first
+  }
+  return node.type === 'list'
+}
+
 /** Attach each prefix to the complete next pipeline, stopping at list boundaries. */
 export function wrapTiming(
   root: HeredocNode,
   source: HeredocSource,
   marks: readonly TimingMark[],
-): TimingNode {
-  const targets = new Map<number, readonly boolean[]>()
-  for (const [position, portable] of marks) {
+): PrefixNode {
+  const targets = new Map<number, readonly (readonly [string, boolean])[]>()
+  for (const [position, kind, portable] of marks) {
     const stack = [root]
     while (stack.length > 0) {
       const node = stack.pop()
       if (node === undefined) break
-      if (STATEMENTS.has(node.type) && source.offsets[node.startIndex] === position) {
-        targets.set(node.id, [portable || (targets.get(node.id) ?? []).some(Boolean)])
+      if (
+        STATEMENTS.has(node.type) &&
+        source.offsets[node.startIndex] === position &&
+        !spansList(node)
+      ) {
+        const prefixes = [...(targets.get(node.id) ?? [])]
+        const previous = prefixes.at(-1)
+        if (kind === 'timed_statement' && previous?.[0] === kind)
+          prefixes[prefixes.length - 1] = [kind, portable || previous[1]]
+        else prefixes.push([kind, portable])
+        targets.set(node.id, prefixes)
         break
       }
       stack.push(...[...node.namedChildren].reverse())
     }
   }
-  return new TimingNode(
+  return new PrefixNode(
     root,
     targets,
     source,
-    marks.map(([, , start, end]) => [start, end]),
+    marks.map(([, , , start, end]) => [start, end]),
   )
 }

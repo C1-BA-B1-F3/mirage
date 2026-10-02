@@ -21,7 +21,7 @@ import { overlayableStat } from './cp.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { specOf } from '../../../spec/builtins.ts'
 
-export const MV_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'mv',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -43,6 +43,7 @@ import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
 import { CycleError, norm, parent, posixNormpath } from '../../utils/path.ts'
+import type { EntryGate } from '../../types.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
 import type { OpRecord } from '../../observe/record.ts'
@@ -72,6 +73,8 @@ import { compareCodePoints } from '../../utils/sort.ts'
 import {
   DISPATCH_READ_OPS,
   DISPATCH_WRITE_OPS,
+  ENTRY_CREATE_OPS,
+  FILE_CREATE_OPS,
   HIDDEN_CREATE_OPS,
   LINK_ENTRY_OPS,
   NAMESPACE_TABLE_OPS,
@@ -144,6 +147,12 @@ function takeIssuer(
   const rest = { ...kwargs }
   delete rest.issuer
   return [issuer, rest]
+}
+
+/** Ask a command's gate once about each distinct path an op reaches. */
+function judge(gate: EntryGate, ...paths: readonly unknown[]): void {
+  const specs = paths.filter((p): p is PathSpec => p instanceof PathSpec)
+  for (const virtual of new Set(specs.map((p) => p.virtual))) gate.check(virtual)
 }
 
 /** The byte window a read asked for, whole file when it asked none. */
@@ -236,7 +245,9 @@ export class Dispatcher {
     // The caller's own mark on the op, lifted before any gate fires so
     // each one is told whose op it judges.
     const [issuer, stripped] = takeIssuer(kwargs)
-    kwargs = stripped
+    // withDispatchRuleGuard's mark, never forwarded to an op.
+    const { ruleGate, ...unmarked } = (stripped ?? {}) as { ruleGate?: EntryGate | null }
+    kwargs = ruleGate === undefined ? stripped : unmarked
     await this.namespace.ensureLoaded()
     // Pending fingerprint checks from a strict snapshot restore run
     // before the op can touch a mount, whichever surface called: FUSE
@@ -274,13 +285,16 @@ export class Dispatcher {
     // A `.` or `..` resolves against the directory it sits in, so every
     // name in front of one has to be a directory: `virtual` simplified the
     // dots away and reaches `f` through a missing `nope/..`, the typed
-    // spelling (`dotted`) does not. Mirrors Python's Dispatcher.dispatch.
+    // spelling (`dotted`) does not. A trailing slash is part of that
+    // spelling: `x/` must be a directory, so a create of one is EISDIR
+    // before anything is looked up. Mirrors Python's Dispatcher.dispatch.
+    if (FILE_CREATE_OPS.has(opName) && path.dotted?.endsWith('/') === true) throw eisdir(path)
     const renamed = opName === 'rename' && dstArg instanceof PathSpec ? dstArg : null
     if (path.dotted !== null || (renamed !== null && renamed.dotted !== null)) {
       const walkStat = dispatchStat(this.dispatch)
       const follow = (virtual: string): string => this.namespace.follow(virtual)
       const refusal =
-        (await dotRefusal(walkStat, path, follow)) ??
+        (await dotRefusal(walkStat, path, follow, ENTRY_CREATE_OPS.has(opName))) ??
         (renamed !== null ? await dotRefusal(walkStat, renamed, follow) : null)
       if (refusal !== null) throw refusal
     }
@@ -291,11 +305,17 @@ export class Dispatcher {
     // op facade, a runtime's os.symlink), so a link made, read or removed
     // under a linked directory lands in the directory the link names, not
     // under a name nothing else would look up.
+    const [typed, typedDst] = [path, dstArg]
     path = this.walked(path, HIDDEN_CREATE_OPS.has(opName))
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       dstArg = this.walked(dstArg, true)
       args = [dstArg, ...(args ?? []).slice(1)]
     }
+    // The command's gate judges each spelling, as handed in and as walked,
+    // once both walks have answered for hidden space: here for an op on the
+    // name itself, below the follow for the rest.
+    const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
+    if (ruleGate != null && noFollow) judge(ruleGate, typed, path, typedDst, dstArg)
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
       // stay where they are written, so hidden content would land at
@@ -348,6 +368,7 @@ export class Dispatcher {
         if (!pathAllowed(p.virtual)) throw hiddenRefusal(p.virtual, HIDDEN_CREATE_OPS.has(opName))
       }
     }
+    if (ruleGate != null && !noFollow) judge(ruleGate, typed, path, p)
     if (XATTR_OPS.has(opName)) {
       return [await this.xattrOp(opName, p, kwargs ?? {}, report, issuer), new IOResult()]
     }
@@ -525,7 +546,7 @@ export class Dispatcher {
               runWithTimeout(
                 Promise.resolve(
                   opName === 'setattr'
-                    ? this.applySetattr(vfs, scope, p, fullKwargs)
+                    ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
                     : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
@@ -1301,12 +1322,16 @@ export class Dispatcher {
    * gates as the native half. Mirrors Python's Dispatcher._apply_setattr.
    */
   private async applySetattr(
+    mount: MountEntry,
     vfs: BaseVFS,
     scope: PathSpec,
     p: PathSpec,
     kwargs: OpKwargs,
   ): Promise<Record<string, number | string>> {
     if (this.namespace.isLink(p.virtual) || this.opsRegistry.find('setattr', vfs) === null) {
+      // No backend inode answers for the path here, so nothing would
+      // refuse a missing one: the overlay would stamp it.
+      await this.xattrTarget(mount, p)
       return this.overlaySetattr(p, kwargs)
     }
     const raw = await this.opsRegistry.call('setattr', vfs, vfs.accessor, scope, [], kwargs)

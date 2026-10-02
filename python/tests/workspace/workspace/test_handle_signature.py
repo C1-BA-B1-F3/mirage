@@ -24,7 +24,13 @@ BOUND = "session_id"
 # types. Exempt because they are marked ``Internal.`` in the docstring,
 # which ``test_every_exemption_says_it_is_internal`` pins: adding a name
 # here means documenting it as internal, not editing a list.
-INTERNAL = ("routing_decision", "handed")
+INTERNAL = (
+    "routing_decision",
+    "handed",
+    "sink",
+    "call_stack",
+    "execution_scope",
+)
 
 
 def _params(fn) -> list[inspect.Parameter]:

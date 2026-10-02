@@ -15,7 +15,7 @@
 import { splitGeneric } from '../../generic/split.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const SPLIT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'split',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

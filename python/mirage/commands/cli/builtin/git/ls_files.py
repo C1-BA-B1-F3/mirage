@@ -16,7 +16,11 @@ import posixpath
 
 from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.index_file import read_index
-from mirage.commands.cli.builtin.git.pathspec import repo_relative, under
+from mirage.commands.cli.builtin.git.pathspec import (
+    pathspec_patterns,
+    pathspec_selects,
+    repo_relative,
+)
 from mirage.commands.cli.builtin.git.render import quote_path
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.session import opened
@@ -24,24 +28,6 @@ from mirage.commands.cli.builtin.git.util import fatal, start_point
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
-from mirage.utils.fnmatch import fnmatch
-
-
-def pathspec_selects(path: str, patterns: list[str]) -> bool:
-    """Whether a repository-relative path is one a pathspec names.
-
-    A pathspec names a path it spells, a directory the path lies under,
-    or a glob that matches it whole; a glob's ``*`` crosses ``/``, so
-    ``*.c`` finds ``sub/x.c`` as git's does.
-
-    Args:
-        path (str): repository-relative path.
-        patterns (list[str]): repository-relative pathspecs.
-    """
-    return any(
-        under(path, pattern) or path == pattern or fnmatch(path, pattern)
-        for pattern in patterns
-    )
 
 
 async def ls_files(
@@ -68,7 +54,7 @@ async def ls_files(
         state = await read_index(doors.dispatch, location.gitdir)
         start = start_point(fl)
         prefix = repo_relative(location, start, ".")
-        patterns = [repo_relative(location, start, text) for text in inv.texts]
+        patterns = pathspec_patterns(location, start, inv.texts)
         rows = [(path, 0, entry) for path, entry in state.entries.items()]
         rows.extend(
             (path, stage, entry)
@@ -82,7 +68,7 @@ async def ls_files(
         out = []
         for path, stage, entry in sorted(rows, key=lambda row: row[:2]):
             name = path.decode("utf-8", "surrogateescape")
-            if not pathspec_selects(name, patterns or [prefix]):
+            if not pathspec_selects(name, patterns or (prefix,)):
                 continue
             relative = posixpath.relpath(name, prefix or ".")
             label = relative if nul else quote_path(relative, False, fully)

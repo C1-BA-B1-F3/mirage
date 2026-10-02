@@ -8,7 +8,7 @@ import { command, type CommandFnResult, type CommandOpts } from '../../config.ts
 import { specOf } from '../../spec/builtins.ts'
 
 import { defaultPaths } from '../utils/operands.ts'
-import { MEM0_IO } from './io.ts'
+import { IO } from './io.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 const ENCODER = new TextEncoder()
@@ -40,7 +40,7 @@ async function searchCommand(
   const targets = defaultPaths(paths, opts.cwd, opts.mountPrefix ?? '')
   try {
     const out = await searchResources(
-      MEM0_IO.search,
+      IO.search,
       accessor,
       targets,
       {

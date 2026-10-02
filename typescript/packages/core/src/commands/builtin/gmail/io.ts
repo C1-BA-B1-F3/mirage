@@ -20,7 +20,7 @@ import { readdir as gmailReaddir } from '../../../core/gmail/readdir.ts'
 import { stat as gmailStat } from '../../../core/gmail/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GMAIL_IO: CommandIO<GmailAccessor> = new VFSAdapter<GmailAccessor>({
+export const IO: CommandIO<GmailAccessor> = new VFSAdapter<GmailAccessor>({
   read: { readdir: gmailReaddir, readBytes: gmailRead, stat: gmailStat },
   isMounted: () => true,
   local: false,

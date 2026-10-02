@@ -17,7 +17,7 @@ import { read, readdir, SEARCH, stat } from '../../../core/lancedb/tree.ts'
 import { VFSAdapter } from '../../../vfs/adapter.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const LANCEDB_IO: CommandIO<LanceDBAccessor> = new VFSAdapter<LanceDBAccessor>({
+export const IO: CommandIO<LanceDBAccessor> = new VFSAdapter<LanceDBAccessor>({
   search: SEARCH,
   read: { readdir, readBytes: read, stat },
   isMounted: () => true,

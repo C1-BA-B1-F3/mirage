@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const S3_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote S3 bucket. Maps S3 object keys to virtual paths.
   IMPORTANT: This is a remote mount. Prefer targeted reads (grep, head) over full scans. Avoid cat on large files without piping to head/tail.
   Supports: ls, cat, head, tail, grep, rg, wc, find, tree, jq, stat.`

@@ -18,7 +18,6 @@ import subprocess
 
 import pytest
 
-from mirage.commands.cli.builtin.git.ls_files import pathspec_selects
 from tests.commands.cli.builtin.git.conftest import commit_file
 
 ENV = {
@@ -28,24 +27,6 @@ ENV = {
     "GIT_CONFIG_GLOBAL": "/dev/null",
     "GIT_CONFIG_NOSYSTEM": "1",
 }
-
-
-@pytest.mark.parametrize(
-    "path,patterns,expected",
-    [
-        ("docs/a.md", [""], True),
-        ("docs/a.md", ["docs"], True),
-        ("docs/a.md", ["doc"], False),
-        ("docs/a.md", ["docs/a.md"], True),
-        ("docs/sub/a.md", ["*.md"], True),
-        ("docs/a.md", ["docs/*.txt", "*.md"], True),
-        ("a.txt", ["docs"], False),
-    ],
-)
-def test_a_pathspec_names_a_path_a_directory_or_a_glob(
-    path, patterns, expected
-):
-    assert pathspec_selects(path, patterns) is expected
 
 
 @pytest.mark.asyncio

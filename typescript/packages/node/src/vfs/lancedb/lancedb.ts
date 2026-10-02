@@ -29,7 +29,7 @@ import type {
   LanceDBConfigRedacted,
   LanceDBConfigResolved,
 } from '@struktoai/mirage-core/vfs/lancedb/config'
-import { LANCEDB_PROMPT } from '@struktoai/mirage-core/vfs/lancedb/prompt'
+import { PROMPT } from '@struktoai/mirage-core/vfs/lancedb/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { LanceDBStore } from './store.ts'
@@ -53,7 +53,7 @@ export class LanceDBVFS extends BaseVFS {
   // back to rendering the row itself, so sizes are exact either way.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 0
-  override readonly prompt: string = LANCEDB_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: LanceDBConfigResolved
   readonly store: LanceDBStore
   override readonly accessor: LanceDBAccessor

@@ -17,9 +17,9 @@ import { Language, type Node, Parser } from 'web-tree-sitter'
 import { scanParameter } from '../parameter.ts'
 import { ARITH_OPEN_TOKEN, QUOTES, VERBATIM_TYPES } from './constants.ts'
 import { expansionSource } from './expansion.ts'
-import { heredocOperators, protectedSource, sameShape } from './heredoc/index.ts'
+import { heredocOperators, protectedSource } from './heredoc/index.ts'
 import { lowerTiming, wrapTiming, type TimingMark } from './timing.ts'
-import { discoverHeredocs } from './heredoc/reader.ts'
+import { delimiterEnd, discoverHeredocs } from './heredoc/reader.ts'
 import { dropChars, dropSourceChars, lowerHeredocs, rebaseSource } from './heredoc/lower.ts'
 import { HeredocNode } from './heredoc/node.ts'
 import type { ShellNode } from '../types.ts'
@@ -87,26 +87,172 @@ function isArithmetic(parser: Parser, command: string, start: number): boolean {
   return !span?.rootNode.hasError
 }
 
+const UNLEXED = new Set([
+  'test_command',
+  'arithmetic_expansion',
+  'string_content',
+  'raw_string',
+  'ansi_c_string',
+  'expansion',
+  'heredoc_content',
+  'comment',
+  'binary_expression',
+  'unary_expression',
+  'postfix_expression',
+])
+const WORD_START = ' \t\n;&|(){}'
+const DIGITS = /\d+/y
+const LAST_ARM = /^\s*esac(?![^\s;&|()<>])/
+
 /**
- * Parse structure using same-width lexical shields. Heredoc bodies and
- * substring operands need word grammar where tree-sitter otherwise rejects
- * them. Reuse the shielded tree against the original text without edits and
- * verify every node's span. If shielding or reuse fails, keep the original
- * parse so structural errors still reach syntax validation.
+ * Spell operators the way the grammar can lex them.
+ *
+ * bash reads `<>` and `<<<` as one operator each, and a digit string that
+ * starts a word and touches `<` or `>` as the descriptor. tree-sitter-bash
+ * reads `<>` as `<` then `>`, `<<<` after a compound command or a
+ * descriptor as `<<` then `<`, and a digit string with a leading zero
+ * (`0<f`) as a number. The same-width spelling here hands it `>>`, `<  `
+ * and a nonzero first digit; `SourceNode` reads the original text, so a
+ * redirect whose text opens with `<<<` is the herestring it was. A last case
+ * arm's `;&` or `;;&`, which the grammar refuses, ends it as `;;` does, there
+ * being no arm after it, so it is spelled so. An operator inside an error
+ * region gets its own token only once the operators before it are respelled,
+ * so the pass repeats on its own parse until nothing changes. Mirrors
+ * Python's _operator_source.
  */
-function parseProtected(parser: Parser, text: string): Node {
+function operatorSource(parser: Parser, text: string, root: ShellNode): string {
+  let current = text
+  let lexed = respelled(current, root)
+  while (lexed !== current) {
+    current = lexed
+    const tree = parser.parse(current)
+    if (tree === null) return current
+    lexed = respelled(current, tree.rootNode)
+  }
+  return current
+}
+
+function respelled(text: string, root: ShellNode): string {
+  const out = text.split('')
+  const stack: ShellNode[] = [root]
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    if (UNLEXED.has(node.type)) continue
+    stack.push(...node.children)
+    const start = node.startIndex
+    if (node.type === '<' && text.startsWith('<>', start)) out[start] = '>'
+    else if ((node.type === '<<<' || node.type === '<<') && text.startsWith('<<<', start)) {
+      out[start + 1] = ' '
+      out[start + 2] = ' '
+    } else if (
+      (node.type === ';&' || node.type === ';;&') &&
+      LAST_ARM.test(text.slice(node.endIndex))
+    ) {
+      out[start] = ';'
+      out[start + 1] = ';'
+      if (node.type === ';;&') out[start + 2] = ' '
+    }
+    if (node.childCount > 0 || text[start] !== '0') continue
+    if (start > 0 && !WORD_START.includes(text[start - 1] ?? '')) continue
+    DIGITS.lastIndex = start
+    const end = start + (DIGITS.exec(text)?.[0].length ?? 0)
+    if (text[end] === '<' || text[end] === '>') out[start] = '1'
+  }
+  return out.join('')
+}
+
+/**
+ * A node of a shielded parse that reads the original text.
+ *
+ * Every shield keeps the source's width, so a span names the same text in
+ * both and only `text` differs. Reparsing the original against the
+ * shielded tree did the same until tree-sitter relexed a statement on its
+ * own, which it does at a line's end. Mirrors Python's SourceNode.
+ */
+class SourceNode implements ShellNode {
+  constructor(
+    private readonly node: Node,
+    private readonly original: string,
+  ) {}
+  get type(): string {
+    return this.node.type
+  }
+  get text(): string {
+    return this.original.slice(this.node.startIndex, this.node.endIndex)
+  }
+  get id(): number {
+    return this.node.id
+  }
+  get startIndex(): number {
+    return this.node.startIndex
+  }
+  get endIndex(): number {
+    return this.node.endIndex
+  }
+  get startPosition() {
+    return this.node.startPosition
+  }
+  get endPosition() {
+    return this.node.endPosition
+  }
+  get isNamed(): boolean {
+    return this.node.isNamed
+  }
+  get isMissing(): boolean {
+    return this.node.isMissing
+  }
+  get hasError(): boolean {
+    return this.node.hasError
+  }
+  get childCount(): number {
+    return this.node.childCount
+  }
+  child(index: number): SourceNode | null {
+    return this.wrap(this.node.child(index))
+  }
+  get children(): SourceNode[] {
+    return this.node.children.map((node) => new SourceNode(node, this.original))
+  }
+  get namedChildren(): SourceNode[] {
+    return this.node.namedChildren.map((node) => new SourceNode(node, this.original))
+  }
+  private wrap(node: Node | null): SourceNode | null {
+    return node === null ? null : new SourceNode(node, this.original)
+  }
+  get parent(): SourceNode | null {
+    return this.wrap(this.node.parent)
+  }
+  get previousSibling(): SourceNode | null {
+    return this.wrap(this.node.previousSibling)
+  }
+  get nextSibling(): SourceNode | null {
+    return this.wrap(this.node.nextSibling)
+  }
+  childForFieldName(name: string): SourceNode | null {
+    return this.wrap(this.node.childForFieldName(name))
+  }
+}
+
+/**
+ * Parse structure using same-width lexical shields. Heredoc bodies,
+ * substring operands and redirect operators need word grammar where
+ * tree-sitter otherwise rejects them. The shielded tree is read against the
+ * original text (`SourceNode`). When shielding adds an error, keep the
+ * original parse so structural errors still reach syntax validation.
+ */
+function parseProtected(parser: Parser, text: string): ShellNode {
   const tree = parser.parse(text)
   if (tree === null) throw new Error('shell parse returned null')
-  const shieldedText = expansionSource(
+  let shieldedText = expansionSource(
     (text.includes('<<') ? protectedSource(text, tree.rootNode) : null) ?? text,
     tree.rootNode,
   )
+  shieldedText = operatorSource(parser, shieldedText, tree.rootNode)
   if (shieldedText === text) return tree.rootNode
   const shielded = parser.parse(shieldedText)
-  if (shielded === null || shielded.rootNode.hasError) return tree.rootNode
-  const reused = parser.parse(text, shielded)
-  if (reused === null || !sameShape(shielded.rootNode, reused.rootNode)) return tree.rootNode
-  return reused.rootNode
+  if (shielded === null) return tree.rootNode
+  const original = errors(tree.rootNode)
+  if (![...errors(shielded.rootNode)].every((span) => original.has(span))) return tree.rootNode
+  return new SourceNode(shielded.rootNode, text)
 }
 
 /**
@@ -114,9 +260,9 @@ function parseProtected(parser: Parser, text: string): Node {
  *
  * Only openers inside an ERROR subtree are reported.
  */
-function failedArithOpeners(root: Node): number[] {
+function failedArithOpeners(root: ShellNode): number[] {
   const offsets: number[] = []
-  const stack: [Node, boolean][] = [[root, false]]
+  const stack: [ShellNode, boolean][] = [[root, false]]
   for (;;) {
     const entry = stack.pop()
     if (entry === undefined) break
@@ -201,9 +347,9 @@ export function joinContinuations(parser: Parser, command: string): string {
  * read an expansion), so each one marks a mis-parse. The `$` opening a
  * simple_expansion is that expansion's own token and is skipped.
  */
-function orphanedDollarOffsets(root: Node, text: string): number[] {
+function orphanedDollarOffsets(root: ShellNode, text: string): number[] {
   const offsets: number[] = []
-  const stack: Node[] = [root]
+  const stack: ShellNode[] = [root]
   for (;;) {
     const node = stack.pop()
     if (node === undefined) break
@@ -244,7 +390,7 @@ function rebraceDollar(text: string, offset: number): string {
  * the loop is bounded by the count of `$` characters. A retry that
  * parses worse than what it replaces is discarded.
  */
-function repairOrphanedDollars(parser: Parser, root: Node, text: string): Node {
+function repairOrphanedDollars(parser: Parser, root: ShellNode, text: string): ShellNode {
   const bound = text.split('$').length - 1
   for (let i = 0; i < bound; i += 1) {
     const offsets = orphanedDollarOffsets(root, text)
@@ -259,7 +405,7 @@ function repairOrphanedDollars(parser: Parser, root: Node, text: string): Node {
   return root
 }
 
-function repairRedirectDashes(parser: Parser, root: Node, text: string): [Node, string] {
+function repairRedirectDashes(parser: Parser, root: ShellNode, text: string): [ShellNode, string] {
   // Quote only an uncovered dash before a redirect, never word or heredoc text.
   const offsets: number[] = []
   const stack = [root]
@@ -283,6 +429,60 @@ function repairRedirectDashes(parser: Parser, root: Node, text: string): [Node, 
   }
   const retried = parseProtected(parser, repaired)
   return retried.hasError ? [root, text] : [retried, repaired]
+}
+
+const NAME = /^\w+$/
+const FOLLOWER = /^\s*(in|do)(?![^\s;&|()<>])/
+
+function headerInserts(root: ShellNode, text: string): [number, string][] {
+  const heads: number[] = []
+  const stack = [root]
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    stack.push(...node.children)
+    if (node.type !== 'for_statement' && node.type !== 'ERROR') continue
+    for (const kid of node.children) {
+      if (kid.type === 'for' || kid.type === 'select') heads.push(kid.endIndex)
+    }
+  }
+  const inserts: [number, string][] = []
+  for (const head of heads) {
+    const start = text.length - text.slice(head).replace(/^[ \t]+/, '').length
+    const end = delimiterEnd(text, start) ?? start
+    const word = FOLLOWER.exec(text.slice(end))?.[1]
+    const named = NAME.test(text.slice(start, end))
+    if (end === start || (named && word === 'in')) continue
+    const tail = word === 'do' ? ';' : ''
+    if (named) inserts.push([end, ` in "$@"${tail}`])
+    else inserts.push([start, '0 in '], [end, tail])
+  }
+  return inserts
+}
+
+function repairForHeaders(parser: Parser, root: ShellNode, text: string): [ShellNode, string] {
+  // Encode invalid names for runtime validation and supply omitted "$@".
+  // Repeat to expose nested headers; accept only repairs adding no errors.
+  let [repaired, retried] = [text, root]
+  for (let inserts = headerInserts(root, text); inserts.length > 0;) {
+    for (const [offset, insert] of inserts.sort((a, b) => b[0] - a[0])) {
+      repaired = repaired.slice(0, offset) + insert + repaired.slice(offset)
+    }
+    retried = parseProtected(parser, repaired)
+    inserts = headerInserts(retried, repaired)
+  }
+  return retried === root || errors(retried).size > errors(root).size
+    ? [root, text]
+    : [retried, repaired]
+}
+
+function errors(root: ShellNode): Set<string> {
+  const spans = new Set<string>()
+  const stack = [root]
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    stack.push(...node.children)
+    if (node.type === 'ERROR' || node.isMissing)
+      spans.add(`${String(node.startIndex)}:${String(node.endIndex)}`)
+  }
+  return spans
 }
 
 // `Parser.init` boots one wasm module for the whole process, so two callers
@@ -355,11 +555,13 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
      * `${id}`.
      */
     parse(command: string): ShellNode {
-      const original = command.includes('<<') ? parser.parse(command) : null
-      const documents =
-        command.includes('<<') && original !== null
-          ? discoverHeredocs(command, heredocOperators(original.rootNode))
-          : []
+      let hinted = command.includes('<<') ? (parser.parse(command)?.rootNode ?? null) : null
+      if (hinted !== null) {
+        // The operators are read off a tree that lexes `0<<EOF` as one.
+        const lexed = operatorSource(parser, command, hinted)
+        if (lexed !== command) hinted = parser.parse(lexed)?.rootNode ?? hinted
+      }
+      const documents = hinted === null ? [] : discoverHeredocs(command, heredocOperators(hinted))
       const lowered = documents.length > 0 ? lowerHeredocs(command, documents) : null
       let heredocs =
         lowered === null
@@ -367,7 +569,7 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
           : dropSourceChars(lowered, continuationIndices(parser, lowered.source))
       let input = heredocs?.source ?? joinContinuations(parser, command)
       let timingMarks: readonly TimingMark[] = []
-      if (input.includes('time')) {
+      if (input.includes('time') || input.includes('!')) {
         heredocs ??= {
           original: input,
           source: input,
@@ -403,6 +605,9 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
         }
       }
       ;[root, text] = repairRedirectDashes(parser, root, text)
+      if (text.includes('for') || text.includes('select')) {
+        ;[root, text] = repairForHeaders(parser, root, text)
+      }
       if (text.includes('$')) {
         root = repairOrphanedDollars(parser, root, text)
       }

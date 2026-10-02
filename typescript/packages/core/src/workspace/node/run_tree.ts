@@ -20,6 +20,7 @@ import { postExecuteGate, refusalOf, renderDeny } from '../../policy/index.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
+import type { CallStack } from '../../shell/call_stack.ts'
 import { inputSubstitutionRedirect } from '../../shell/helpers.ts'
 import { expandRedirects } from '../expand/redirects.ts'
 import { toScope } from '../executor/builtins/scope.ts'
@@ -41,11 +42,14 @@ export async function runCommandTree(
   session: SessionState,
   stdin: ByteSource | null = null,
   commandSubstitution = false,
+  // The frames of the caller the tree runs in place of (`eval`), null for
+  // a line of its own.
+  callStack: CallStack | null = null,
 ): Promise<Result> {
   const redirect = commandSubstitution ? inputSubstitutionRedirect(node) : null
   let result: Result
   if (redirect === null) {
-    result = await executeNode(deps, node, session, stdin, null)
+    result = await executeNode(deps, node, session, stdin, callStack)
   } else {
     const [redirects] = await expandRedirects(
       [redirect],

@@ -14,10 +14,10 @@
 
 import asyncio
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import partial
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, TypeVar
 
 from mirage.commands.builtin.utils.limit import guard_io, run_with_timeout
 from mirage.context import (
@@ -32,7 +32,8 @@ from mirage.io.types import materialize
 from mirage.policy import PolicyDenied, resolve_limit, resolve_producer
 from mirage.policy.types import Claimant, HandOff, SessionContext
 from mirage.runtime.routing import RouteDecision
-from mirage.shell.bytes import encode_text
+from mirage.shell.console import Channel, JobConsole
+from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import (
     get_command_name,
     get_parts,
@@ -98,6 +99,23 @@ from mirage.workspace.session.state import (
 )
 from mirage.workspace.types import ExecutionNode
 
+T = TypeVar("T")
+
+
+async def _own_words(node: Any, pending: Awaitable[T]) -> T:
+    """Await an expansion of the command's own words; an ``ExitSignal``
+    it raises names the command, whose redirects bash had not applied.
+
+    Args:
+        node (Any): the command.
+        pending (Awaitable[T]): the expansion.
+    """
+    try:
+        return await pending
+    except ExitSignal as exc:
+        exc.expanding = node.id
+        raise
+
 
 async def execute_command(
     recurse,
@@ -114,8 +132,13 @@ async def execute_command(
     routing_decision: RouteDecision | None = None,
     agent_id: str = "",
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
-    """Dispatch a command node by name."""
+    """Dispatch a command node by name.
+
+    ``sink`` is where a command that runs statements of its own (a
+    function body, a nested shell) writes them as they finish.
+    """
     name = get_command_name(node)
     assignment_nodes, parts = split_env_prefix(get_parts(node))
 
@@ -187,12 +210,15 @@ async def execute_command(
         key, _, raw_val = atext.partition("=")
         val_nodes = [c for c in p.named_children if c.type != NT.VARIABLE_NAME]
         if val_nodes:
-            v = await expand_node(
-                val_nodes[0],
-                session,
-                execute_fn,
-                call_stack,
-                view=session_view(session, registry.policies),
+            v = await _own_words(
+                node,
+                expand_node(
+                    val_nodes[0],
+                    session,
+                    execute_fn,
+                    call_stack,
+                    view=session_view(session, registry.policies),
+                ),
             )
         else:
             v = raw_val
@@ -294,6 +320,7 @@ async def execute_command(
             routing_decision,
             agent_id,
             handed,
+            sink,
         )
     finally:
         frames = session._local_frames
@@ -324,6 +351,7 @@ async def _dispatch_command_body(
     routing_decision: RouteDecision | None = None,
     agent_id: str = "",
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     # The command's place on the line, as the pass computed it, and
     # the door its nested evaluations re-enter through: a word that
@@ -332,20 +360,6 @@ async def _dispatch_command_body(
     # line stands under the node its text came from.
     claimant = claimant_for(node, handed)
     execute_fn = partial(execute_fn, node=node)
-    parent = node.parent
-    if parent is None or parent.type != NT.REDIRECTED_STATEMENT:
-        for child in node.named_children:
-            if child.type == NT.HERESTRING_REDIRECT:
-                for sc in child.named_children:
-                    content = await expand_node(
-                        sc,
-                        session,
-                        execute_fn,
-                        call_stack,
-                        view=session_view(session, registry.policies),
-                    )
-                    stdin = encode_text(content) + b"\n"
-                    break
 
     # Buffered virtual files preserve operand identity without host pipes.
     dev: DevVFS | None = None
@@ -373,7 +387,9 @@ async def _dispatch_command_body(
             proc_sub_inputs.append((path, allocation))
             inner = get_process_sub_body(p)
             if inner:
-                io_ps = await child_line(session, execute_fn, inner, p)
+                io_ps = await child_line(
+                    session, execute_fn, inner, p, call_stack
+                )
                 data = await materialize(io_ps.stdout)
                 dev.set_input(path, allocation, data)
                 proc_sub_stderr.append(await materialize(io_ps.stderr))
@@ -387,15 +403,18 @@ async def _dispatch_command_body(
             )
         parts = clean_parts
 
-        argv = await expand_argv(
-            parts,
-            session,
-            execute_fn,
-            call_stack,
-            registry,
-            namespace,
-            view=session_view(session, registry.policies),
-            routing=routing_decision,
+        argv = await _own_words(
+            node,
+            expand_argv(
+                parts,
+                session,
+                execute_fn,
+                call_stack,
+                registry,
+                namespace,
+                view=session_view(session, registry.policies),
+                routing=routing_decision,
+            ),
         )
         seed_prefix(argv.name)
 
@@ -434,10 +453,17 @@ async def _dispatch_command_body(
             agent_id=agent_id,
             redirects=redirect_paths_for(node.id),
             claimant=claimant,
+            sink=sink,
         )
         # Capture xtrace before the body runs so `set -x` itself is not
         # traced (bash enables tracing only for the following commands).
-        xtrace = bool(session.shell_options.get("xtrace"))
+        # A body that writes as it runs is traced before it starts.
+        xtrace = bool(session.shell_options.get("xtrace")) and bool(argv.name)
+        if xtrace and sink is not None:
+            await sink.emit(
+                Channel.STDERR, trace_command([argv.name, *argv.args])
+            )
+            xtrace = False
         stdout, io, exec_node = await run_with_timeout(
             body, timeout, argv.name or "?"
         )
@@ -466,7 +492,7 @@ async def _dispatch_command_body(
                 io.stderr
             )
             exec_node.stderr = io.stderr
-        if xtrace and argv.name:
+        if xtrace:
             existing = await materialize(io.stderr) or b""
             io.stderr = trace_command([argv.name, *argv.args]) + existing
         if proc_sub_inputs and stdout is not None:
@@ -495,6 +521,7 @@ async def _run_argv(
     agent_id: str = "",
     redirects: tuple[PathSpec, ...] = (),
     claimant: Claimant | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Route one expanded command to its builtin or mount handler.
 
@@ -606,6 +633,7 @@ async def _run_argv(
                 row,
                 agent_id,
                 claimant.line if claimant is not None else None,
+                sink,
             )
         token = set_admission(admitted)
         try:
@@ -625,6 +653,7 @@ async def _run_argv(
                 row,
                 agent_id,
                 claimant.line if claimant is not None else None,
+                sink,
             )
         finally:
             reset_admission(token)
@@ -671,6 +700,7 @@ async def _route_argv(
     row: int,
     agent_id: str = "",
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Route one admitted command to its builtin or mount handler.
 
@@ -695,6 +725,7 @@ async def _route_argv(
             registry,
             namespace,
             stdin,
+            sink,
         )
 
     # ── unsupported bash builtins ──────────────
@@ -734,6 +765,7 @@ async def _route_argv(
                 registry=registry,
                 namespace=namespace,
                 execute_fn=execute_fn,
+                sink=sink,
             )
         )
 
@@ -857,6 +889,7 @@ async def _route_argv(
         agent_id=agent_id,
         execute_fn=execute_fn,
         handed=handed,
+        sink=sink,
     )
 
     if io.exit_code == 0 and namespace.nodes:

@@ -15,7 +15,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../app.ts'
 
 async function createWs(app: ReturnType<typeof buildApp>, id: string): Promise<void> {
@@ -272,6 +272,28 @@ describe('execute router', () => {
     const body = res.json<{ workspaceId: string }[]>()
     expect(body.length).toBeGreaterThan(0)
     expect(body[0]?.workspaceId).toBe('ew3')
+    await app.close()
+  })
+
+  it('answers 499 when a synchronous execute job is canceled', async () => {
+    const app = buildApp()
+    await createWs(app, 'ecancel')
+    const pending = app
+      .inject({
+        method: 'POST',
+        url: '/v1/workspaces/ecancel/execute',
+        payload: { command: 'sleep 60' },
+      })
+      .then((reply) => reply)
+    const job = await vi.waitFor(async () => {
+      const [entry] = await app.jobs.list('ecancel')
+      if (entry === undefined) throw new Error('execute did not register a job')
+      return entry
+    })
+    await app.jobs.cancel(job.id)
+    const res = await pending
+    expect(res.statusCode).toBe(499)
+    expect(res.json()).toEqual({ detail: 'job canceled' })
     await app.close()
   })
 })

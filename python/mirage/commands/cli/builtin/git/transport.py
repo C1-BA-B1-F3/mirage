@@ -318,8 +318,7 @@ class HttpTransport:
         body: bytes | None,
     ) -> bytes:
         try:
-            resp = await asyncio.to_thread(
-                http_request,
+            resp = await http_request(
                 url,
                 method,
                 {**self._headers, **self._credentials, **headers},

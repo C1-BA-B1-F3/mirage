@@ -144,6 +144,15 @@ export class RedisWorkspaceStateStore extends WorkspaceStateStore {
     return result === 1
   }
 
+  protected async forgetSelf(workspaceId: string): Promise<void> {
+    for (const handles of [this.namespaces, this.observers, this.sessionTables]) {
+      await handles.get(workspaceId)?.close()
+      handles.delete(workspaceId)
+    }
+    const c = await this.client()
+    await c.hDel(this.metaKey, workspaceId)
+  }
+
   protected async closeSelf(): Promise<void> {
     for (const ns of this.namespaces.values()) await ns.close()
     for (const ob of this.observers.values()) await ob.close()

@@ -482,23 +482,6 @@ export async function targetDirError(
   return null
 }
 
-// {exists, isDir, strerror} for an operand whose stat answered. POSIX reads
-// `x/` as `x/.`, so a slashed operand over anything but a directory is
-// ENOTDIR (`cp reg/ d` and `cp f reg/` are both "cannot stat 'reg/': Not a
-// directory"). The single-mount stat is already wrapped to say so; the
-// cross-mount relay's is not, and the verdict belongs to the operand either
-// way.
-function slashAwareKind(
-  path: PathSpec,
-  info: FileStat,
-): { exists: boolean; isDir: boolean; strerror: string | null } {
-  const isDir = info.type === FileType.DIRECTORY
-  if (path.rawPath.endsWith('/') && !isDir) {
-    return { exists: false, isDir: false, strerror: 'Not a directory' }
-  }
-  return { exists: true, isDir, strerror: null }
-}
-
 // Probe a destination for {exists, isDir, strerror}. cp and mv are not
 // `mkdir -p`: neither creates the destination's parent, so a missing or
 // non-directory component is a per-operand failure, and GNU surfaces the two
@@ -533,7 +516,8 @@ export async function destKind(
     }
     if (!isMissingPath(err)) throw err
   }
-  if (info !== null) return slashAwareKind(target, info)
+  if (info !== null)
+    return { exists: true, isDir: info.type === FileType.DIRECTORY, strerror: null }
   return { exists: false, isDir: false, strerror: await absentDestStrerror(stat, target) }
 }
 
@@ -574,7 +558,8 @@ export async function sourceKind(
     if (code === 'ELOOP') return { exists: false, isDir: false, strerror: ELOOP_STRERROR }
     if (!isMissingPath(err)) throw err
   }
-  if (info !== null) return slashAwareKind(path, info)
+  if (info !== null)
+    return { exists: true, isDir: info.type === FileType.DIRECTORY, strerror: null }
   const [, isDir] = await nearestAncestor(stat, path)
   return {
     exists: false,

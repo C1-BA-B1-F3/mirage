@@ -27,7 +27,7 @@ import {
   type QdrantConfig,
   type QdrantConfigResolved,
 } from './config.ts'
-import { QDRANT_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface QdrantVFSOptions {
   config: QdrantConfig
@@ -45,7 +45,7 @@ export class QdrantVFS extends BaseVFS {
   // falls back to rendering the row itself, so sizes are exact either way.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = false
-  override readonly prompt: string = QDRANT_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: QdrantConfigResolved
   override readonly accessor: QdrantAccessor
 

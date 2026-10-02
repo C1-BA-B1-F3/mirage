@@ -39,7 +39,7 @@ export function overlayableStat(
   return async (p) => statOverlay(p.virtual, await ops.stat(accessor, p, index))
 }
 
-export const CP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'cp',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -14,7 +14,7 @@
 
 import { substringOperands } from './substring.ts'
 
-import { scanParameter } from '../../shell/parameter.ts'
+import { badSubstitution, scanParameter } from '../../shell/parameter.ts'
 import { nextRandom } from '../session/state.ts'
 import { evaluateArith } from '../../shell/arith.ts'
 import type { ArithWrite } from '../../shell/types.ts'
@@ -30,7 +30,14 @@ import {
 } from '../../shell/array.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { RANDOM } from '../../shell/constants.ts'
-import { ArithError, ExitSignal, UnboundVariable } from '../../shell/errors.ts'
+import {
+  ArithError,
+  BadSubstitution,
+  DiscardSignal,
+  ExitSignal,
+  named,
+  UnboundVariable,
+} from '../../shell/errors.ts'
 import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
 import { PolicyDenied } from '../../policy/errors.ts'
 import type { SessionView } from '../../ops/types.ts'
@@ -126,7 +133,7 @@ function guardExpansionWrite(session: SessionState, ...names: string[]): void {
       ensureVarVisible(session, name)
     } catch (err) {
       if (!(err instanceof PolicyDenied)) throw err
-      throw new ExitSignal(1, new TextEncoder().encode(`bash: ${err.message}\n`), null, 1)
+      throw new DiscardSignal(new TextEncoder().encode(`bash: ${err.message}\n`))
     }
   }
 }
@@ -571,13 +578,14 @@ function unescapeAll(text: string): string {
  */
 async function nestedString(node: TSNodeLike, expandChild: ExpandChild): Promise<Chunk[]> {
   const out: Chunk[] = [piece('')]
+  const inside = node.text.slice(1, -1)
   for (const part of sourceParts(node)) {
     let text: string
     if (typeof part === 'string') text = part
     else if (part.type === NT.STRING_CONTENT) text = part.text
     else if (part.type === NT.DQUOTE) text = part.text.slice(0, -1)
     else {
-      for (const c of await expandChild(part, true)) out.push(c)
+      for (const c of await named(inside, expandChild(part, true))) out.push(c)
       continue
     }
     out.push(piece(markGlobs(unescapeAll(text))))
@@ -849,7 +857,12 @@ async function operatorWord(
 ): Promise<Chunk[]> {
   const group = p.groups[0]
   if (group === undefined) return []
-  return wordChunks(group, expandChild, quoted, session, callStack)
+  return named(source(group), wordChunks(group, expandChild, quoted, session, callStack))
+}
+
+/** An operand's text as written, the word a bad substitution names. */
+function source(parts: readonly (string | TSNodeLike)[]): string {
+  return parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
 }
 
 /**
@@ -882,14 +895,11 @@ async function unsetError(
 }
 
 /** The refusal of a `:=` that names no single element. */
-function badSubscript(p: BraceParse): ExitSignal {
-  return new ExitSignal(
-    1,
+function badSubscript(p: BraceParse): DiscardSignal {
+  return new DiscardSignal(
     new TextEncoder().encode(
       `bash: ${p.varName ?? ''}[${p.subscript ?? ''}]: bad array subscript\n`,
     ),
-    null,
-    1,
   )
 }
 
@@ -964,11 +974,14 @@ function valueOp(op: string, val: string, groups: string[]): string {
  */
 /**
  * The line's death for a refused expansion-time write: the gate's own
- * reason, or the `-i` coercion refusing the text; status 1, the shape
- * `${var:?}` uses.
+ * reason discards the line, as a readonly name's does; the `-i` coercion
+ * refusing the text ends the shell with 1, as `n=1+` does.
  */
 function writeRefusal(err: PolicyDenied | ArithError): ExitSignal {
-  return new ExitSignal(1, new TextEncoder().encode(`bash: ${err.message}\n`), null, 1)
+  const stderr = new TextEncoder().encode(`bash: ${err.message}\n`)
+  return err instanceof PolicyDenied
+    ? new DiscardSignal(stderr)
+    : new ExitSignal(1, stderr, null, 1)
 }
 
 /**
@@ -1020,11 +1033,8 @@ export async function expansionWrite(
   }
   if (status === 'readonly') throw new ReadonlyVariableError(name)
   if (status !== 'ok') {
-    throw new ExitSignal(
-      1,
+    throw new DiscardSignal(
       new TextEncoder().encode(`bash: ${name}[${key ?? ''}]: bad array subscript\n`),
-      null,
-      1,
     )
   }
 }
@@ -1067,6 +1077,8 @@ async function expandBracesIn(
   operand: ArithOperand,
   quoted: boolean,
 ): Promise<Chunk[]> {
+  const text = node.text.trimStart()
+  if (badSubstitution(text)) throw new BadSubstitution(text)
   const p = parseBraces(node)
   const env = visibleEnv(session)
   const arrays = visibleArrays(session)
@@ -1083,9 +1095,15 @@ async function expandBracesIn(
     for (let gi = 0; gi < p.groups.length; gi++) {
       const group = p.groups[gi] ?? []
       if (gi === 0 && p.op !== null && PATTERN_OPS.has(p.op)) {
-        groups.push(await patternGroup(group, expandChild, session, callStack))
+        groups.push(
+          await named(source(group), patternGroup(group, expandChild, session, callStack)),
+        )
       } else {
-        groups.push(chunksText(await wordChunks(group, expandChild, false, session, callStack)))
+        groups.push(
+          chunksText(
+            await named(source(group), wordChunks(group, expandChild, false, session, callStack)),
+          ),
+        )
       }
     }
   }
@@ -1123,7 +1141,7 @@ async function expandBracesIn(
     // element 2. An empty key reads as unset (GNU warns "bad array
     // subscript" on stderr and expands empty; expansion has no warning
     // channel, so the empty answer stands alone).
-    const key = await expandSubscriptKey(p, expandChild)
+    const key = await named(p.subscript, expandSubscriptKey(p, expandChild))
     val = amap[key] ?? ''
     varInEnv = amap[key] !== undefined
     writeKey = key
@@ -1135,7 +1153,7 @@ async function expandBracesIn(
       const scalar = env[baseName]
       arr = scalar === undefined ? [] : [scalar]
     }
-    const subText = await expandSubscriptKey(p, expandChild)
+    const subText = await named(p.subscript, expandSubscriptKey(p, expandChild))
     let idx = await expansionIndex(session, view, subText)
     if (idx < 0) idx += arrayExtent(arr)
     val = arrayGet(arr, idx)
@@ -1343,11 +1361,8 @@ async function expandSplat(
     }
     if (triggered && p.subscript !== null) throw badSubscript(p)
     if (triggered) {
-      throw new ExitSignal(
-        1,
+      throw new DiscardSignal(
         new TextEncoder().encode(`bash: $${p.varName ?? ''}: cannot assign in this way\n`),
-        null,
-        1,
       )
     }
   }

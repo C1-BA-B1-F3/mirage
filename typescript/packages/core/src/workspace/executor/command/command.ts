@@ -18,6 +18,7 @@ import { SPECS } from '../../../commands/spec/index.ts'
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
 import type { CallStack } from '../../../shell/call_stack.ts'
+import type { JobConsole } from '../../../shell/console/index.ts'
 import type { JobTable } from '../../../shell/job_table/index.ts'
 import { PathSpec } from '../../../types.ts'
 import {
@@ -56,6 +57,7 @@ import {
 import { resolveNewerRefs } from '../find_refs.ts'
 import type { ExecuteFn } from '../../expand/node.ts'
 import { FindParseError } from '../../../commands/errors.ts'
+import { withDispatchRuleGuard } from '../../../commands/builtin/generic_bind/adapter.ts'
 import { maybeWithTimeout } from '../../../commands/builtin/utils/limit.ts'
 import { resolveProducer, resolveLimit } from '../../../policy/index.ts'
 import type { ExecuteNodeFn, JobHandlerResult } from '../jobs.ts'
@@ -175,6 +177,8 @@ export async function handleCommand(
   executeFn?: ExecuteFn,
   handed: HandOff | null = null,
   signal?: AbortSignal,
+  // Where a function body writes its statements as they finish.
+  sink?: JobConsole,
 ): Promise<Result> {
   if (parts.length === 0) {
     return [null, new IOResult(), new ExecutionNode({ command: '', exitCode: 0 })]
@@ -215,6 +219,7 @@ export async function handleCommand(
       agentId,
       handed,
       registry.decisions,
+      sink,
     )
   }
 
@@ -263,6 +268,9 @@ export async function handleCommand(
       mergeSignals(signal, session.abortSignal),
     )
   }
+
+  // Every op the command issues from here carries its gate to the door.
+  dispatch = withDispatchRuleGuard(dispatch)
 
   if (cmdName in CWD_DEFAULT_RAW) {
     const operand = defaultCwdOperand(parts, cmdName, registry, session.cwd, stdin)

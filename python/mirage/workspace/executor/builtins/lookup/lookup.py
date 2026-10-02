@@ -60,7 +60,7 @@ def handle_type(
         return result(
             "type",
             exit_code=2,
-            stderr=f"type: {scan.bad}: invalid option\n{TYPE_USAGE}",
+            stderr=f"bash: type: {scan.bad}: invalid option\n{TYPE_USAGE}",
         )
     mode = last_of(scan.letters, "tpP")
     all_mode = "a" in scan.letters
@@ -79,7 +79,7 @@ def handle_type(
         if not kinds:
             all_found = False
             if mode is None:
-                err_lines.append(f"type: {name}: not found\n")
+                err_lines.append(f"bash: type: {name}: not found\n")
             continue
         if mode == "t":
             out_lines.extend(f"{kind.value}\n" for kind in kinds)

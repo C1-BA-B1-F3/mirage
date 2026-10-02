@@ -17,9 +17,9 @@ import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { HISTORY_HISTORY } from './history.ts'
-import { HISTORY_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const HISTORY_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<HistoryAccessor>(VFSName.HISTORY, HISTORY_IO),
+  ...makeGenericCommands<HistoryAccessor>(VFSName.HISTORY, IO),
   ...HISTORY_HISTORY,
 ]

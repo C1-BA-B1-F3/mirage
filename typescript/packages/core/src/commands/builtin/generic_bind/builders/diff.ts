@@ -15,7 +15,7 @@
 import { diffGeneric } from '../../generic/diff.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const DIFF_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'diff',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

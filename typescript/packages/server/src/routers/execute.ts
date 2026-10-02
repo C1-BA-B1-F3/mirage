@@ -93,17 +93,26 @@ export function registerExecuteRoutes(app: FastifyInstance, deps: ExecuteRoutesD
       }
       const background = req.query.background === 'true'
       const entry = deps.registry.get(wsId)
-      const job = deps.jobs.submit(wsId, body.command, async (signal) =>
-        entry.runner.ws.shell(body.command, {
-          ...(body.sessionId !== undefined ? { sessionId: body.sessionId } : {}),
-          ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
-          ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
-          ...(body.runtime !== undefined ? { runtime: body.runtime } : {}),
-          ...(body.record !== undefined ? { record: body.record } : {}),
-          // Pyodide rejects Node Buffer even though it subclasses Uint8Array.
-          ...(stdin !== undefined ? { stdin: new Uint8Array(stdin) } : {}),
-          signal,
-        }),
+      await entry.runner.ws.ensureSessionsLoaded()
+      const sessionId = body.sessionId ?? entry.runner.ws.defaultSessionId
+      let job = await deps.jobs.submit(
+        wsId,
+        body.command,
+        async (signal, executionScope) =>
+          ioResultToDict(
+            await entry.runner.ws.shell(body.command, {
+              sessionId,
+              executionScope,
+              ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
+              ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
+              ...(body.runtime !== undefined ? { runtime: body.runtime } : {}),
+              ...(body.record !== undefined ? { record: body.record } : {}),
+              // Pyodide rejects Node Buffer even though it subclasses Uint8Array.
+              ...(stdin !== undefined ? { stdin: new Uint8Array(stdin) } : {}),
+              signal,
+            }),
+          ),
+        sessionId,
       )
       if (background) {
         return reply.status(202).send({
@@ -112,12 +121,15 @@ export function registerExecuteRoutes(app: FastifyInstance, deps: ExecuteRoutesD
           submittedAt: job.submittedAt,
         })
       }
-      await deps.jobs.wait(job.id)
+      job = await deps.jobs.wait(job.id)
       reply.header('X-Mirage-Job-Id', job.id)
+      if (job.status === JobStatus.CANCELED) {
+        return reply.status(499).send({ detail: 'job canceled' })
+      }
       if (job.status === JobStatus.FAILED) {
         return reply.status(500).send({ detail: job.error ?? 'execute failed' })
       }
-      return ioResultToDict(job.result)
+      return job.result
     },
   )
 }

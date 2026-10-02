@@ -2667,7 +2667,7 @@
           "expect": {
             "value": {
               "exit_code": 0,
-              "stdout": "kill: (PID) - Operation not permitted\n",
+              "stdout": "bash: kill: (PID) - Operation not permitted\n",
               "stderr": ""
             }
           },
@@ -2951,6 +2951,209 @@
         {
           "op": "close_session",
           "id": "capped"
+        }
+      ]
+    },
+    {
+      "id": "cpu_arithmetic_cancels_before_tail_write",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/data": {
+            "vfs": "ram", "mode": "write"
+          }
+        },
+        "runtimes": []
+      },
+      "steps": [
+        {
+          "op": "exec",
+          "command": "true",
+          "expect": {"value": {"exit_code": 0}}
+        },
+        {
+          "op": "exec",
+          "command": "for ((i=0;i<9000;i++)); do :; done; echo BAD > /data/late",
+          "cancel_after_ms": 20,
+          "expect": {
+            "value": {
+              "aborted": true
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "test ! -e /data/late",
+          "expect": {
+            "value": {
+              "exit_code": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cpu_nested_eval_cancels_before_tail_write",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/data": {
+            "vfs": "ram", "mode": "write"
+          }
+        },
+        "runtimes": []
+      },
+      "steps": [
+        {
+          "op": "exec",
+          "command": "true",
+          "expect": {"value": {"exit_code": 0}}
+        },
+        {
+          "op": "exec",
+          "command": "for ((i=0;i<9000;i++)); do eval ':'; done; echo BAD > /data/late",
+          "cancel_after_ms": 20,
+          "expect": {
+            "value": {
+              "aborted": true
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "test ! -e /data/late",
+          "expect": {
+            "value": {
+              "exit_code": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cpu_pipeline_cancels_before_tail_write",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/data": {
+            "vfs": "ram", "mode": "write"
+          }
+        },
+        "runtimes": []
+      },
+      "steps": [
+        {
+          "op": "exec",
+          "command": "true",
+          "expect": {"value": {"exit_code": 0}}
+        },
+        {
+          "op": "exec",
+          "command": "for ((i=0;i<9000;i++)); do echo hi | cat > /dev/null; done; echo BAD > /data/late",
+          "cancel_after_ms": 20,
+          "expect": {
+            "value": {
+              "aborted": true
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "test ! -e /data/late",
+          "expect": {
+            "value": {
+              "exit_code": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "background_nested_eval_survives_foreground_abort",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/data": {
+            "vfs": "ram", "mode": "write"
+          }
+        },
+        "runtimes": []
+      },
+      "steps": [
+        {
+          "op": "exec",
+          "command": "true",
+          "expect": {"value": {"exit_code": 0}}
+        },
+        {
+          "op": "exec",
+          "command": "(sleep 0.08; eval 'echo alive > /data/background') & for ((i=0;i<9000;i++)); do :; done",
+          "cancel_after_ms": 20,
+          "expect": {
+            "value": {
+              "aborted": true
+            }
+          }
+        },
+        {
+          "op": "drain_processes"
+        },
+        {
+          "op": "exec",
+          "command": "cat /data/background",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "alive\n"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cpu_work_yields_to_an_independent_session",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/data": {
+            "vfs": "ram", "mode": "write"
+          }
+        },
+        "runtimes": []
+      },
+      "steps": [
+        {
+          "op": "session",
+          "id": "other"
+        },
+        {
+          "op": "exec",
+          "command": "true",
+          "expect": {"value": {"exit_code": 0}}
+        },
+        {
+          "op": "concurrent",
+          "steps": [
+            {
+              "op": "exec",
+              "command": "for ((i=0;i<3000;i++)); do :; done; echo done > /data/long"
+            },
+            {
+              "op": "exec",
+              "command": "test ! -e /data/long",
+              "session": "other"
+            }
+          ],
+          "expect": {
+            "value": [
+              {
+                "exit_code": 0
+              },
+              {
+                "exit_code": 0
+              }
+            ]
+          }
         }
       ]
     }

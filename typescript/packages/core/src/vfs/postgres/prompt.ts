@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const POSTGRES_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   database.json                  cross-schema graph + sizes
   <schema>/                      Postgres schema (namespace)
     tables/<table>/

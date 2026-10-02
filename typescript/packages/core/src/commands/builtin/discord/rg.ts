@@ -17,7 +17,7 @@ import type { DiscordAccessor } from '../../../accessor/discord.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { DiscordApiError } from '../../../core/discord/client.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { DISCORD_IO } from './io.ts'
+import { IO } from './io.ts'
 import { read as discordRead } from '../../../core/discord/read.ts'
 import { readdir as discordReaddir } from '../../../core/discord/readdir.ts'
 import { stat as discordStat } from '../../../core/discord/stat.ts'
@@ -34,7 +34,7 @@ import { parseFlags, refuseMissingPattern, rgGeneric } from '../generic/rg.ts'
 import { RG_SEARCH_HONORED, SEARCH_MAX_RESULTS } from './grep.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
-const resolveDiscordGlob = resolveGlobOf(DISCORD_IO)
+const resolveDiscordGlob = resolveGlobOf(IO)
 
 const ENC = new TextEncoder()
 

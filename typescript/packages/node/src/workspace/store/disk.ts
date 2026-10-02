@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { ObserverStore } from '@struktoai/mirage-core/observe/store'
@@ -34,6 +35,10 @@ function expandHome(p: string): string {
   if (p.startsWith('~/')) return path.join(homedir(), p.slice(2))
   return p
 }
+
+// The workspace ids that would name the state root or its `workspaces`
+// directory rather than one workspace's own.
+export const DOT_IDS: ReadonlySet<string> = new Set(['', '.', '..'])
 
 // Match Python's urllib quote(safe="") for the workspace path segment.
 function quoteSegment(name: string): string {
@@ -80,6 +85,10 @@ export class DiskWorkspaceStateStore extends WorkspaceStateStore {
   }
 
   private wsRoot(workspaceId: string): string {
+    // The id is one path segment, quoted so a separator cannot leave it;
+    // the dot names are the escapes quoting keeps, and deleting a
+    // workspace removes this directory whole, so they are refused.
+    if (DOT_IDS.has(workspaceId)) throw new Error(`invalid workspace id: ${workspaceId}`)
     return path.join(this.root, 'workspaces', quoteSegment(workspaceId))
   }
 
@@ -134,6 +143,14 @@ export class DiskWorkspaceStateStore extends WorkspaceStateStore {
     expectedGeneration: number,
   ): Promise<boolean> {
     return await this.metaClient(workspaceId).casPut('workspace', fields, expectedGeneration)
+  }
+
+  protected async forgetSelf(workspaceId: string): Promise<void> {
+    for (const handles of [this.namespaces, this.observers, this.sessionTables, this.meta]) {
+      await handles.get(workspaceId)?.close()
+      handles.delete(workspaceId)
+    }
+    await rm(this.wsRoot(workspaceId), { recursive: true, force: true })
   }
 
   protected async closeSelf(): Promise<void> {

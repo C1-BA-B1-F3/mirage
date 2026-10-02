@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf '  a   b  \\n' | { read rw1 rw2; echo \"[$rw1][$rw2]\"; }",
+      "command": "printf '  a   b  \\n' | { read rw1 rw2; echo \"[$rw1][$rw2]\"; }; (read <<< '  a\\ b  '; echo \"[$REPLY]\")",
       "expect": {
         "exit": 0,
-        "stdout": "[a][b]\n",
+        "stdout": "[a][b]\n[  a b  ]\n",
         "stderr": ""
       }
     }

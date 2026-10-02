@@ -15,7 +15,7 @@
 import { cmpGeneric } from '../../generic/cmp.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const CMP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'cmp',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

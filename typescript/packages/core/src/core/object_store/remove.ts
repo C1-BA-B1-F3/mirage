@@ -20,14 +20,21 @@ import {
   invalidateSubtree,
 } from '../../cache/context.ts'
 import { record, startOp } from '../../observe/context.ts'
-import { enoent, enotempty } from '../../utils/errors.ts'
+import { eisdir, enoent, enotempty } from '../../utils/errors.ts'
 import * as kp from '../../utils/key_prefix.ts'
 import { rstripSlash } from '../../utils/slash.ts'
+import { isDir } from '../../utils/stat_view.ts'
 import type { ObjectStoreDriver, PathFn } from './driver.ts'
+import { makeStat } from './stat.ts'
 
 /** Build single-key deletion over one driver. */
 export function makeUnlink<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>): PathFn<A> {
+  const stat = makeStat(driver)
   return async function unlink(accessor, path) {
+    // unlink(2) answers ENOENT for a missing name and EISDIR for a
+    // directory; a store's delete is silent for both, and only the
+    // command builders check first (see `makeRmdir`).
+    if (isDir(await stat(accessor, path))) throw eisdir(path)
     const key = kp.apply(driver.keyPrefixOf(accessor), path.mountPath)
     const timer = startOp()
     const settle = async (): Promise<void> => {

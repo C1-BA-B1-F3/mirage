@@ -4,7 +4,7 @@ import { read, readStream } from '../../../core/wandb/read.ts'
 import { readdir } from '../../../core/wandb/readdir.ts'
 import { stat } from '../../../core/wandb/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
-export const WANDB_IO: CommandIO<WandbAccessor> = new VFSAdapter<WandbAccessor>({
+export const IO: CommandIO<WandbAccessor> = new VFSAdapter<WandbAccessor>({
   read: { readdir, readBytes: read, stat },
   native: { readStream },
   isMounted: () => true,

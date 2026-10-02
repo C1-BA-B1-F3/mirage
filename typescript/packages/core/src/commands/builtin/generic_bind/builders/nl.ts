@@ -15,7 +15,7 @@
 import { nlGeneric } from '../../generic/nl.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const NL_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'nl',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

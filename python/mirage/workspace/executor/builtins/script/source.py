@@ -19,6 +19,8 @@ from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
+from mirage.shell.errors import ReturnSignal
 from mirage.types import PathSpec, word_text
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.scope import _scope_path
@@ -44,6 +46,8 @@ async def handle_source(
     args: list[str] | None = None,
     stdin: ByteSource | None = None,
     call_stack: CallStack | None = None,
+    sink: JobConsole | None = None,
+    name: str = "source",
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Read a script file and execute it in the calling shell.
 
@@ -64,38 +68,61 @@ async def handle_source(
             a ``shift`` or ``set --`` in it changes them.
         stdin (ByteSource | None): the caller's standard input, which
             the script's statements read in turn.
-        call_stack (CallStack | None): function-call scope, if any; a
-            file sourced inside a function sees the function's
-            parameters.
+        call_stack (CallStack | None): the caller's frames, which the
+            file runs on: sourced inside a function it sees the
+            function's parameters, its locals and its loops.
+        sink (JobConsole | None): where the script's statements write as
+            they finish, None to return them.
+        name (str): the builtin as typed, ``source`` or ``.``.
     """
     raw = _scope_path(path)
     if word_text(path) == "":
         # The empty name is a filename bash tries to open, not a missing
         # argument, so it fails like any file that is not there.
         return script_error(
-            "source", ": No such file or directory", 1, command="source "
+            "bash", ": No such file or directory", 1, command="source "
         )
     try:
         script = await read_script_text(dispatch, raw, session.cwd)
-    except FS_ERRORS as exc:
+    except IsADirectoryError:
         return script_error(
-            "source", f"{raw}: {fs_strerror(exc)}", 1, command=f"source {raw}"
+            f"bash: {name}", f"{raw}: is a directory", 1, f"source {raw}"
         )
-    # The file runs as a line of its own, which reads the shell's
-    # parameters, so the ones in scope stand in for them while it runs.
-    shell_params = session.positional_args
-    session.positional_args = args or positional_params(session, call_stack)
-    session.source_depth += 1
+    except FS_ERRORS as exc:
+        # bash blames a file it cannot read on itself, not the builtin.
+        return script_error(
+            "bash", f"{raw}: {fs_strerror(exc)}", 1, f"source {raw}"
+        )
+    # The file is the caller, run in a frame of its own: `return` ends
+    # it, `FUNCNAME` names it `source`, and it runs in the caller's
+    # loops, so a `break` in it ends one of theirs. Its arguments are its
+    # parameters while it runs; without any it has the caller's, and a
+    # `shift` in it shifts them.
+    cs = call_stack if call_stack is not None else CallStack()
+    cs.push(args or list(positional_params(session, cs)), "source", True)
+    outer_names = session.function_names
+    if outer_names is not None:
+        session.function_names = cs.function_names()
     try:
         io = await execute_fn(
-            script, session_id=session.session_id, stdin=stdin
+            script,
+            session_id=session.session_id,
+            stdin=stdin,
+            sink=sink,
+            call_stack=cs,
+        )
+    except ReturnSignal as sig:
+        io = IOResult(
+            stdout=sig.stdout,
+            stderr=sig.stderr or None,
+            exit_code=sig.exit_code,
         )
     finally:
-        session.source_depth -= 1
-        scoped = session.positional_args
-        session.positional_args = shell_params
+        frame = cs.pop()
+        if session.function_names is not None:
+            session.function_names = outer_names
         if not args:
-            set_positional_params(session, call_stack, scoped)
+            set_positional_params(session, cs, frame.positional)
     return (
         io.stdout,
         io,
@@ -113,8 +140,11 @@ async def source_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     operands = list(call.argv.operands)
+    name = str(call.argv.name)
     if not operands:
-        return script_error("source", SOURCE_USAGE, 2)
+        return script_error(
+            f"bash: {name}", SOURCE_USAGE.format(name=name), 2, name
+        )
     return await handle_source(
         call.dispatch,
         call.execute_fn,
@@ -123,4 +153,6 @@ async def source_builtin(call: BuiltinCall) -> Result:
         [word_text(o) for o in operands[1:]],
         call.stdin,
         call.call_stack,
+        call.sink,
+        name,
     )

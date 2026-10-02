@@ -26,10 +26,12 @@ from mirage.core.object_store.driver import (
     PathFn,
     RmdirFn,
 )
+from mirage.core.object_store.stat import make_stat
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
-from mirage.utils.errors import enoent, enotempty
+from mirage.utils.errors import eisdir, enoent, enotempty
+from mirage.utils.stat_view import is_dir
 
 
 def make_unlink(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
@@ -39,7 +41,14 @@ def make_unlink(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
+    stat = make_stat(driver)
+
     async def unlink(accessor: A, path_spec: PathSpec) -> None:
+        # unlink(2) answers ENOENT for a missing name and EISDIR for a
+        # directory; a store's delete is silent for both, and only the
+        # command builders check first (see `make_rmdir`).
+        if is_dir(await stat(accessor, path_spec, index=NULL_INDEX)):
+            raise eisdir(path_spec)
         path = path_spec.mount_path
         key = kp.apply(driver.key_prefix_of(accessor), path)
         timer = start_op()

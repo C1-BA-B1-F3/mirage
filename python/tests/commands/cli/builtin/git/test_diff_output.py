@@ -68,6 +68,28 @@ async def test_native_git(readonly_repo, form):
     )
 
 
+# A named commit always shows its header, even when the pathspec leaves no
+# diff (git 2.55 in CI; Apple's git 2.54 drops the commit, so these stay
+# out of the native list).
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "form,stdout",
+    [
+        ("show --format=%s --name-status HEAD~1 -- nothing", b"add app\n"),
+        ("show --format=%s --name-status HEAD -- app.txt", b"merge side\n\n"),
+        (
+            "show --format=%s --first-parent --name-status HEAD -- app.txt",
+            b"merge side\n",
+        ),
+    ],
+)
+async def test_a_named_commit_keeps_its_header(readonly_repo, form, stdout):
+    with mounted(readonly_repo) as ws:
+        ws.register_cli("git", GIT)
+        got = await ws.shell("git -C /repo " + form)
+    assert (got.exit_code, got.stdout) == (0, stdout)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("form", ["--version", "version", "-v"])
 async def test_version_without_repository(git_ws, form):

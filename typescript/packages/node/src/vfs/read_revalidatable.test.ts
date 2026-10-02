@@ -33,18 +33,18 @@ import { applyIo } from '@struktoai/mirage-core/cache/file/io'
 import { CachableAsyncIterator } from '@struktoai/mirage-core/io/cachable_iterator'
 import { IOResult } from '@struktoai/mirage-core/io/types'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
-import { S3_IO } from '@struktoai/mirage-core/commands/builtin/s3/io'
-import { ONEDRIVE_IO } from '@struktoai/mirage-core/commands/builtin/onedrive/io'
-import { SHAREPOINT_IO } from '@struktoai/mirage-core/commands/builtin/sharepoint/io'
+import * as s3Io from '@struktoai/mirage-core/commands/builtin/s3/io'
+import * as onedriveIo from '@struktoai/mirage-core/commands/builtin/onedrive/io'
+import * as sharepointIo from '@struktoai/mirage-core/commands/builtin/sharepoint/io'
 import type { OneDriveAccessor } from '@struktoai/mirage-core/accessor/onedrive'
 import type { SharePointAccessor } from '@struktoai/mirage-core/accessor/sharepoint'
-import { GDOCS_IO } from '@struktoai/mirage-core/commands/builtin/gdocs/io'
-import { GDRIVE_IO } from '@struktoai/mirage-core/commands/builtin/gdrive/io'
-import { GSHEETS_IO } from '@struktoai/mirage-core/commands/builtin/gsheets/io'
-import { GSLIDES_IO } from '@struktoai/mirage-core/commands/builtin/gslides/io'
+import * as gdocsIo from '@struktoai/mirage-core/commands/builtin/gdocs/io'
+import * as gdriveIo from '@struktoai/mirage-core/commands/builtin/gdrive/io'
+import * as gsheetsIo from '@struktoai/mirage-core/commands/builtin/gsheets/io'
+import * as gslidesIo from '@struktoai/mirage-core/commands/builtin/gslides/io'
 import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { GDriveAccessor } from '@struktoai/mirage-core/accessor/gdrive'
-import { GITHUB_IO } from '@struktoai/mirage-core/commands/builtin/github/io'
+import * as githubIo from '@struktoai/mirage-core/commands/builtin/github/io'
 import { stream as githubStream } from '@struktoai/mirage-core/core/github/read'
 import type { GitHubAccessor } from '@struktoai/mirage-core/accessor/github'
 import { DRIVER as S3_DRIVER } from '@struktoai/mirage-core/core/s3/driver'
@@ -55,9 +55,9 @@ import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import type { GridFSAccessor } from '../accessor/gridfs.ts'
 import type { HfBucketsAccessor } from '../accessor/hf_buckets.ts'
 import type { HfHubAccessor } from '../accessor/hf_hub.ts'
-import { HF_BUCKETS_IO } from '../commands/builtin/hf_buckets/io.ts'
+import * as hfBucketsIo from '../commands/builtin/hf_buckets/io.ts'
 import { fakeHfOperator } from '../core/hf_buckets/mock.ts'
-import { HF_HUB_IO } from '../commands/builtin/hf_hub/io.ts'
+import * as hfHubIo from '../commands/builtin/hf_hub/io.ts'
 import { FakeHub, blobOid, serveHub, xetHash } from '../core/hf_hub/_test_util.ts'
 import {
   DRIVE_ID,
@@ -67,7 +67,7 @@ import {
   SITE_NAME,
   serveGraph,
 } from '../core/msgraph/_test_util.ts'
-import { GRIDFS_IO } from '../commands/builtin/gridfs/io.ts'
+import * as gridfsIo from '../commands/builtin/gridfs/io.ts'
 import { Workspace } from '../workspace.ts'
 import { buildVfs, knownVfsNames } from './registry.ts'
 import { installS3Mock, type S3Mock } from './s3/mock.ts'
@@ -500,9 +500,9 @@ const GAPPS: Record<
   string,
   [string, CommandIO, (title: string, id: string, modified: string) => string]
 > = {
-  gdocs: ['application/vnd.google-apps.document', GDOCS_IO as CommandIO, docFilename],
-  gsheets: ['application/vnd.google-apps.spreadsheet', GSHEETS_IO as CommandIO, sheetFilename],
-  gslides: ['application/vnd.google-apps.presentation', GSLIDES_IO as CommandIO, slideFilename],
+  gdocs: ['application/vnd.google-apps.document', gdocsIo.IO as CommandIO, docFilename],
+  gsheets: ['application/vnd.google-apps.spreadsheet', gsheetsIo.IO as CommandIO, sheetFilename],
+  gslides: ['application/vnd.google-apps.presentation', gslidesIo.IO as CommandIO, slideFilename],
 }
 
 // The drive each Graph backend addresses in the fake: OneDrive the signed-in
@@ -793,9 +793,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         gh.files.set(key, next)
       },
-      readBytes: (p) => GITHUB_IO.readBytes(accessor, p, ownIndex(vfs)),
-      readStream: (p) => GITHUB_IO.readStream(accessor, p, ownIndex(vfs)),
-      stat: (p) => GITHUB_IO.stat(accessor, p, ownIndex(vfs)),
+      readBytes: (p) => githubIo.IO.readBytes(accessor, p, ownIndex(vfs)),
+      readStream: (p) => githubIo.IO.readStream(accessor, p, ownIndex(vfs)),
+      stat: (p) => githubIo.IO.stat(accessor, p, ownIndex(vfs)),
       streamSlot: 'bytes',
     }
   }
@@ -831,9 +831,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
         key,
         fetches: () => graph.fetches() - before,
         rewrite,
-        readBytes: (p) => ONEDRIVE_IO.readBytes(accessor, p),
-        readStream: (p) => ONEDRIVE_IO.readStream(accessor, p),
-        stat: (p) => ONEDRIVE_IO.stat(accessor, p),
+        readBytes: (p) => onedriveIo.IO.readBytes(accessor, p),
+        readStream: (p) => onedriveIo.IO.readStream(accessor, p),
+        stat: (p) => onedriveIo.IO.stat(accessor, p),
         streamSlot: 'stream',
       }
     }
@@ -845,9 +845,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       key,
       fetches: () => graph.fetches() - before,
       rewrite,
-      readBytes: (p) => SHAREPOINT_IO.readBytes(accessor, p),
-      readStream: (p) => SHAREPOINT_IO.readStream(accessor, p),
-      stat: (p) => SHAREPOINT_IO.stat(accessor, p),
+      readBytes: (p) => sharepointIo.IO.readBytes(accessor, p),
+      readStream: (p) => sharepointIo.IO.readStream(accessor, p),
+      stat: (p) => sharepointIo.IO.stat(accessor, p),
       streamSlot: 'stream',
     }
   }
@@ -868,9 +868,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         item.content = next
       },
-      readBytes: (p) => GDRIVE_IO.readBytes(accessor, p, index),
-      readStream: (p) => GDRIVE_IO.readStream(accessor, p, index),
-      stat: (p) => GDRIVE_IO.stat(accessor, p),
+      readBytes: (p) => gdriveIo.IO.readBytes(accessor, p, index),
+      readStream: (p) => gdriveIo.IO.readStream(accessor, p, index),
+      stat: (p) => gdriveIo.IO.stat(accessor, p),
       streamSlot: 'bytes',
     }
   }
@@ -933,9 +933,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         op.files.set(stored, Buffer.from(next))
       },
-      readBytes: (p) => HF_BUCKETS_IO.readBytes(accessor, p),
-      readStream: (p) => HF_BUCKETS_IO.readStream(accessor, p),
-      stat: (p) => HF_BUCKETS_IO.stat(accessor, p),
+      readBytes: (p) => hfBucketsIo.IO.readBytes(accessor, p),
+      readStream: (p) => hfBucketsIo.IO.readStream(accessor, p),
+      stat: (p) => hfBucketsIo.IO.stat(accessor, p),
       streamSlot: 'stream',
     }
   }
@@ -982,9 +982,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         files.set(stored, next)
       },
-      readBytes: (p) => HF_HUB_IO.readBytes(accessor, p),
-      readStream: (p) => HF_HUB_IO.readStream(accessor, p),
-      stat: (p) => HF_HUB_IO.stat(accessor, p),
+      readBytes: (p) => hfHubIo.IO.readBytes(accessor, p),
+      readStream: (p) => hfHubIo.IO.readStream(accessor, p),
+      stat: (p) => hfHubIo.IO.stat(accessor, p),
       streamSlot: 'stream',
     }
   }
@@ -1009,9 +1009,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         H.gridfs.set(stored, gridfsDoc(stored, next, 'aaaaaaaaaaaaaaaaaaaaaaaa', 2022))
       },
-      readBytes: (p) => GRIDFS_IO.readBytes(accessor, p),
-      readStream: (p) => GRIDFS_IO.readStream(accessor, p),
-      stat: (p) => GRIDFS_IO.stat(accessor, p),
+      readBytes: (p) => gridfsIo.IO.readBytes(accessor, p),
+      readStream: (p) => gridfsIo.IO.readStream(accessor, p),
+      stat: (p) => gridfsIo.IO.stat(accessor, p),
       streamSlot: 'stream',
     }
   }
@@ -1034,9 +1034,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
     rewrite: (next) => {
       s3.store.set('b', stored, next)
     },
-    readBytes: (p) => S3_IO.readBytes(accessor, p),
-    readStream: (p) => S3_IO.readStream(accessor, p),
-    stat: (p) => S3_IO.stat(accessor, p),
+    readBytes: (p) => s3Io.IO.readBytes(accessor, p),
+    readStream: (p) => s3Io.IO.readStream(accessor, p),
+    stat: (p) => s3Io.IO.stat(accessor, p),
     streamSlot: 'stream',
   }
 }
@@ -1476,7 +1476,7 @@ describe('the read-token contract', () => {
   it("github's stream is its read, so it records through record", () => {
     // Its expected stream slot is "bytes" for that reason. A native stream
     // that forgot to record would otherwise hide behind that slot.
-    expect(GITHUB_IO.readStream).toBe(githubStream)
+    expect(githubIo.IO.readStream).toBe(githubStream)
   })
 
   it('the contract goes red on github stamping another kind', async () => {

@@ -526,7 +526,7 @@ export function commandIoFacts(
         if (
           ts.isVariableDeclaration(node) &&
           ts.isIdentifier(node.name) &&
-          node.name.text.endsWith('_IO') &&
+          node.name.text === 'IO' &&
           node.initializer !== undefined
         ) {
           let value = node.initializer
@@ -543,10 +543,10 @@ export function commandIoFacts(
             adapted = true
           }
           if (!ts.isObjectLiteralExpression(value)) {
-            throw new Error(`${file}: cannot inspect the *_IO declaration`)
+            throw new Error(`${file}: cannot inspect the IO declaration`)
           }
           if (literal !== undefined) {
-            throw new Error(`${file} declares more than one *_IO object literal`)
+            throw new Error(`${file} declares more than one IO object literal`)
           }
           literal = value
         }
@@ -573,7 +573,7 @@ export function commandIoFacts(
       for (const prop of properties) {
         if (ts.isSpreadAssignment(prop)) {
           throw new Error(
-            `${file} spreads into its *_IO literal; the slot dump cannot see through it`,
+            `${file} spreads into its IO literal; the slot dump cannot see through it`,
           )
         }
         const name = prop.name?.getText(source)

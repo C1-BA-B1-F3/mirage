@@ -1,25 +1,25 @@
+import functools
 import posixpath
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
+from mirage.commands.builtin.utils.paths import dispatch_stat, link_target
 from mirage.commands.builtin.utils.wrap import to_pathspec
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import missing_operand_error
+from mirage.context import path_allowed
 from mirage.io.types import ByteSource, IOResult
-from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, StatFn
 from mirage.utils.errors import eloop, enoent, enotdir, fs_error_line
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.utils.path import CycleError
-
-PathStat = Callable[[str], Awaitable[FileStat]]
 
 _MODES = {"canonicalize_existing": "e", "canonicalize_missing": "m"}
 _LINKS = {"logical": "L", "physical": "P", "strip": "s", "no_symlinks": "s"}
+_LOOP_CHECK_AFTER = 20
+_LINK_CEILING = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,8 +59,8 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> RealpathFlags:
     )
 
 
-async def _directory(stat: PathStat, path: str, word: str) -> None:
-    if (await stat(path)).type != FileType.DIRECTORY:
+async def _directory(stat: StatFn, path: str, word: str) -> None:
+    if (await stat(PathSpec.from_str_path(path))).type != FileType.DIRECTORY:
         raise enotdir(word)
 
 
@@ -69,28 +69,35 @@ async def canonicalize(
     cwd: str,
     mode: str,
     nolinks: bool,
-    follow: Callable[[str], str] | None,
-    stat: PathStat,
+    readlink: Callable[[str], str | None] | None,
+    stat: StatFn,
 ) -> str:
     """gnulib's canonicalize_filename_mode, over the workspace, which
     ``realpath`` and ``readlink -f`` share.
 
     A relative word starts at the working directory. Each named component
-    is appended and, unless ``nolinks``, taken through its links, so a
-    ``..`` climbs from where a link leads. A component followed by ``.``
-    or ``..`` must be a directory. A trailing slash rejects an existing
-    non-directory. GNU 9.7's default mode accepts a missing final component
-    with a slash; ``nolinks`` also accepts missing parents. ``e`` requires
-    existence; ``m`` checks nothing and leaves a looping link unresolved.
+    is appended and, unless ``nolinks``, a link there is read and its
+    target put in front of the names left, so a ``..`` climbs from where a
+    link leads. A link the session cannot see is no link, as a hidden path
+    is no path. A component followed by ``.`` or ``..`` must be a
+    directory. A trailing slash rejects an existing non-directory. GNU
+    9.7's default mode accepts a missing final component with a slash;
+    ``nolinks`` also accepts missing parents. ``e`` requires existence;
+    ``m`` checks nothing. A loop is a link met again with the same names
+    left, looked for once 20 links are behind, as gnulib does; a link
+    that grows the names it leaves (``a -> a/x``) never repeats, and GNU
+    walks it until memory runs out, so the walk stops at
+    ``_LINK_CEILING`` links. ``m`` leaves the looping link unresolved.
 
     Args:
         word (str): the path as given.
         cwd (str): the working directory, physical as getcwd's.
         mode (str): ``e``, ``m`` or empty, as ``RealpathFlags.mode``.
         nolinks (bool): resolve no link (``-s``, and ``-L``'s first pass).
-        follow (Callable[[str], str] | None): the namespace's link
-            resolution, None while it holds no link.
-        stat (PathStat): the workspace's stat of one path.
+        readlink (Callable[[str], str | None] | None): one link's target,
+            None for a path that is not a link; None while the namespace
+            holds no link.
+        stat (StatFn): the workspace's stat of one path.
 
     Raises:
         OSError: the first check the walk fails.
@@ -98,26 +105,47 @@ async def canonicalize(
     if not word:
         raise enoent(word)
     names = [n for n in posixpath.join(cwd, word).split("/") if n]
+    slash = word.endswith("/")
     path = "/"
-    for i, name in enumerate(names):
+    last = None
+    links = 0
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    while names:
+        last = name = names.pop(0)
         if name in (".", ".."):
             path = posixpath.dirname(path) if name == ".." else path
             continue
         path = posixpath.join(path, name)
-        try:
-            path = path if nolinks or follow is None else follow(path)
-        except CycleError as exc:
+        target = (
+            None
+            if nolinks or readlink is None or not path_allowed(path)
+            else readlink(path)
+        )
+        if target is not None:
+            links += 1
+            key = (path, tuple(names))
+            if links <= _LOOP_CHECK_AFTER or (
+                key not in seen and links <= _LINK_CEILING
+            ):
+                if links > _LOOP_CHECK_AFTER:
+                    seen.add(key)
+                slash = slash or (not names and target.endswith("/"))
+                names[:0] = [n for n in target.split("/") if n]
+                path = (
+                    "/" if target.startswith("/") else posixpath.dirname(path)
+                )
+                continue
             if mode != "m":
-                raise eloop(word) from exc
-        if mode != "m" and names[i + 1 : i + 2] in ([".."], ["."]):
+                raise eloop(word)
+        if mode != "m" and names[:1] in ([".."], ["."]):
             await _directory(stat, path, word)
-    if mode == "m" or names[-1:] in ([], [".."], ["."]):
+    if mode == "m" or last in (None, "..", "."):
         return path
     try:
-        if word.endswith("/"):
+        if slash:
             await _directory(stat, path, word)
         else:
-            await stat(path)
+            await stat(PathSpec.from_str_path(path))
     except FileNotFoundError:
         if mode == "e":
             raise
@@ -141,9 +169,9 @@ def _relative(path: str, base: str) -> str:
 async def realpath(
     paths: list[PathSpec],
     *,
-    stat: PathStat,
+    stat: StatFn,
     cwd: str = "/",
-    follow: Callable[[str], str] | None = None,
+    readlink: Callable[[str], str | None] | None = None,
     flags: RealpathFlags = RealpathFlags(),
 ) -> tuple[ByteSource | None, IOResult]:
     """Print each operand's canonical path, GNU ``realpath`` (9.7).
@@ -154,10 +182,10 @@ async def realpath(
 
     Args:
         paths (list[PathSpec]): the operands, read as typed.
-        stat (PathStat): the workspace's stat of one path.
+        stat (StatFn): the workspace's stat of one path.
         cwd (str): the working directory.
-        follow (Callable[[str], str] | None): the namespace's link
-            resolution, None while it holds no link.
+        readlink (Callable[[str], str | None] | None): one link's target,
+            None while the namespace holds no link.
         flags (RealpathFlags): the parsed options.
     """
     if not paths:
@@ -165,11 +193,11 @@ async def realpath(
 
     async def canon(word: str) -> str:
         path = await canonicalize(
-            word, cwd, flags.mode, flags.links != "P", follow, stat
+            word, cwd, flags.mode, flags.links != "P", readlink, stat
         )
         if flags.links != "L":
             return path
-        return await canonicalize(path, cwd, flags.mode, False, follow, stat)
+        return await canonicalize(path, cwd, flags.mode, False, readlink, stat)
 
     async def directory(word: str) -> str:
         path = await canon(word)
@@ -219,15 +247,6 @@ async def realpath(
     )
 
 
-def door_stat(dispatch: DispatchFn) -> PathStat:
-    """The workspace's stat of one path, through the op door.
-
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-    """
-    return lambda path: dispatch_stat(dispatch, PathSpec.from_str_path(path))
-
-
 async def realpath_generic(
     paths: list[PathSpec],
     texts: list[str],
@@ -238,13 +257,17 @@ async def realpath_generic(
         mount_prefix_of(paths[0].virtual, paths[0].vfs_path) if paths else ""
     )
 
-    async def stat(path: str) -> FileStat:
-        return await stat_fn(to_pathspec(path, prefix))
+    async def stat(path: PathSpec) -> FileStat:
+        return await stat_fn(to_pathspec(path.virtual, prefix))
 
     return await realpath(
         paths,
-        stat=door_stat(opts.dispatch) if opts.dispatch is not None else stat,
+        stat=(
+            functools.partial(dispatch_stat, opts.dispatch)
+            if opts.dispatch is not None
+            else stat
+        ),
         cwd=opts.cwd.virtual,
-        follow=link_follow(opts.ns.links if opts.ns is not None else None),
+        readlink=link_target(opts.ns.links if opts.ns is not None else None),
         flags=parse_flags(opts.flags),
     )

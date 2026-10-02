@@ -30,7 +30,7 @@ import type {
   PostgresConfigRedacted,
   PostgresConfigResolved,
 } from '@struktoai/mirage-core/vfs/postgres/config'
-import { POSTGRES_PROMPT } from '@struktoai/mirage-core/vfs/postgres/prompt'
+import { PROMPT } from '@struktoai/mirage-core/vfs/postgres/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { PostgresStore } from './store.ts'
@@ -62,7 +62,7 @@ export class PostgresVFS extends BaseVFS {
     this.config = resolvePostgresConfig(config)
     this.store = new PostgresStore(this.config)
     this.accessor = new PostgresAccessor(this.store, this.config)
-    this.prompt = POSTGRES_PROMPT.replace('{prefix}', prefix ?? '')
+    this.prompt = PROMPT.replace('{prefix}', prefix ?? '')
   }
 
   override getState(): PostgresVFSState {

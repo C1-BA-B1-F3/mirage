@@ -167,7 +167,7 @@
       "expect": {
         "exit": 0,
         "stdout": "rc=1\n",
-        "stderr": "kill: (999999) - No such process\nkill: %9: no such job\nkill: abc: arguments must be process or job IDs\nkill: FOO: invalid signal specification\n"
+        "stderr": "bash: kill: (999999) - No such process\nbash: kill: %9: no such job\nbash: kill: abc: arguments must be process or job IDs\nbash: kill: FOO: invalid signal specification\n"
       },
       "note": "bash 5.2's wording for each refusal (debian:stable-slim), with the `bash: line 1:` prefix a non-interactive shell adds left off, as every mirage builtin does."
     },

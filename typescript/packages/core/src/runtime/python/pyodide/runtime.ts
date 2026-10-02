@@ -36,14 +36,14 @@ import {
 } from './interrupt.ts'
 import { loadPyodideRuntime, type PyodideInterface } from './loader.ts'
 import { RuntimeVFS } from '../../vfs.ts'
-import { applyMutation, createJournal, type MutationJournal } from './vfs/journal.ts'
-import { preloadInto } from './vfs/preload.ts'
-import { MirageFs } from './vfs/vfs.ts'
-import { MirageFsSeed } from './vfs/seed.ts'
+import { applyMutation, createJournal, type MutationJournal } from './fs/journal.ts'
+import { preloadInto } from './fs/preload.ts'
+import { PyodideFs } from './fs/fs.ts'
+import { PyodideFsSeed } from './fs/seed.ts'
 import { PyodideExecution } from './execution.ts'
 import { mainFilename } from '../execution.ts'
 import { unhonoredNotice, type InitFlags } from '../flags.ts'
-import type { SyncVFS, XattrOp } from './vfs/types.ts'
+import type { SyncVFS, XattrOp } from './fs/types.ts'
 import { classify } from '../../../errors/index.ts'
 import { decodeBase64, encodeBase64 } from '../../../utils/base64.ts'
 import { PyodideWorkerClient } from './worker/client.ts'
@@ -256,7 +256,7 @@ export class PyodideRuntime extends PythonRuntime implements Evaluator {
   private vfs: RuntimeVFS | null = null
   private readonly journal: MutationJournal = createJournal()
   private readonly mounted = new Set<string>()
-  private readonly mountedFilesystems = new Map<string, MirageFs>()
+  private readonly mountedFilesystems = new Map<string, PyodideFs>()
   // Prefixes this runtime cannot mount, remembered so the refusal is
   // reported once rather than on every run.
   private readonly refused = new Set<string>()
@@ -558,11 +558,11 @@ export class PyodideRuntime extends PythonRuntime implements Evaluator {
       // Collect before touching the mount table: a failed readdir then
       // leaves the previous snapshot serving rather than an empty mount,
       // and the prefix retries on the next run.
-      const seed = new MirageFsSeed()
+      const seed = new PyodideFsSeed()
       if (this.sync === undefined) await preloadInto(seed, vfs, prefix)
       const mountpoint = mountpointOf(prefix)
       if (this.mounted.has(prefix)) pyodide.FS.unmount(mountpoint)
-      const fs = new MirageFs(
+      const fs = new PyodideFs(
         pyodide.FS,
         pyodide.ERRNO_CODES,
         this.journal,

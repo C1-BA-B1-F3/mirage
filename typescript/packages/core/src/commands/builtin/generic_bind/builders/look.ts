@@ -15,7 +15,7 @@
 import { lookGeneric } from '../../generic/look.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const LOOK_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'look',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

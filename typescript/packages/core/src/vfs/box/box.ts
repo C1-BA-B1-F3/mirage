@@ -22,7 +22,7 @@ import { BoxTokenManager } from '../../core/box/client.ts'
 import { BOX_OPS } from '../../ops/box/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { BOX_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactBoxConfig, type BoxConfig, type BoxConfigRedacted } from './config.ts'
@@ -41,7 +41,7 @@ export class BoxVFS extends BaseVFS {
   // included); sizeless weblinks are filtered out of listings.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = BOX_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: BoxConfig
   override readonly accessor: BoxAccessor
 

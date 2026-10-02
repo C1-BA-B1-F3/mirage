@@ -122,6 +122,49 @@ def _stray_case_terminator(node: TSNodeLike) -> str | None:
     return None
 
 
+_BODY_OPENERS = ("do", "{", "then", "else")
+_BODY_CLOSERS = ("done", "}", "fi", "elif", "else")
+
+
+def _empty_compound(node: TSNodeLike) -> str | None:
+    """The token closing a compound list that holds no command.
+
+    bash requires a command in every ``do``, ``then``, ``else`` and brace
+    body (5.2: ``for x in a; do done`` is a syntax error near ``done``);
+    the grammar accepts an empty one, comments aside.
+
+    Args:
+        node (TSNodeLike): root node from parse().
+    """
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        stack.extend(current.children)
+        if current.type not in (
+            "do_group",
+            "compound_statement",
+            "if_statement",
+        ):
+            continue
+        opened = False
+        for kid in (
+            token
+            for child in current.children
+            for token in (
+                child.children
+                if child.type in ("elif_clause", "else_clause")
+                else [child]
+            )
+        ):
+            if opened and kid.type in _BODY_CLOSERS:
+                return (kid.text or b"").decode(errors="replace")
+            if kid.type in _BODY_OPENERS:
+                opened = True
+            elif kid.is_named and kid.type != "comment":
+                opened = False
+    return None
+
+
 def _walk_named(node: TSNodeLike) -> Iterator[TSNodeLike]:
     yield node
     for child in node.named_children:
@@ -199,6 +242,9 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
     stray = _stray_case_terminator(node)
     if stray is not None:
         return stray
+    empty = _empty_compound(node)
+    if empty is not None:
+        return empty
     if not node.has_error:
         return find_unterminated_quote(node)
     previous = None

@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.types import VFSName
 from mirage.vfs.minio.config import MinIOConfig
 from mirage.vfs.minio.prompt import PROMPT
 from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class MinIOVFS(S3AliasVFS):
+    name: str = VFSName.MINIO
     prompt: str = PROMPT
 
     def __init__(self, config: MinIOConfig) -> None:

@@ -35,7 +35,7 @@ import { truncate as opfsTruncate } from '../../../core/opfs/truncate.ts'
 import { unlink as opfsUnlink } from '../../../core/opfs/unlink.ts'
 import { writeBytes as opfsWrite } from '../../../core/opfs/write.ts'
 
-export const OPFS_IO: CommandIO<OPFSAccessor> = new VFSAdapter<OPFSAccessor>({
+export const IO: CommandIO<OPFSAccessor> = new VFSAdapter<OPFSAccessor>({
   read: { readdir: opfsReaddir, readBytes: opfsRead, stat: opfsStat },
   native: {
     readRange: rangeOf(opfsRead),

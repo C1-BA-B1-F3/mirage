@@ -15,7 +15,7 @@
 import { base64Generic } from '../../generic/base64_cmd.ts'
 import { type Builder, dirAwareStat, resolveGlobOf } from '../adapter.ts'
 
-export const BASE64_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'base64',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

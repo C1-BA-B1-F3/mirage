@@ -1,3 +1,4 @@
+import type { Descriptor, StreamOwner } from '../../shell/descriptors.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -53,13 +54,14 @@ import type { MountMode } from '../../types.ts'
  * field the other leaks, and adding a field here is a compile error
  * until `snapshot` and `restore` both carry it. `lastExitCode` is
  * deliberately absent: `$?` after a child shell is the child's status,
- * which is the one thing it reports back. `sourceDepth` is here because a
- * child shell starts outside any `source` its caller is inside.
+ * which is the one thing it reports back. `functionNames` is here because a
+ * child shell starts outside every function and `source` its caller is
+ * inside.
  */
 export interface ChildShellState {
   cwd: string
   logicalCwd: string | undefined
-  sourceDepth: number
+  functionNames: readonly string[] | null
   vars: Record<string, ShellVar>
   functions: Record<string, unknown>
   readonlyFunctions: Set<string>
@@ -72,6 +74,7 @@ export interface ChildShellState {
   shopts: Record<string, boolean>
   aliases: Record<string, string>
   umask: number
+  descriptors: Map<number, Descriptor>
   execStdout: string | null
   execStdoutAppend: boolean
   execStdoutInput: SharedInput | null
@@ -81,7 +84,6 @@ export interface ChildShellState {
   execStdin: SharedInput | null
   execStdinUnreadable: boolean
   execStdinIdentity: string | null
-  execOpened: Set<string>
   randomState: number | null
   randomSeed: string | null
   randomLast: number
@@ -421,6 +423,13 @@ export class SessionState {
   // Empty in a fresh shell, as bash's is: the first `${PIPESTATUS[*]}`
   // expands to nothing until a statement records one.
   pipeStatus: readonly number[] = []
+  // `${FUNCNAME[@]}`: the function frames on the call stack, innermost
+  // first, a sourced file as `source` (`CallStack.functionNames`). Written
+  // where a frame is pushed and popped, and answered by the arrays view
+  // before the store, so an assignment to it is ignored. Null once
+  // `unset FUNCNAME` has made it an ordinary name, as bash's unset does for
+  // the rest of the shell.
+  functionNames: readonly string[] | null = []
   // A pipeline's per-segment statuses, parked by `handlePipe` for the
   // statement boundary that closes it to claim. Null between them.
   pipeStatusPending: readonly number[] | null = null
@@ -449,9 +458,6 @@ export class SessionState {
   // came from a short-circuited &&/|| branch or a `!`-negated command,
   // which bash exempts from errexit. Reset on every node execution.
   errexitImmune: boolean
-  // Depth of nested `source`/`.` execution: `return` is legal and the
-  // program loop absorbs its signal only while a file is being sourced.
-  sourceDepth = 0
   // Variables shadowed by `local` / `declare` in the running function; a
   // null value means the caller had no variable of that name. One stack,
   // not one per container: a local shadows the whole record, so its
@@ -489,17 +495,24 @@ export class SessionState {
   aliasStack: string[] = []
   parseSeq = 0
   parseCurrent = 0
+  // The owner of this session's terminal streams, which an `exec` copy of
+  // one names (`exec 3>&1`), and whether a line of the session is running,
+  // whose outermost program routes what was written to them. Each fork gets
+  // its own: a child shell writing to its parent's terminal is writing to a
+  // stream it did not open. Mirrors Python's terminal and _line_open.
+  readonly terminal: StreamOwner = Symbol('terminal')
+  lineOpen = false
   // File-creation mask. bash's default for a fresh shell.
   umask = 0o022
   // `exec` redirect-only state: where the shell's own stdout, stderr and
   // stdin point after a bare `exec > file`. Null is the terminal; `""`
-  // is a closed descriptor whose writes drop; `execOpened` names targets
-  // already truncated so a later statement appends. `execStdin` is the
-  // one descriptor an `exec <` opened: every statement after it reads on
+  // is a closed descriptor whose writes drop. `execStdin` is the one
+  // descriptor an `exec <` opened: every statement after it reads on
   // from where the one before stopped, across lines and into a child
   // shell, which shares it as bash's fork shares fd 0. `execStdoutInput`
   // and `execStderrInput` are the read end a stream holds after `exec
   // 1<f` or `exec 1<&0`, which a dup shares the offset of.
+  descriptors = new Map<number, Descriptor>()
   execStdout: string | null = null
   execStdoutAppend = false
   execStdoutInput: SharedInput | null = null
@@ -513,7 +526,6 @@ export class SessionState {
   // from fd 0 copies that (`exec 2<&0` then writes to stdout) or is
   // refused (`0: Bad file descriptor`); null for the read end itself.
   execStdinIdentity: string | null = null
-  execOpened = new Set<string>()
   localFrames: Map<string, ShellVar | null>[] = []
   // The caller's `RANDOM` marker for every frame that shadows the name,
   // innermost last: a local `RANDOM` is an ordinary variable for the
@@ -642,6 +654,7 @@ export class SessionState {
     if (this.randomSeed === RANDOM_UNSET) forked.randomSeed = RANDOM_UNSET
     forked.terminalOutput = this.terminalOutput
     forked.pipeStatus = [...this.pipeStatus]
+    forked.functionNames = this.functionNames
     forked.getoptsPos = this.getoptsPos
     forked.getoptsOptind = this.getoptsOptind
     forked.abortSignal = this.abortSignal
@@ -651,6 +664,7 @@ export class SessionState {
     forked.aliases = { ...this.aliases }
     forked.aliasMarks = new Map(this.aliasMarks)
     forked.umask = this.umask
+    forked.descriptors = new Map(this.descriptors)
     forked.execStdout = this.execStdout
     forked.execStdoutAppend = this.execStdoutAppend
     forked.execStdoutInput = this.execStdoutInput
@@ -660,7 +674,6 @@ export class SessionState {
     forked.execStdin = this.execStdin
     forked.execStdinUnreadable = this.execStdinUnreadable
     forked.execStdinIdentity = this.execStdinIdentity
-    forked.execOpened = new Set(this.execOpened)
     return forked
   }
 
@@ -731,7 +744,7 @@ export class SessionState {
     const saved: ChildShellState = {
       cwd: this.cwd,
       logicalCwd: this.logicalCwd,
-      sourceDepth: this.sourceDepth,
+      functionNames: this.functionNames,
       vars: copyVars(this.vars),
       functions: ownRecord(this.functions),
       readonlyFunctions: new Set(this.readonlyFunctions),
@@ -744,6 +757,7 @@ export class SessionState {
       shopts: { ...this.shopts },
       aliases: { ...this.aliases },
       umask: this.umask,
+      descriptors: new Map(this.descriptors),
       execStdout: this.execStdout,
       execStdoutAppend: this.execStdoutAppend,
       execStdoutInput: this.execStdoutInput,
@@ -753,7 +767,6 @@ export class SessionState {
       execStdin: this.execStdin,
       execStdinUnreadable: this.execStdinUnreadable,
       execStdinIdentity: this.execStdinIdentity,
-      execOpened: new Set(this.execOpened),
       randomState: this.randomState,
       randomSeed: this.randomSeed,
       randomLast: this.randomLast,
@@ -778,7 +791,7 @@ export class SessionState {
   restore(state: ChildShellState): void {
     this.cwd = state.cwd
     this.logicalCwd = state.logicalCwd
-    this.sourceDepth = state.sourceDepth
+    this.functionNames = state.functionNames
     this.vars = state.vars
     this.functions = state.functions
     this.readonlyFunctions = state.readonlyFunctions
@@ -791,6 +804,7 @@ export class SessionState {
     this.shopts = state.shopts
     this.aliases = state.aliases
     this.umask = state.umask
+    this.descriptors = state.descriptors
     this.execStdout = state.execStdout
     this.execStdoutAppend = state.execStdoutAppend
     this.execStdoutInput = state.execStdoutInput
@@ -804,7 +818,6 @@ export class SessionState {
     this.randomSeed = state.randomSeed
     this.randomLast = state.randomLast
     this.pipeStatus = state.pipeStatus
-    this.execOpened = state.execOpened
   }
 
   /**

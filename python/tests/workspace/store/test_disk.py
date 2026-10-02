@@ -118,3 +118,19 @@ async def test_two_stores_share_state_via_the_directory(tmp_path):
     assert meta is not None and meta["generation"] == 1
     assert (await reader.sessions("ws1").load())["s"]["cwd"] == "/x"
     await reader.close()
+
+
+@pytest.mark.asyncio
+async def test_drop_removes_the_workspace_directory(tmp_path):
+    store = DiskWorkspaceStateStore(str(tmp_path))
+    await store.namespace("ws1").set("/a", {"mode": 0o600})
+    await store.observer("ws1").append("d/s1.jsonl", b"{}\n")
+    await store.sessions("ws1").set("s1", {"session_id": "s1"})
+    await store.set_meta("ws1", {"workspace_id": "ws1"})
+    await store.set_meta("ws2", {"workspace_id": "ws2"})
+    await store.drop("ws1")
+    assert not (tmp_path / "workspaces" / "ws1").exists()
+    assert await store.load_meta("ws1") is None
+    assert await store.namespace("ws1").load() == {}
+    assert await store.load_meta("ws2") is not None
+    await store.close()

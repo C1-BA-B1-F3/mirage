@@ -14,6 +14,7 @@
 
 from typing import TYPE_CHECKING
 
+from mirage.concurrency.limiter import run_blocking
 from mirage.workspace.snapshot.manifest import split_manifest_and_blobs
 from mirage.workspace.snapshot.state import to_state_dict
 from mirage.workspace.snapshot.tar_io import write_tar
@@ -32,8 +33,8 @@ async def snapshot(
 
     Fingerprints come from ``ws._ops.records`` (each read carries the
     backend's version marker captured at the moment of the read), so
-    no live network round-trips are needed at snapshot time. Kept as
-    ``async def`` for API stability and future-proofing.
+    no live network round-trips are needed at snapshot time. Archive
+    compression and host file I/O run off the workspace loop.
 
     Workspace.load and Workspace.copy own the inverse direction
     (construction). Snapshot does not construct Workspace — that
@@ -47,4 +48,4 @@ async def snapshot(
     """
     state = await to_state_dict(ws)
     manifest, blobs = split_manifest_and_blobs(state)
-    write_tar(target, manifest, blobs, compress=compress)
+    await run_blocking(write_tar, target, manifest, blobs, compress=compress)

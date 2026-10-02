@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CLISpec } from '../../commands/cli/types.ts'
 import { RegisteredCommand } from '../../commands/config.ts'
 import { CommandSpec } from '../../commands/spec/types.ts'
@@ -319,6 +319,37 @@ describe('same-session lines run one at a time', () => {
     ])
     expect(stdoutStr(a)).toBe('A:A1\nA:A2\nA:A3\n')
     expect(stdoutStr(b)).toBe('B:B1\nB:B2\nB:B3\n')
+  })
+
+  it('a line waits only for its own session to persist', async () => {
+    const ws = await makeWs()
+    ws.createSession('slow')
+    ws.createSession('fast')
+    const store = ws.stateStore.sessions(ws.workspaceId)
+    const casSet = store.casSet.bind(store)
+    let stall!: () => void
+    let release!: () => void
+    const stalled = new Promise<void>((resolve) => {
+      stall = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(store, 'casSet').mockImplementation(async (id, fields, expected) => {
+      if (id === 'slow') {
+        stall()
+        await gate
+      }
+      return casSet(id, fields, expected)
+    })
+    const slow = ws.shell('X=1', { sessionId: 'slow' })
+    try {
+      await stalled
+      expect(stdoutStr(await ws.shell('echo fast', { sessionId: 'fast' }))).toBe('fast\n')
+    } finally {
+      release()
+      await slow
+    }
   })
 
   it('nested lines keep running while the outer line holds the session', async () => {

@@ -20,7 +20,7 @@ import { readdir as gslidesReaddir } from '../../../core/gslides/readdir.ts'
 import { stat as gslidesStat } from '../../../core/gslides/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GSLIDES_IO: CommandIO<GSlidesAccessor> = new VFSAdapter<GSlidesAccessor>({
+export const IO: CommandIO<GSlidesAccessor> = new VFSAdapter<GSlidesAccessor>({
   read: { readdir: gslidesReaddir, readBytes: gslidesRead, stat: gslidesStat },
   native: { readStream: gslidesStream },
   isMounted: () => true,

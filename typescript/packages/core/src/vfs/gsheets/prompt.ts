@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GSHEETS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   owned/
     <date>_<title>__<spreadsheet-id>.gsheet.json
   shared/
@@ -65,7 +65,7 @@ export const GSHEETS_PROMPT = `{prefix}
   For range-scoped reads and writes, use the gws CLI if installed:
     gws sheets read --spreadsheet <id> --range Sheet1!A1:C10`
 
-export const GSHEETS_WRITE_PROMPT = `  Writes go through the gws CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the gws CLI if installed:
     gws sheets write --spreadsheet <id> --range Sheet1!A1:B2 \\
       --json-values '[["Name", "Score"], ["Alice", 42]]'
     gws sheets append --spreadsheet <id> --values "Bob,37"

@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.types import VFSName
 from mirage.vfs.ceph.config import CephConfig
 from mirage.vfs.ceph.prompt import PROMPT
 from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class CephVFS(S3AliasVFS):
+    name: str = VFSName.CEPH
     prompt: str = PROMPT
 
     def __init__(self, config: CephConfig) -> None:

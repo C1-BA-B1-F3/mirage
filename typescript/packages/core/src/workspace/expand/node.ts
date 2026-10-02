@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { SessionView } from '../../ops/types.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
 import { quotedParts } from '../../shell/helpers.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { ByteSource, IOResult } from '../../io/types.ts'
@@ -24,7 +25,7 @@ import { expandTilde } from '../../utils/path.ts'
 import { homeDir } from '../session/shell_dirs.ts'
 import { evaluateArith } from '../../shell/arith.ts'
 import { splitBacktickRegion } from '../../shell/backticks.ts'
-import { ArithError, ExitSignal } from '../../shell/errors.ts'
+import { ArithError, BadSubstitution, DiscardSignal, named } from '../../shell/errors.ts'
 import { decodeAnsiC, unescapeDquoted, unescapeUnquoted } from '../../shell/escapes.ts'
 import { ARITH_DELIMITERS, ARITH_OPERATORS } from './constants.ts'
 import { scanParameter } from '../../shell/parameter.ts'
@@ -33,6 +34,7 @@ import { type Chunk, piece } from './types.ts'
 import { expandBraces, isAtSplat, landArithWrites, parameterChunks } from './variable.ts'
 import type { ArithResult, TSNodeLike } from '../../shell/types.ts'
 import type { HandOff } from '../../policy/types.ts'
+import type { ExecutionScope } from '../execution.ts'
 
 /**
  * The executor's door for a nested line. `node` is the node whose text
@@ -50,6 +52,7 @@ export type ExecuteFn = (
   command: string,
   opts: {
     sessionId: string
+    executionScope?: ExecutionScope
     session?: SessionState
     stdin?: ByteSource | null
     signal?: AbortSignal
@@ -57,6 +60,8 @@ export type ExecuteFn = (
     span?: readonly [number, number]
     handed?: HandOff
     substitution?: boolean
+    sink?: JobConsole
+    callStack?: CallStack
   },
 ) => Promise<IOResult>
 
@@ -83,6 +88,7 @@ async function expandBacktickRegion(
   executeFn: ExecuteFn,
   node: TSNodeLike,
   offset: number,
+  callStack: CallStack | null,
 ): Promise<string> {
   let out = ''
   for (const segment of splitBacktickRegion(raw)) {
@@ -92,7 +98,7 @@ async function expandBacktickRegion(
     }
     // Each pair is its own place on the line: the node holds every
     // touching pair, so the span within it says which one runs.
-    const io = await childLine(session, executeFn, segment.text, node, [
+    const io = await childLine(session, executeFn, segment.text, node, callStack, [
       offset + segment.start,
       offset + segment.end,
     ])
@@ -114,14 +120,17 @@ async function expandBacktickRegion(
  * a fresh parse of the body, including each pair in a backtick region.
  * The line reaches the executor unwrapped, under the node that named it,
  * so the pass places its commands where they were typed rather than
- * under a subshell of their own. `span` is the pair's span within the
- * node, for a backtick region holding several.
+ * under a subshell of their own. The child runs on a copy of the caller's
+ * frames: inside a function it reads the function's `$1`, `return` ends it,
+ * and so does a `break` from a loop the caller is in. `span` is the pair's
+ * span within the node, for a backtick region holding several.
  */
 export async function childLine(
   session: SessionState,
   executeFn: ExecuteFn,
   text: string,
   node: TSNodeLike,
+  callStack: CallStack | null,
   span?: [number, number],
 ): Promise<IOResult> {
   return executeFn(text, {
@@ -129,6 +138,7 @@ export async function childLine(
     session,
     node,
     substitution: true,
+    callStack: (callStack ?? new CallStack()).fork(),
     ...(span === undefined ? {} : { span }),
   })
 }
@@ -181,25 +191,46 @@ async function substituteDollarRefs(
 /**
  * The fatal shape of an arithmetic expansion error.
  *
- * bash aborts the whole line on a bad `$((...))` in a non-interactive
- * shell, exactly as it does for `${var:?}`: the command never runs, the
- * line exits 1, and a subshell or pipeline segment containing it reports
- * 1. The old return of the expansion's own text printed `$((1/0))` with
+ * bash discards the rest of the line on a bad `$((...))`: the command
+ * never runs, `$?` is 1, and a subshell or pipeline segment containing it
+ * reports 1. The old return of the expansion's own text printed `$((1/0))` with
  * exit 0, the silent wrong answer the fail-loud rule forbids. The
  * diagnostic is the expression as typed, trimmed, in the house style that
  * drops bash's `line N:` prefix and its `(error token is ...)` suffix, the
  * same shape `(( ))` reports.
  */
-export function arithExit(expr: string, err: ArithError): ExitSignal {
-  return new ExitSignal(
-    1,
-    new TextEncoder().encode(`bash: ${expr.trim()}: ${err.message}\n`),
-    null,
-    1,
-  )
+export function arithExit(expr: string, err: ArithError): DiscardSignal {
+  return new DiscardSignal(new TextEncoder().encode(`bash: ${expr.trim()}: ${err.message}\n`))
 }
 
+/**
+ * Reconstruct arithmetic expression text for the shared evaluator. A bad
+ * substitution names the expression as written.
+ */
 export async function expandArith(
+  tsNode: TSNodeLike,
+  session: SessionState,
+  executeFn: ExecuteFn,
+  callStack: CallStack | null,
+  view?: SessionView,
+): Promise<string> {
+  return named(arithInside(tsNode), arithText(tsNode, session, executeFn, callStack, view))
+}
+
+function arithInside(tsNode: TSNodeLike): string {
+  const text = tsNode.text.trimStart()
+  for (const [opener, closer] of [
+    ['$((', '))'],
+    ['((', '))'],
+    ['$[', ']'],
+  ] as const) {
+    if (text.startsWith(opener) && text.endsWith(closer))
+      return text.slice(opener.length, -closer.length)
+  }
+  return text
+}
+
+async function arithText(
   tsNode: TSNodeLike,
   session: SessionState,
   executeFn: ExecuteFn,
@@ -221,7 +252,7 @@ export async function expandArith(
       child.type === NT.TERNARY_EXPRESSION ||
       child.type === NT.POSTFIX_EXPRESSION
     ) {
-      parts.push(await expandArith(child, session, executeFn, callStack, view))
+      parts.push(await arithText(child, session, executeFn, callStack, view))
     } else if (child.type === 'subscript') {
       parts.push(await arithSubscript(child, session, executeFn, callStack, view))
     } else if (ARITH_OPERATORS.has(child.type)) {
@@ -328,7 +359,8 @@ export async function expandNodeMarked(
  * protects does not; a splat's elements are separate fields.
  * `splitFields` turns the pieces into words and `joinChunks` into the
  * one string a context without splitting reads. `quoted` says whether
- * the node sits inside double quotes.
+ * the node sits inside double quotes. A bad substitution leaving it is
+ * renamed after the node, unless a boundary inside named it for good.
  */
 export async function expandChunks(
   tsNode: TSNodeLike,
@@ -337,6 +369,22 @@ export async function expandChunks(
   callStack: CallStack | null = null,
   view?: SessionView,
   quoted = false,
+): Promise<Chunk[]> {
+  try {
+    return await nodeChunks(tsNode, session, executeFn, callStack, view, quoted)
+  } catch (err) {
+    if (err instanceof BadSubstitution) throw err.within(tsNode.text.trimStart())
+    throw err
+  }
+}
+
+async function nodeChunks(
+  tsNode: TSNodeLike,
+  session: SessionState,
+  executeFn: ExecuteFn,
+  callStack: CallStack | null,
+  view: SessionView | undefined,
+  quoted: boolean,
 ): Promise<Chunk[]> {
   const ntype = tsNode.type
 
@@ -426,7 +474,8 @@ export async function expandChunks(
  * elements, with no other text, is no field at all: with no parameters
  * `"$@"` and `"$u$@"` are nothing, while one empty parameter is one
  * empty word. Only the element count decides that, never the rendered
- * text.
+ * text. A bad substitution names what the quotes enclose, or the whole
+ * document of a heredoc the string stands for.
  */
 async function stringChunks(
   node: TSNodeLike,
@@ -438,12 +487,16 @@ async function stringChunks(
   const chunks: Chunk[] = [piece('')]
   let splat = false
   let yielded = false
+  const inside = node.parent?.heredoc?.body ?? node.text.slice(1, -1)
   for (const part of quotedParts(node)) {
     if (typeof part === 'string') {
       chunks.push(piece(markGlobs(part)))
       continue
     }
-    const pieces = await expandChunks(part, session, executeFn, callStack, view, true)
+    const pieces = await named(
+      inside,
+      expandChunks(part, session, executeFn, callStack, view, true),
+    )
     if (isAtSplat(part)) {
       splat = true
       yielded = yielded || pieces.length > 0
@@ -488,7 +541,7 @@ async function substitution(
   if (rawSub.startsWith('`') && rawSub.endsWith('`')) {
     // Backtick regions are re-lexed here rather than trusted from the
     // grammar, which merges adjacent pairs (see splitBacktickRegion).
-    return expandBacktickRegion(rawSub, session, executeFn, tsNode, prefix.length)
+    return expandBacktickRegion(rawSub, session, executeFn, tsNode, prefix.length, callStack)
   }
   if (rawSub.startsWith('$((') && rawSub.endsWith('))')) {
     // Inside heredoc bodies tree-sitter parses `$((expr))` as a
@@ -534,7 +587,7 @@ async function substitution(
   if (inner.trim() === '') return ''
   // The substitution names its own node: the nested line's commands
   // stand under it, which is where the pass placed them.
-  const io = await childLine(session, executeFn, inner, tsNode)
+  const io = await childLine(session, executeFn, inner, tsNode, callStack)
   const text = (await io.stdoutStr()).replace(/\n+$/, '')
   // Record the substitution's status: an assignment-only statement
   // whose value ran substitutions reports the last one's status as

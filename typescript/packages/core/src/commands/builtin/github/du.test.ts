@@ -20,7 +20,7 @@ import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { eacces } from '../../../utils/errors.ts'
 import { materialize } from '../../../io/types.ts'
 import type { FlagValue } from '../../spec/types.ts'
-import { GITHUB_IO } from './io.ts'
+import { IO } from './io.ts'
 import { GITHUB_DU } from './du.ts'
 
 vi.mock('../../../core/github/tree.ts', () => ({
@@ -69,7 +69,7 @@ it.each([
   ['/docs', { s: true }, '150\t/docs\n'],
   ['/readme.txt', { a: true }, '7\t/readme.txt\n'],
 ])('du %s %o sums the live tree', async (operand, flags, expected) => {
-  vi.spyOn(GITHUB_IO, 'stat').mockImplementation((_a, p) => {
+  vi.spyOn(IO, 'stat').mockImplementation((_a, p) => {
     const entry = TREE[p.vfsPath]
     return Promise.resolve(
       new FileStat({
@@ -91,13 +91,13 @@ it.each([
 })
 
 it('truncated du preserves directory rows and permission errors', async () => {
-  vi.spyOn(GITHUB_IO, 'readdir').mockImplementation((_a, p) => {
+  vi.spyOn(IO, 'readdir').mockImplementation((_a, p) => {
     if (p.virtual === '/db/sealed') return Promise.reject(eacces(p.virtual))
     return Promise.resolve(
       p.virtual === '/db' ? ['/db/a', '/db/empty', '/db/sealed', '/db/walled'] : [],
     )
   })
-  vi.spyOn(GITHUB_IO, 'stat').mockImplementation((_a, p) => {
+  vi.spyOn(IO, 'stat').mockImplementation((_a, p) => {
     if (p.virtual === '/db/walled') return Promise.reject(eacces(p.virtual))
     return Promise.resolve(
       new FileStat({

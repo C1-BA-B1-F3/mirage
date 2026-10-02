@@ -22,7 +22,7 @@ import {
   type HfDatasetsConfigRedacted,
   redactHfDatasetsConfig,
 } from './config.ts'
-import { HF_DATASETS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface HfDatasetsVFSState {
   type: string
@@ -31,7 +31,7 @@ export interface HfDatasetsVFSState {
 
 export class HfDatasetsVFS extends HfHubVFS {
   override readonly name: string = VFSName.HF_DATASETS
-  readonly prompt: string = HF_DATASETS_PROMPT
+  readonly prompt: string = PROMPT
   readonly config: HfDatasetsConfig
   readonly accessor: HfDatasetsHubAccessor
 

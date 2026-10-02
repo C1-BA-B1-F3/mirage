@@ -16,8 +16,8 @@ import type { RAMAccessor } from '../../../accessor/ram.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { RAM_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const RAM_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<RAMAccessor>(VFSName.RAM, RAM_IO),
+  ...makeGenericCommands<RAMAccessor>(VFSName.RAM, IO),
 ]

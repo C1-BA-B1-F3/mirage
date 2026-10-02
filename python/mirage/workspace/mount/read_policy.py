@@ -200,10 +200,7 @@ def check_read_capability(
         )
     if policy is not ReadPolicy.FRESH:
         return
-    # VFSName is a (str, Enum), whose str() is "VFSName.RAM"; a VFS
-    # registered from a script carries a plain string. Both read as the
-    # wire name through .value.
-    name = getattr(vfs.name, "value", vfs.name)
+    name = vfs.name
     # The instance attribute, not the class: lancedb decides per config
     # whether it caches reads.
     if not vfs.caches_reads:

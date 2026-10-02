@@ -19,12 +19,12 @@ import { command } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { runSearch } from '../generic_bind/search.ts'
 
-import { MONGODB_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const MONGODB_RG = command({
   name: 'rg',
   vfs: VFSName.MONGODB,
   spec: specOf('rg'),
   fn: (accessor: MongoDBAccessor, paths, texts, opts) =>
-    runSearch<MongoDBAccessor>(MONGODB_IO, 'rg', accessor, paths, texts, opts),
+    runSearch<MongoDBAccessor>(IO, 'rg', accessor, paths, texts, opts),
 })

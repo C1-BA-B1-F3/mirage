@@ -30,7 +30,7 @@ import {
   type HfBucketsConfigRedacted,
   redactHfBucketsConfig,
 } from './config.ts'
-import { HF_BUCKETS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface HfBucketsVFSState {
   type: string
@@ -39,7 +39,7 @@ export interface HfBucketsVFSState {
 
 export class HfBucketsVFS extends BaseVFS {
   override readonly name: string = VFSName.HF_BUCKETS
-  override readonly prompt: string = HF_BUCKETS_PROMPT
+  override readonly prompt: string = PROMPT
   override readonly cachesReads: boolean = true
   // The Hub tree API reports each file's exact byte size (the LFS
   // object size for LFS files); readdir backfills any lister-omitted

@@ -12,13 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import copy
 import errno
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from mirage.cache.context import active_cache_manager
+from mirage.commands.builtin.ram.io import IO as RAM_IO
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import FsCondition, posix_errno
+from mirage.ops.generic import make_generic_ops
+from mirage.ops.registry import RegisteredOp
 from mirage.policy import (
     Action,
     CommandRule,
@@ -31,6 +36,7 @@ from mirage.policy import (
 from mirage.policy.rule import RulePolicy
 from mirage.types import FileStat, FileType, HiddenPaths, MountMode, PathSpec
 from mirage.utils.errors import ReadOnlyError
+from mirage.utils.key_prefix import mount_key
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -39,6 +45,7 @@ from mirage.workspace.dispatcher.constants import POLICY_WRITE_OPS
 from mirage.workspace.dispatcher.dispatcher import _MountChannel
 from mirage.workspace.mount.mount import MountEntry
 from mirage.workspace.session import SessionState
+from tests.fixtures.settle import settling
 
 
 class DenyLocked(Policy):
@@ -1263,3 +1270,40 @@ async def test_the_mark_never_reaches_the_op(monkeypatch):
         assert gate.asked == ["/data/real/secret"]
     finally:
         await ws.close()
+
+
+def _emulated_append_ops() -> list[RegisteredOp]:
+    table = copy.copy(RAM_IO)
+    object.__setattr__(table, "append", None)
+    return make_generic_ops("ram", table)
+
+
+class _EmulatedAppendRAM(RAMVFS):
+    """RAM whose append is the generic read-modify-write emulation, the
+    shape of every backend without a native append."""
+
+    def ops(self) -> list[RegisteredOp]:
+        return _emulated_append_ops()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["write", "append"])
+async def test_a_dispatched_write_settles_nothing_and_restores_the_manager(op):
+    # The dispatcher evicts what its op wrote, so the op must not settle
+    # under a manager the enclosing command left active (the emulated
+    # append rewrites the whole file through the core write), and the
+    # command's manager must be active again once the op returns.
+    vfs = _EmulatedAppendRAM()
+    vfs.caches_reads = True
+    ws = Workspace({"/r": (vfs, MountMode.WRITE)}, mode=MountMode.WRITE)
+    scope = PathSpec(
+        vfs_path=mount_key("/r/a.txt", "/r"),
+        virtual="/r/a.txt",
+        directory="/r",
+        resolved=True,
+    )
+    with settling() as manager:
+        await ws.dispatch(op, scope, data=b"hi")
+        assert active_cache_manager() is manager
+    assert manager.settled == []
+    await ws.close()

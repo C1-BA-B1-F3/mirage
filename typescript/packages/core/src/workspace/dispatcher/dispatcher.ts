@@ -549,27 +549,7 @@ export class Dispatcher {
                 Promise.resolve(
                   opName === 'setattr'
                     ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
-                    : EVICTED_WRITE_OPS.has(opName)
-                      ? runWithCacheManager(null, () =>
-                          Promise.resolve(
-                            this.opsRegistry.call(
-                              opName,
-                              vfs,
-                              vfs.accessor,
-                              scope,
-                              fullArgs,
-                              fullKwargs,
-                            ),
-                          ),
-                        )
-                      : this.opsRegistry.call(
-                          opName,
-                          vfs,
-                          vfs.accessor,
-                          scope,
-                          fullArgs,
-                          fullKwargs,
-                        ),
+                    : this.callOp(opName, vfs, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
                 opName,
@@ -1409,6 +1389,22 @@ export class Dispatcher {
    * not be, and evicting the index inline here spelled the key the other way
    * and missed.
    */
+  /**
+   * Run one registered op. An op in EVICTED_WRITE_OPS runs without the
+   * enclosing command's cache manager: the dispatcher evicts what it wrote.
+   */
+  private callOp(
+    opName: string,
+    vfs: BaseVFS,
+    scope: PathSpec,
+    args: readonly unknown[],
+    kwargs: OpKwargs,
+  ): Promise<unknown> {
+    const call = (): Promise<unknown> =>
+      this.opsRegistry.call(opName, vfs, vfs.accessor, scope, args, kwargs)
+    return EVICTED_WRITE_OPS.has(opName) ? runWithCacheManager(null, call) : call()
+  }
+
   private managerFor(mount: MountEntry): CacheManager {
     return (
       mount.cacheManager ??

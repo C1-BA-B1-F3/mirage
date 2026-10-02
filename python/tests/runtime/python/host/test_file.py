@@ -17,7 +17,7 @@ import io
 
 import pytest
 
-from mirage.ops.file import MirageFile
+from mirage.runtime.python.host.file import MirageFile
 
 from .conftest import make_ops_with_dir
 

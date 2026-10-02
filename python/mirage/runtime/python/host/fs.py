@@ -19,172 +19,34 @@ import os as _real_os
 import posixpath
 import time
 import types
-from collections.abc import Awaitable, Callable, Iterator, Mapping
-from hashlib import blake2b
-from stat import S_ISDIR, S_ISLNK, S_ISREG
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any, TypeVar, cast
 
 from mirage.bridge.sync import run_async_from_sync
 from mirage.errors import FsCondition
-from mirage.errors.posix import gnu_phrase, posix_errno
 from mirage.ops import Ops
-from mirage.ops.host_io import in_host_io
-from mirage.runtime.constants import HARD_LINK_REFUSAL
+from mirage.runtime.python.host.constants import (
+    REFUSED_CALLS,
+    ROUTED_CALLS,
+    XATTR_CREATE,
+    XATTR_REPLACE,
+)
+from mirage.runtime.python.host.errors import refused
+from mirage.runtime.python.host.host_io import in_host_io
+from mirage.runtime.python.host.list import (
+    MountDirEntry,
+    MountScandir,
+    entry_is_dir,
+    entry_is_link,
+    leaf,
+)
+from mirage.runtime.python.host.stat import stat_result
 from mirage.types import FileStat
 from mirage.utils.dates import iso_timestamp, timestamp_iso
 from mirage.utils.path import owner_prefix
 from mirage.utils.stat_view import LINK_MODE, content_size, is_dir, posix_mode
 
 T = TypeVar("T")
-
-# The `os` functions this patch answers, keyed by name. ROUTED_CALLS
-# names the ops each goes through: several share one op and a few need
-# two (lstat reads the node table before the mount), so a value is a
-# tuple. REFUSED_CALLS answers with a condition, and PASSTHROUGH_CALLS
-# keeps the host function, because nothing it takes is a path a mount
-# could serve. A path-taking name in none of the three keeps the host
-# function with a mounted path in hand, which is why the coverage test
-# in tests/ops/test_os_patch.py fails on any such name.
-ROUTED_CALLS: Mapping[str, tuple[str, ...]] = {
-    "access": ("stat",),
-    "chmod": ("setattr",),
-    "chown": ("setattr",),
-    "getxattr": ("getxattr",),
-    "lchmod": ("setattr",),
-    "lchown": ("setattr",),
-    "listdir": ("readdir",),
-    "listxattr": ("listxattr",),
-    "lstat": ("readlink", "stat"),
-    "makedirs": ("mkdir",),
-    "mkdir": ("mkdir",),
-    "readlink": ("readlink",),
-    "remove": ("unlink",),
-    "removedirs": ("rmdir",),
-    "removexattr": ("removexattr",),
-    "rename": ("rename",),
-    "renames": ("rename",),
-    "replace": ("rename",),
-    "rmdir": ("rmdir",),
-    "scandir": ("readdir", "stat"),
-    "setxattr": ("setxattr",),
-    "stat": ("stat",),
-    "symlink": ("symlink",),
-    "truncate": ("truncate",),
-    "unlink": ("unlink",),
-    "utime": ("setattr",),
-    "walk": ("readdir", "stat"),
-}
-
-# REFUSED is every verb whose fact has nowhere to live. A mount stores
-# content and a name plane stores links and attribute overlays; none of
-# them holds a second name for one inode, a device number, or a
-# filesystem-wide block count, so these cannot be faked without lying
-# to the guest.
-#
-# `open` is the fd tier rather than a missing fact: serving it means an
-# fd table with host-visible numbers, which `runtime/handles` builds for
-# the runtimes and os_patch has no equivalent of. `chdir` is refused
-# because a host process cwd cannot be a virtual path; a runtime whose
-# guest has its own cwd (Emscripten does) serves it inside that guest
-# and never reaches this table.
-# `link`, `mkfifo` and `mknod` refuse with EPERM instead, because that
-# is what link(2) and mknod(2) document for a filesystem that does not
-# support the requested node (vfat answers link() exactly this way), so
-# the refusal arrives in the errno real programs already handle.
-
-REFUSED_CALLS: Mapping[str, FsCondition] = {
-    "chdir": FsCondition.ENOTSUP,
-    "chflags": FsCondition.ENOTSUP,
-    "chroot": FsCondition.ENOTSUP,
-    "fwalk": FsCondition.ENOTSUP,
-    "lchflags": FsCondition.ENOTSUP,
-    "link": HARD_LINK_REFUSAL,
-    "mkfifo": FsCondition.EPERM,
-    "mknod": FsCondition.EPERM,
-    "open": FsCondition.ENOTSUP,
-    "statvfs": FsCondition.ENOTSUP,
-}
-
-# Names whose path-shaped argument is not a mount-addressable path:
-# string conversions, environment and sysconf keys, descriptor-to-
-# descriptor transfers, and the exec and spawn families, which name a
-# program for the host to run rather than a file to serve. They keep
-# host behavior even when a mounted path is spelled, so a surface must
-# not route or refuse them.
-
-PASSTHROUGH_CALLS: frozenset[str] = frozenset(
-    {
-        "confstr",
-        "copy_file_range",
-        "execl",
-        "execle",
-        "execlp",
-        "execlpe",
-        "execv",
-        "execve",
-        "execvp",
-        "execvpe",
-        "fpathconf",
-        "fsdecode",
-        "fsencode",
-        "fspath",
-        "memfd_create",
-        "pathconf",
-        "posix_spawn",
-        "posix_spawnp",
-        "putenv",
-        "spawnl",
-        "spawnle",
-        "spawnlp",
-        "spawnlpe",
-        "spawnv",
-        "spawnve",
-        "spawnvp",
-        "spawnvpe",
-        "splice",
-        "sysconf",
-        "unsetenv",
-    }
-)
-
-
-# The block size every mirage stat translator reports; a backend has no
-# block size of its own, and 4 KiB is what the FUSE adapters already
-# answer.
-_BLKSIZE = 4096
-
-
-def _ident(text: str) -> int:
-    """A stable, distinct id for one name.
-
-    ``os.path.samefile`` compares (st_dev, st_ino) pairs and
-    ``os.path.ismount`` compares a path's pair with its parent's, so
-    reporting zero for both would make every mounted file the same file
-    and every mount root invisible. Derived from the name rather than
-    counted, so two processes reading the same workspace agree and a
-    repeated stat of one path does not move.
-
-    Args:
-        text (str): the virtual path or mount prefix to identify.
-    """
-    return int.from_bytes(
-        blake2b(text.encode(), digest_size=7).digest(), "big"
-    )
-
-
-# setxattr(2)'s flags as linux numbers them, the one platform whose os
-# module has the xattr family for this router to install.
-_XATTR_CREATE = 1
-_XATTR_REPLACE = 2
-
-
-def _leaf(entry: str) -> str:
-    """The basename of a readdir entry, directory slash dropped.
-
-    Args:
-        entry (str): one entry as the readdir op spells it.
-    """
-    return entry.rstrip("/").rsplit("/", 1)[-1]
 
 
 def _spelled(path: Any) -> str | None:
@@ -205,142 +67,7 @@ def _spelled(path: Any) -> str | None:
     return spelled if isinstance(spelled, str) else None
 
 
-class _MountDirEntry:
-    """One `os.scandir` entry for a mounted directory.
-
-    Carries the same surface CPython's DirEntry does, because
-    ``os.walk``, ``glob`` and ``shutil`` read exactly these methods. The
-    kind is decided by the stat the readdir just populated the index
-    with, never by the name, with one exception: a backend that marks
-    directories with a trailing slash has already answered, so the slash
-    is taken as proof and saves the round trip.
-
-    Args:
-        router (_OsRouter): the door to stat through.
-        path (str): the entry's own virtual path.
-        marked_dir (bool): the readdir listing slash-marked this entry.
-    """
-
-    __slots__ = ("_router", "_path", "_marked", "_stat", "_lstat")
-
-    def __init__(
-        self, router: "_OsRouter", path: str, marked_dir: bool
-    ) -> None:
-        self._router = router
-        self._path = path
-        self._marked = marked_dir
-        self._stat: _real_os.stat_result | None = None
-        self._lstat: _real_os.stat_result | None = None
-
-    def __repr__(self) -> str:
-        return f"<DirEntry {self.name!r}>"
-
-    def __fspath__(self) -> str:
-        return self._path
-
-    @property
-    def name(self) -> str:
-        return _leaf(self._path)
-
-    @property
-    def path(self) -> str:
-        return self._path
-
-    def inode(self) -> int:
-        return _ident(self._path)
-
-    def stat(self, *, follow_symlinks: bool = True) -> _real_os.stat_result:
-        """The entry's stat, cached per direction as CPython's is.
-
-        Args:
-            follow_symlinks (bool): stat the target rather than the link.
-        """
-        if not follow_symlinks:
-            if self._lstat is None:
-                self._lstat = self._router.lstat(self._path)
-            return self._lstat
-        if self._stat is None:
-            self._stat = self._router.stat(self._path)
-        return self._stat
-
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
-        if self._marked and follow_symlinks:
-            return True
-        return S_ISDIR(self.stat(follow_symlinks=follow_symlinks).st_mode)
-
-    def is_file(self, *, follow_symlinks: bool = True) -> bool:
-        if self._marked and follow_symlinks:
-            return False
-        return S_ISREG(self.stat(follow_symlinks=follow_symlinks).st_mode)
-
-    def is_symlink(self) -> bool:
-        if self._marked:
-            return False
-        return S_ISLNK(self.stat(follow_symlinks=False).st_mode)
-
-    def is_junction(self) -> bool:
-        return False
-
-
-def _entry_is_dir(entry: _MountDirEntry) -> bool:
-    """Whether a walked entry is a directory, False when it cannot say.
-
-    CPython's own rule inside ``os.walk``: a stat that fails leaves the
-    entry a non-directory, the same answer ``os.path.isdir`` gives. A
-    broken link is the case that matters here, because following it to
-    stat raises and would otherwise end the whole walk.
-
-    Args:
-        entry (_MountDirEntry): the listed entry.
-    """
-    try:
-        return entry.is_dir()
-    except OSError:
-        return False
-
-
-def _entry_is_link(entry: _MountDirEntry) -> bool:
-    """Whether a walked entry is a symlink, False when it cannot say.
-
-    Args:
-        entry (_MountDirEntry): the listed entry.
-    """
-    try:
-        return entry.is_symlink()
-    except OSError:
-        return False
-
-
-class _MountScandir:
-    """`os.scandir`'s return value: an iterator that is also a context
-    manager, which is how ``os.walk`` and ``glob`` consume it.
-
-    Args:
-        entries (list[_MountDirEntry]): the listing, already resolved.
-    """
-
-    __slots__ = ("_entries",)
-
-    def __init__(self, entries: list[_MountDirEntry]) -> None:
-        self._entries: Iterator[_MountDirEntry] = iter(entries)
-
-    def __iter__(self) -> "_MountScandir":
-        return self
-
-    def __next__(self) -> _MountDirEntry:
-        return next(self._entries)
-
-    def __enter__(self) -> "_MountScandir":
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        self.close()
-
-    def close(self) -> None:
-        self._entries = iter(())
-
-
-class _OsRouter:
+class HostFs:
     """Every routed `os` verb, answered on a mount or left to the host.
 
     One method per name in ``ROUTED_CALLS``; the table, not this class,
@@ -395,7 +122,7 @@ class _OsRouter:
         the path it is reaching for is a physical one, and on a disk
         mount rooted at its own prefix the two spellings are the same
         string. Routing it would hand the op back to the backend that
-        is running it (see ``ops/host_io.py``).
+        is running it (see ``host_io.py``).
 
         Args:
             path (Any): whatever the caller passed in the path slot.
@@ -436,14 +163,6 @@ class _OsRouter:
     ) -> _real_os.stat_result:
         """One `os.stat_result` from the fields a FileStat carries.
 
-        Every optional field is filled explicitly, because built from a
-        plain 10-tuple they come back None while still answering
-        ``hasattr``: ``shutil.copystat`` reads ``st_flags`` that way and
-        handed the host's chflags a None, and ``pathlib`` reads the
-        ``_ns`` pair. A key the platform has no such field for
-        (``st_flags`` off BSD) is dropped by the constructor, so the
-        result carries exactly what a real stat there would.
-
         Args:
             virtual (str): the path being statted (the inode's name).
             mode (int): st_mode, type bits included.
@@ -456,35 +175,16 @@ class _OsRouter:
             mtime (float | None): modification time, None for unknown.
         """
         stamp = self._now if mtime is None else mtime
-        access = stamp if atime is None else atime
-        prefix = owner_prefix(self._ops.mount_prefixes(), virtual) or "/"
-        return _real_os.stat_result(
-            (
-                mode,
-                _ident(virtual),
-                _ident(prefix),
-                nlink,
-                uid if isinstance(uid, int) else self._uid,
-                gid if isinstance(gid, int) else self._gid,
-                size,
-                int(access),
-                int(stamp),
-                int(stamp),
-            ),
-            {
-                "st_atime": access,
-                "st_mtime": stamp,
-                "st_ctime": stamp,
-                "st_atime_ns": int(access * 1_000_000_000),
-                "st_mtime_ns": int(stamp * 1_000_000_000),
-                "st_ctime_ns": int(stamp * 1_000_000_000),
-                "st_birthtime": stamp,
-                "st_blksize": _BLKSIZE,
-                "st_blocks": -(-size // 512),
-                "st_rdev": 0,
-                "st_flags": 0,
-                "st_gen": 0,
-            },
+        return stat_result(
+            virtual,
+            owner_prefix(self._ops.mount_prefixes(), virtual) or "/",
+            mode,
+            size,
+            nlink,
+            uid if isinstance(uid, int) else self._uid,
+            gid if isinstance(gid, int) else self._gid,
+            stamp if atime is None else atime,
+            stamp,
         )
 
     def _stat_of(self, virtual: str, st: FileStat) -> _real_os.stat_result:
@@ -541,9 +241,7 @@ class _OsRouter:
         virtual = self._virtual(path)
         if virtual is None:
             return cast(list[str] | list[bytes], self._host.listdir(path))
-        return [
-            _leaf(entry) for entry in self._run(self._ops.readdir(virtual))
-        ]
+        return [leaf(entry) for entry in self._run(self._ops.readdir(virtual))]
 
     def scandir(self, path: Any = None) -> Any:
         """The directory as lazily-stattable entries.
@@ -559,10 +257,10 @@ class _OsRouter:
         if virtual is None:
             return self._host.scandir(path)
         entries = [
-            _MountDirEntry(self, entry.rstrip("/"), entry.endswith("/"))
+            MountDirEntry(self, entry.rstrip("/"), entry.endswith("/"))
             for entry in self._run(self._ops.readdir(virtual))
         ]
-        return _MountScandir(entries)
+        return MountScandir(entries)
 
     def walk(
         self,
@@ -615,11 +313,11 @@ class _OsRouter:
         files: list[str] = []
         links: set[str] = set()
         for entry in entries:
-            if not _entry_is_dir(entry):
+            if not entry_is_dir(entry):
                 files.append(entry.name)
                 continue
             dirs.append(entry.name)
-            if _entry_is_link(entry):
+            if entry_is_link(entry):
                 links.add(entry.name)
         if topdown:
             yield top, dirs, files
@@ -845,8 +543,8 @@ class _OsRouter:
                 virtual,
                 _real_os.fsdecode(attribute),
                 bytes(value),
-                create=bool(flags & _XATTR_CREATE),
-                replace=bool(flags & _XATTR_REPLACE),
+                create=bool(flags & XATTR_CREATE),
+                replace=bool(flags & XATTR_REPLACE),
                 nofollow=not follow_symlinks,
             )
         )
@@ -1170,19 +868,17 @@ class _OsRouter:
 
 
 def _refusal(
-    router: _OsRouter, verb: str, condition: FsCondition
+    router: HostFs, verb: str, condition: FsCondition
 ) -> Callable[..., Any]:
     """A wrapper that refuses `verb` on a mount and passes it through off one.
 
-    The refusal carries the same condition every other mirage surface
-    reports it with, so a guest sees one errno for one fact wherever it
-    asked. Every argument is scanned rather than just the first, because
+    Every argument is scanned rather than just the first, because
     the refused verbs put their paths in different slots (``link`` has
     two ends and ``listxattr`` has an optional one) and a non-path
     argument answers None on its own.
 
     Args:
-        router (_OsRouter): the door, for its mount test.
+        router (HostFs): the door, for its mount test.
         verb (str): the os name being wrapped.
         condition (FsCondition): what the table says to answer.
     """
@@ -1192,9 +888,7 @@ def _refusal(
         for value in (*args, *kwargs.values()):
             virtual = router._virtual(value)
             if virtual is not None:
-                raise OSError(
-                    posix_errno(condition), gnu_phrase(condition), virtual
-                )
+                raise refused(condition, virtual)
         return real(*args, **kwargs)
 
     return refuse
@@ -1262,7 +956,7 @@ def os_routing(
     Returns:
         dict[str, Callable[..., Any]]: os name to replacement function.
     """
-    router = _OsRouter(ops, loop)
+    router = HostFs(ops, loop)
     table: dict[str, Callable[..., Any]] = {}
     for verb in ROUTED_CALLS:
         if hasattr(_real_os, verb):

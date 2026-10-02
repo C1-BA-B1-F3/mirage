@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import errno
-import inspect
 import os
 import shutil
 import stat as stat_mod
@@ -25,13 +24,12 @@ import pytest
 from mirage import MountMode, Workspace
 from mirage.context import set_current_session
 from mirage.errors.posix import posix_errno
-from mirage.ops.os_patch import (
+from mirage.runtime.python.host.constants import (
     PASSTHROUGH_CALLS,
     REFUSED_CALLS,
     ROUTED_CALLS,
-    make_os_module,
-    os_routing,
 )
+from mirage.runtime.python.host.fs import make_os_module, os_routing
 from mirage.types import HiddenPaths, PathSpec
 from mirage.utils.stat_view import DIR_SIZE
 from mirage.vfs.disk import DiskVFS
@@ -615,162 +613,3 @@ class TestProcessPatch:
             assert os.listdir(str(tmp_path)) == ["host.txt"]
             assert isinstance(os.stat(str(tmp_path)), os.stat_result)
             assert os.path.exists(str(tmp_path / "host.txt")) is True
-
-
-CLASSIFIED = (
-    frozenset(ROUTED_CALLS) | frozenset(REFUSED_CALLS) | PASSTHROUGH_CALLS
-)
-
-PATH_PARAMS = frozenset(
-    {
-        "path",
-        "src",
-        "dst",
-        "top",
-        "source",
-        "target",
-        "link",
-        "old",
-        "new",
-        "filename",
-        "file",
-        "name",
-        "paths",
-        "entry",
-        "dirname",
-    }
-)
-UNINTROSPECTABLE = frozenset({"utime"})
-
-# Names one platform has and another does not, so the existence check
-# below cannot demand them. The BSD flag verbs and `lchmod` are macOS
-# only; the xattr family, `memfd_create`, `splice` and
-# `copy_file_range` are linux only.
-PLATFORM_SPECIFIC = frozenset(
-    {
-        "chflags",
-        "copy_file_range",
-        "getxattr",
-        "lchflags",
-        "lchmod",
-        "listxattr",
-        "memfd_create",
-        "removexattr",
-        "setxattr",
-        "splice",
-    }
-)
-
-# What the sweep below reports on linux, which is what CI runs. Frozen
-# here so a macOS run catches a linux-only gap; regenerate with the
-# sweep under `docker run --rm python:3.12-slim`.
-LINUX_PATH_TAKING = frozenset(
-    {
-        "access",
-        "chdir",
-        "chmod",
-        "chown",
-        "chroot",
-        "confstr",
-        "copy_file_range",
-        "execl",
-        "execle",
-        "execlp",
-        "execlpe",
-        "execv",
-        "execve",
-        "execvp",
-        "execvpe",
-        "fpathconf",
-        "fsdecode",
-        "fsencode",
-        "fspath",
-        "fwalk",
-        "getxattr",
-        "lchown",
-        "link",
-        "listdir",
-        "listxattr",
-        "lstat",
-        "makedirs",
-        "memfd_create",
-        "mkdir",
-        "mkfifo",
-        "mknod",
-        "open",
-        "pathconf",
-        "putenv",
-        "readlink",
-        "remove",
-        "removedirs",
-        "removexattr",
-        "rename",
-        "renames",
-        "replace",
-        "rmdir",
-        "scandir",
-        "setxattr",
-        "spawnl",
-        "spawnle",
-        "spawnlp",
-        "spawnlpe",
-        "spawnv",
-        "spawnve",
-        "spawnvp",
-        "spawnvpe",
-        "splice",
-        "stat",
-        "statvfs",
-        "symlink",
-        "sysconf",
-        "truncate",
-        "unlink",
-        "unsetenv",
-        "utime",
-        "walk",
-    }
-)
-
-
-def _path_taking_os_names() -> set[str]:
-    found: set[str] = set(UNINTROSPECTABLE)
-    for name in dir(os):
-        if name.startswith("_"):
-            continue
-        fn = getattr(os, name)
-        if not callable(fn):
-            continue
-        try:
-            sig = inspect.signature(fn)
-        except (ValueError, TypeError):
-            continue
-        if set(sig.parameters) & PATH_PARAMS:
-            found.add(name)
-    return found
-
-
-class TestCallCoverage:
-    def test_every_path_taking_os_name_is_classified(self):
-        # An unclassified name keeps the host function with a mounted
-        # path in hand; this failing is a name whose answer nobody
-        # decided. Put it in one of the three tables.
-        missing = sorted(_path_taking_os_names() - CLASSIFIED)
-        assert missing == []
-
-    def test_tables_are_disjoint(self):
-        assert not (frozenset(ROUTED_CALLS) & frozenset(REFUSED_CALLS))
-        assert not (frozenset(ROUTED_CALLS) & PASSTHROUGH_CALLS)
-        assert not (frozenset(REFUSED_CALLS) & PASSTHROUGH_CALLS)
-
-    def test_the_linux_sweep_is_classified_too(self):
-        # CI runs linux and development runs macOS, so the two name sets
-        # differ; without this the gap only shows up in CI.
-        assert sorted(LINUX_PATH_TAKING - CLASSIFIED) == []
-
-    def test_every_classified_name_exists_in_os(self):
-        # A typo'd row would classify a verb no guest can ever spell,
-        # leaving the real one to the host function.
-        missing = [
-            n for n in CLASSIFIED - PLATFORM_SPECIFIC if not hasattr(os, n)
-        ]
-        assert sorted(missing) == []

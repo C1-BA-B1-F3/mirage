@@ -20,7 +20,11 @@ from collections.abc import AsyncIterator
 import pytest
 
 from mirage import MountMode, Workspace
-from mirage.ops.host_io import host_io, in_host_io, with_host_io
+from mirage.runtime.python.host.host_io import (
+    host_io,
+    in_host_io,
+    with_host_io,
+)
 from mirage.vfs.ram import RAMVFS
 
 from .conftest import run

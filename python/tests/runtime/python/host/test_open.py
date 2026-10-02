@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from mirage.ops.open import make_open
+from mirage.runtime.python.host.open import make_open
 
 from .conftest import make_ops_with_dir
 

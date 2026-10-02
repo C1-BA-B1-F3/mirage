@@ -18,8 +18,8 @@ import io
 import os
 from typing import TYPE_CHECKING, Any, cast
 
-from mirage.ops.open import make_open
-from mirage.ops.os_patch import os_routing
+from mirage.runtime.python.host.fs import os_routing
+from mirage.runtime.python.host.open import make_open
 from mirage.shell.job_table import cancel_job
 
 if TYPE_CHECKING:

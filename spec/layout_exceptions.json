@@ -4,6 +4,7 @@
  "directories": {
   "python_only": {
    "runtime/wasm": "The wasmtime WASI host. npm ships quickjs-emscripten and pyodide with their own hosts and python has no equivalent, so there is nothing to mirror. CLAUDE.md says do not port it.",
+   "runtime/python/host": "The `with ws:` door: the host interpreter's own builtins.open, io.open and os functions patched onto a workspace (fs, open, file, list, stat, errors, constants), plus the re-entrancy bypass (host_io) the mount path sets so a backend serving an op reaches the host. A CPython-only trick with no npm analogue: node is never monkeypatched, and an npm consumer holds promises, not file objects.",
    "bridge": "sync.py exists to run an event loop on a worker thread for the FUSE callbacks, which python needs because its FUSE loop is threaded and node's is not.",
    "agents/agno": "Ecosystem split: agno is a python-only framework.",
    "agents/camel": "Ecosystem split: camel is a python-only framework, and pyproject declares it conflicting with the openai extra.",
@@ -29,14 +30,6 @@
   }
  },
  "modules": {
-  "ops": {
-   "python_only": {
-    "file": "MirageFile: a sync file object over the Ops facade for embedding python code (with open-style usage). An npm consumer holds promises, not file objects, so there is nothing to mirror.",
-    "host_io": "The re-entrancy bypass the two patched doors (ops/open, ops/os_patch) read, so a backend serving an op reaches the host instead of being handed its own physical path back. Nothing to mirror for the same reason os_patch has nothing: node is never monkeypatched.",
-    "open": "The open() constructor for MirageFile; same embedding convenience as ops/file.",
-    "os_patch": "Patches the host interpreter's builtins.open/os functions onto a workspace, a CPython-only trick with no npm analogue."
-   }
-  },
   "accessor": {
    "python_only": {
     "pool": "One open client per event loop, keyed by the loop object. Only python has the hazard: an aiobotocore client binds to the loop that opened it, and a process runs many loops over its lifetime (every asyncio.run makes one), so a cached client outlives the loop it belongs to and has to be released against a loop that is already closed. Node has one loop and an AWS SDK v3 client that is not bound to it, so S3Accessor there holds config and opens nothing -- there is no lifetime to manage and nothing to mirror."

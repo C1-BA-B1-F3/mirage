@@ -19,8 +19,8 @@ from collections.abc import Callable
 from typing import IO, TypeAlias, cast
 
 from mirage.ops import Ops
-from mirage.ops.file import MirageFile
-from mirage.ops.host_io import in_host_io
+from mirage.runtime.python.host.file import MirageFile
+from mirage.runtime.python.host.host_io import in_host_io
 
 OpenPath: TypeAlias = str | bytes | int | os.PathLike[str] | os.PathLike[bytes]
 OpenResult: TypeAlias = IO[str] | IO[bytes] | MirageFile
@@ -49,7 +49,7 @@ class MountedOpen:
         # A backend serving an op is reaching for a physical file, which
         # on a disk mount rooted at its own prefix is spelled exactly
         # like the virtual one; routing it would hand the read back to
-        # the backend doing it (see ops/host_io.py).
+        # the backend doing it (see host_io.py).
         if (
             isinstance(path, str)
             and not in_host_io()

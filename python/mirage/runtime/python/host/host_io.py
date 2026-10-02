@@ -20,7 +20,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 # Whether a backend is serving an op, in which case the patched `open`
-# and `os` doors (ops/open.py, ops/os_patch.py) answer nothing. Those
+# and `os` doors (host/open.py, host/fs.py) answer nothing. Those
 # doors are for the embedding program's own code; a backend reaching the
 # host filesystem is not that code, and the path it reaches for is a
 # physical one even when a mount is spelled the same way.

@@ -30,11 +30,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # The key ends in the commit, run id and attempt; what is left
-          # names the language and CodeQL version, newest first.
+          # Grouped by language alone, newest first. The key also carries a
+          # config hash and the CodeQL version; grouping on those would keep
+          # two of every past version. After an upgrade the newest is the
+          # new version and the old one stays as the fallback until a second
+          # new one replaces it.
           gh cache list --key codeql-overlay-base-database- \
             --sort created_at --order desc --limit 100 --json id,key \
-            --jq '.[] | [.id, (.key | sub("-[0-9a-f]{40}-[0-9]+-[0-9]+$"; ""))] | @tsv' \
+            --jq '.[] | [.id, (.key | capture("^codeql-overlay-base-database-[0-9]+-[0-9a-f]+-(?<lang>[a-z]+)-").lang)] | @tsv' \
             | awk -F'\t' '++seen[$2] > 2 { print $1 }' \
             | while read -r id; do
                 echo "deleting cache $id"

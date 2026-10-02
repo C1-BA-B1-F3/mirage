@@ -274,6 +274,20 @@
         "stderr": ""
       },
       "note": "A truncated GitHub tree uses the generic folder walk: an unreadable subtree keeps its zero-byte directory row and du exits 1, as GNU coreutils 9.7 does."
+    },
+    {
+      "id": "github_submodule_only_directory_is_an_empty_directory",
+      "seq": 530032,
+      "targets": [
+        "github"
+      ],
+      "command": "du /data/mods; du -a /data/mods; find /data/mods; find /data/mods -empty; ls -A /data/mods; ls -la /data/mods | awk 'NR==1 {print} NR>1 {print $NF}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\t/data/mods\n0\t/data/mods\n/data/mods\n/data/mods\ntotal ?\n.\n..\n",
+        "stderr": ""
+      },
+      "note": "data-v1's SUBMODULES puts the gitlink mods/lib in a directory that holds nothing else. The tree drops a gitlink, so mods is an empty directory: du keeps its 0 row with and without -a (bytes, as GNU coreutils 9.7 du -b counts it), find names it and calls it -empty as GNU findutils 4.10.0 does, and ls lists only . and .. under the total ls -la cannot know."
     }
   ]
 }

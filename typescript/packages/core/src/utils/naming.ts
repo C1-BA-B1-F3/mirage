@@ -50,6 +50,27 @@ export function fitIdName(label: string, resourceId: string, suffix = ''): strin
 }
 
 /**
+ * Name a file blob `<stem>__<id>.<ext>` after its first non-empty name.
+ *
+ * An empty name is a missing one, so the next candidate answers for it, and a
+ * blob with none is `file`. The extension is what follows the last dot only
+ * when both sides of that dot hold something and it holds no `/`: `photo.`,
+ * `.bashrc` and `1.2/notes` keep their whole spelling as the stem. The stem
+ * goes through `pathSafeName` and is the only part trimmed to fit NAME_MAX --
+ * the id and extension are what make the name resolve, so they are spent
+ * first.
+ */
+export function fileIdName(resourceId: string, ...names: (string | undefined)[]): string {
+  const name = names.find((n) => n !== undefined && n !== '') ?? 'file'
+  const dot = name.lastIndexOf('.')
+  const ext = name.slice(dot + 1)
+  if (dot > 0 && ext !== '' && !ext.includes('/')) {
+    return fitIdName(pathSafeName(name.slice(0, dot)), resourceId, `.${ext}`)
+  }
+  return fitIdName(pathSafeName(name), resourceId)
+}
+
+/**
  * Build a `<name>__<id>` segment for VFS paths.
  *
  * Used by mounts that encode resource IDs in filenames for reverse lookups

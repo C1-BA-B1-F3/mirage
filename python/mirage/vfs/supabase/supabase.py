@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.types import VFSName
 from mirage.vfs.s3_alias import S3AliasVFS
 from mirage.vfs.supabase.config import SupabaseConfig
 from mirage.vfs.supabase.prompt import PROMPT
 
 
 class SupabaseVFS(S3AliasVFS):
+    name: str = VFSName.SUPABASE
     prompt: str = PROMPT
 
     def __init__(self, config: SupabaseConfig) -> None:

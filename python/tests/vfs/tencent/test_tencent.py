@@ -15,10 +15,9 @@
 import pytest
 from pydantic import ValidationError
 
-from mirage.types import VFSName
 from mirage.vfs.s3 import S3Config
 from mirage.vfs.secrets import reveal_secret
-from mirage.vfs.tencent import TencentConfig, TencentVFS
+from mirage.vfs.tencent import TencentConfig
 
 
 def test_tencent_regional_endpoint():
@@ -60,16 +59,3 @@ def test_tencent_to_s3_config():
     assert isinstance(s3, S3Config)
     assert s3.endpoint_url == "https://cos.ap-singapore.myqcloud.com"
     assert reveal_secret(s3.aws_access_key_id) == "key"
-
-
-def test_tencent_resource_uses_s3_resource_type():
-    vfs = TencentVFS(
-        TencentConfig(
-            bucket="b-1250",
-            region="ap-guangzhou",
-            access_key_id="k",
-            secret_access_key="s",
-        )
-    )
-    assert vfs.name == VFSName.S3
-    assert isinstance(vfs.config, S3Config)

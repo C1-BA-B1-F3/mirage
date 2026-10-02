@@ -12,6 +12,22 @@
         "stdout": "/aliyun/identity.txt\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "object_storage_prefix_alias_names",
+      "seq": 904,
+      "targets": [
+        "object-storage-prefix"
+      ],
+      "command": "df -T /s3 /aliyun /backblaze /ceph /digitalocean /gcs /minio /oci /qingstor /r2 /scaleway /seaweedfs /supabase /tencent /wasabi",
+      "expect": {
+        "exit": 0,
+        "stdout": "Filesystem     Type         1K-blocks Used Available Use% Mounted on\ns3             s3                   -    -         -    - /s3\naliyun         aliyun               -    -         -    - /aliyun\nbackblaze      backblaze            -    -         -    - /backblaze\nceph           ceph                 -    -         -    - /ceph\ndigitalocean   digitalocean         -    -         -    - /digitalocean\ngcs            gcs                  -    -         -    - /gcs\nminio          minio                -    -         -    - /minio\noci            oci                  -    -         -    - /oci\nqingstor       qingstor             -    -         -    - /qingstor\nr2             r2                   -    -         -    - /r2\nscaleway       scaleway             -    -         -    - /scaleway\nseaweedfs      seaweedfs            -    -         -    - /seaweedfs\nsupabase       supabase             -    -         -    - /supabase\ntencent        tencent              -    -         -    - /tencent\nwasabi         wasabi               -    -         -    - /wasabi\n",
+        "stderr": ""
+      },
+      "flags": [
+        "T"
+      ]
     }
   ]
 }

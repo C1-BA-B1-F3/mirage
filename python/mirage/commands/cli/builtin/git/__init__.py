@@ -924,6 +924,7 @@ GIT = CLISpec(
                 Option(short="-r", description="Recurse into subtrees"),
             ),
             positional=(Operand(type="str", name="commit", required=True),),
+            rest=PATHSPEC,
         ),
         CLISpec(
             name="status",

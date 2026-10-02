@@ -10,7 +10,14 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, PathSpec
-from mirage.utils.errors import FS_ERRORS, enoent, enotdir, fs_error_line
+from mirage.utils.errors import (
+    FS_ERRORS,
+    eisdir,
+    enoent,
+    enotdir,
+    fs_error_line,
+)
+from mirage.utils.stat_view import is_dir
 
 # GNU truncate's letter set differs from split's and od's: lowercase
 # g/k/m/t are accepted, b is not (pinned against coreutils 9.7).
@@ -159,10 +166,12 @@ async def _truncate_one(
     either way. The size is read first here only because a relative
     spec needs it, so a stat that misses is not the verdict: the chain
     is, walked the way cp walks a destination's, since a backend's write
-    would make a key under any parent at all. A name typed with a slash
-    in a directory that exists goes to the truncate op, whose answer is
-    the open's: ``missing/`` and ``reg/`` are both ``Is a directory`` and
-    nothing is made, while under ``-c`` ``reg/`` is the lookup's ENOTDIR.
+    would make a key under any parent at all. A directory, and a name
+    typed with a slash in a directory that exists, is the open's EISDIR,
+    settled here so a backend with no truncate op answers in GNU's words
+    too: ``missing/`` and ``reg/`` are both ``Is a directory`` and nothing
+    is made, while under ``-c`` ``reg/`` goes to the truncate op, whose
+    lookup is ENOTDIR.
 
     Args:
         path (PathSpec): the operand.
@@ -170,8 +179,11 @@ async def _truncate_one(
         stat (Callable): stats a path; raises when missing.
         truncate_fn (Callable): sets the length and enforces no_create.
     """
+    directory = False
     try:
-        current = (await stat(path)).size or 0
+        st = await stat(path)
+        current = st.size or 0
+        directory = is_dir(st)
     except (FileNotFoundError, NotADirectoryError) as exc:
         if isinstance(exc, NotADirectoryError) and (
             flags.no_create or not path.raw_path.endswith("/")
@@ -185,6 +197,8 @@ async def _truncate_one(
         if why is not None:
             raise enoent(path) from exc
         current = 0
+    if directory or (path.raw_path.endswith("/") and not flags.no_create):
+        raise eisdir(path)
     await truncate_fn(path, parse_size(flags.size, current), flags.no_create)
 
 

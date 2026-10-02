@@ -38,14 +38,4 @@ class NextcloudVFS(BaseVFS):
         return build_delta_hook(self.accessor)
 
     def get_state(self) -> dict[str, Any]:
-        redacted = ["password"]
-        cfg = self.config.model_dump()
-        for f in redacted:
-            if cfg.get(f) is not None:
-                cfg[f] = "<REDACTED>"
-        return {
-            "type": self.name,
-            "needs_override": True,
-            "redacted_fields": redacted,
-            "config": cfg,
-        }
+        return self.config_state(self.config)

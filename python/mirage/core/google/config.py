@@ -18,7 +18,9 @@ from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
 
 
 class GoogleConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True, frozen=True, extra="forbid"
+    )
 
     # Two ways to authenticate, the same two MsGraphConfig offers.
     #

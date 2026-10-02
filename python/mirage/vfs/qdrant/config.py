@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class QdrantConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     url: str | None = None
     host: str = "localhost"

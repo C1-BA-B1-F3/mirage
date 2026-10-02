@@ -111,11 +111,12 @@ def has_redacted_secret(config: Mapping[str, Any] | None) -> bool:
     """Whether a saved config carries the redaction marker anywhere.
 
     Every value is scanned, never just the secret fields of a config
-    class: the class a saved mount resolves to is a guess when the
-    VFS was an alias (MinIO saves its own config under the ``s3``
-    type), and a guess that named the wrong fields let a mount rebuild
-    with the literal marker as its key. TypeScript's
-    ``hasRedactedSecret`` scans values the same way.
+    class: the class a saved mount resolves to is a guess when the VFS
+    was a subclass saving its own config under an inherited ``type``
+    (the S3-compatible aliases once saved theirs under ``s3``), and a
+    guess that named the wrong fields let a mount rebuild with the
+    literal marker as its key. TypeScript's ``hasRedactedSecret`` scans
+    values the same way.
 
     Args:
         config (Mapping[str, Any] | None): the saved config dump.

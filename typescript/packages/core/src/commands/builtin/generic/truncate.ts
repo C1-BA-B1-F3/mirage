@@ -1,6 +1,14 @@
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { FileStat, PathSpec } from '../../../types.ts'
-import { enoent, enotdir, fsErrorLine, isEnotdir, isFsError } from '../../../utils/errors.ts'
+import {
+  eisdir,
+  enoent,
+  enotdir,
+  fsErrorLine,
+  isEnotdir,
+  isFsError,
+} from '../../../utils/errors.ts'
+import { isDir } from '../../../utils/stat_view.ts'
 import { UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -123,11 +131,12 @@ export async function truncateGeneric(
 // a plain file in the chain is ENOTDIR either way. The size is read first
 // here only because a relative spec needs it, so a stat that misses is not
 // the verdict: the chain is, walked the way cp walks a destination's, since
-// a backend's write would make a key under any parent at all. A name typed
-// with a slash in a directory that exists goes to the truncate op, whose
-// answer is the open's: `missing/` and `reg/` are both `Is a directory` and
-// nothing is made, while under -c `reg/` is the lookup's ENOTDIR. Mirrors
-// Python's _truncate_one.
+// a backend's write would make a key under any parent at all. A directory,
+// and a name typed with a slash in a directory that exists, is the open's
+// EISDIR, settled here so a backend with no truncate op answers in GNU's
+// words too: `missing/` and `reg/` are both `Is a directory` and nothing is
+// made, while under -c `reg/` goes to the truncate op, whose lookup is
+// ENOTDIR. Mirrors Python's _truncate_one.
 async function truncateOne(
   path: PathSpec,
   flags: TruncateFlags,
@@ -135,8 +144,11 @@ async function truncateOne(
   truncate: (path: PathSpec, length: number, noCreate: boolean) => Promise<void>,
 ): Promise<void> {
   let current = 0
+  let directory = false
   try {
-    current = (await stat(path)).size ?? 0
+    const st = await stat(path)
+    current = st.size ?? 0
+    directory = isDir(st)
   } catch (err) {
     const code = (err as { code?: unknown }).code
     if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err
@@ -147,5 +159,6 @@ async function truncateOne(
     if (why !== null) throw enoent(path)
     current = 0
   }
+  if (directory || (path.rawPath.endsWith('/') && !flags.noCreate)) throw eisdir(path)
   await truncate(path, parseSize(flags.size, current), flags.noCreate)
 }

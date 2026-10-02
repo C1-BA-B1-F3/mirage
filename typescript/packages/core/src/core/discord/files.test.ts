@@ -14,7 +14,6 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { downloadFile, fileBlobName } from './files.ts'
-import { NAME_MAX_BYTES, byteLength } from '../../utils/sanitize.ts'
 
 const BODY = '0123456789'
 
@@ -74,20 +73,11 @@ describe('downloadFile', () => {
 })
 
 describe('fileBlobName', () => {
-  const NAME = '会議'.repeat(100)
-
-  it('fits a long attachment name inside NAME_MAX, keeping id and extension', () => {
-    const name = fileBlobName({ id: '1234567890123456789', filename: `${NAME}.txt` })
-
-    expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
-    expect(name.endsWith('1234567890123456789.txt')).toBe(true)
-    expect(name).not.toContain('\uFFFD')
-  })
-
-  it('fits one with no extension', () => {
-    const name = fileBlobName({ id: '1234567890123456789', filename: NAME })
-
-    expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
-    expect(name.endsWith('1234567890123456789')).toBe(true)
+  it.each([
+    [{ id: 'A1', filename: 'budget.csv', title: 'Q4' }, 'budget__A1.csv'],
+    [{ id: 'A2', filename: '', title: 'scan.png' }, 'scan__A2.png'],
+    [{ id: 'A3' }, 'file__A3'],
+  ])('names %j as %s', (att, expected) => {
+    expect(fileBlobName(att)).toBe(expected)
   })
 })

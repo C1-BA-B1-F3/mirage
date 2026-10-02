@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.types import VFSName
 from mirage.vfs.backblaze.config import BackblazeConfig
 from mirage.vfs.backblaze.prompt import PROMPT
 from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class BackblazeVFS(S3AliasVFS):
+    name: str = VFSName.BACKBLAZE
     prompt: str = PROMPT
 
     def __init__(self, config: BackblazeConfig) -> None:

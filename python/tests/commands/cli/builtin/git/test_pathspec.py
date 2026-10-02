@@ -14,10 +14,16 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.git.errors import OutsideRepositoryError
+from mirage.commands.cli.builtin.git.errors import (
+    EmptyPathspecError,
+    OutsideRepositoryError,
+    UnsupportedPathspecError,
+)
 from mirage.commands.cli.builtin.git.pathspec import (
     absolute_operand,
     matched,
+    pathspec_patterns,
+    pathspec_selects,
     repo_relative,
     under,
 )
@@ -92,3 +98,35 @@ def test_the_root_selects_everything():
 def test_a_name_that_is_both_a_file_and_a_directory_selects_both():
     paths = {"slot", "slot/child", "other"}
     assert matched(paths, "slot") == {"slot", "slot/child"}
+
+
+@pytest.mark.parametrize(
+    "path,patterns,expected",
+    [
+        ("docs/a.md", [""], True),
+        ("docs/a.md", ["docs"], True),
+        ("docs/a.md", ["doc"], False),
+        ("docs/a.md", ["docs/a.md"], True),
+        ("docs/sub/a.md", ["*.md"], True),
+        ("docs/a.md", ["docs/*.txt", "*.md"], True),
+        ("a.txt", ["docs"], False),
+    ],
+)
+def test_a_pathspec_names_a_path_a_directory_or_a_glob(
+    path, patterns, expected
+):
+    assert pathspec_selects(path, patterns) is expected
+
+
+@pytest.mark.parametrize(
+    "operand,error",
+    [
+        ("", EmptyPathspecError),
+        (":(top)a.txt", UnsupportedPathspecError),
+        (":!a.txt", UnsupportedPathspecError),
+        ("/elsewhere/a.txt", OutsideRepositoryError),
+    ],
+)
+def test_a_pathspec_git_refuses_or_this_build_lacks_is_refused(operand, error):
+    with pytest.raises(error):
+        pathspec_patterns(LOCATION, "/repo", [operand])

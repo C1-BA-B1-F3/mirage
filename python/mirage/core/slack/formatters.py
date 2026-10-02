@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from mirage.core.slack.scope import SearchTarget
-from mirage.utils.naming import fit_id_name, make_id_name
+from mirage.utils.naming import file_id_name, make_id_name
 from mirage.utils.sanitize import path_safe_name
 
 
@@ -58,17 +58,12 @@ def file_blob_name(file_meta: dict[str, Any]) -> str:
         file_meta (dict): Slack file dict (with id, name/title fields).
 
     Returns:
-        str: VFS filename of shape `<stem>__<F-id>.<ext>`. The stem keeps
-        the original spelling, only ``/`` is replaced, and it is the only
-        part trimmed to fit NAME_MAX -- the id and extension are what make
-        the name resolve, so they are spent first.
+        str: VFS filename of shape `<stem>__<F-id>.<ext>`, named after
+        ``name`` and else ``title`` (see ``file_id_name``).
     """
-    raw_name = file_meta.get("name") or file_meta.get("title") or "file"
-    fid = file_meta.get("id", "")
-    if "." in raw_name:
-        stem, _, ext = raw_name.rpartition(".")
-        return fit_id_name(path_safe_name(stem), fid, f".{ext}")
-    return fit_id_name(path_safe_name(raw_name), fid)
+    return file_id_name(
+        file_meta.get("id", ""), file_meta.get("name"), file_meta.get("title")
+    )
 
 
 def build_query(pattern: str, scope: SearchTarget) -> str:

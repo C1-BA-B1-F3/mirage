@@ -13,8 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { apiRequest } from '../api/client.ts'
-import { pathSafeName } from '../../utils/sanitize.ts'
-import { fitIdName } from '../../utils/naming.ts'
+import { fileIdName } from '../../utils/naming.ts'
 import { windowFor } from '../../utils/ranges.ts'
 
 export interface DiscordAttachment {
@@ -27,16 +26,13 @@ export interface DiscordAttachment {
   size?: number
 }
 
+/**
+ * Construct a stable VFS filename for a Discord attachment, of shape
+ * `<stem>__<att-id>.<ext>`, named after `filename` and else `title` (see
+ * `fileIdName`).
+ */
 export function fileBlobName(att: DiscordAttachment): string {
-  const rawName = att.filename ?? att.title ?? 'file'
-  const aid = att.id
-  const dot = rawName.lastIndexOf('.')
-  if (dot >= 0 && dot < rawName.length - 1) {
-    const stem = rawName.slice(0, dot)
-    const ext = rawName.slice(dot + 1)
-    return fitIdName(pathSafeName(stem), aid, `.${ext}`)
-  }
-  return fitIdName(pathSafeName(rawName), aid)
+  return fileIdName(att.id, att.filename, att.title)
 }
 
 function downloadError(response: Response): Error {

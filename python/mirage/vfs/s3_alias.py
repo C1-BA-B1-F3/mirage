@@ -16,7 +16,10 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 
+from mirage.commands.config import RegisteredCommand
+from mirage.ops.registry import RegisteredOp
 from mirage.vfs.s3 import S3VFS, S3Config
+from mirage.vfs.s3.remap import remap_commands_vfs, remap_ops_vfs
 
 
 class S3AliasConfig(BaseModel):
@@ -104,18 +107,32 @@ class S3AliasVFS(S3VFS):
     """The shared body of every S3-compatible provider VFS.
 
     A provider is an :class:`S3VFS` reached through a provider-shaped
-    config, so all it owns is that config and the redacted state built
-    from it; the conversion itself lives on :class:`S3AliasConfig`. A
-    subclass declares only its ``prompt`` and narrows the config type.
+    config, so all it owns is its ``name``, that config, the redacted
+    state built from it, and S3's ops and commands retagged onto the
+    name; the conversion itself lives on :class:`S3AliasConfig`. A
+    subclass declares only its ``name`` and ``prompt`` and narrows the
+    config type. The name is what the mount registers the tables under,
+    what a snapshot records as the ``type`` (so the alias's own config
+    rebuilds through its own registry entry), and what ``storage_location``
+    and ``df`` report.
 
     Mirrors the TypeScript ``S3AliasVFS`` in
-    ``packages/{node,browser}/src/vfs/s3_alias.ts``, which also has to
-    retag ops and commands onto the alias name.
+    ``packages/{node,browser}/src/vfs/s3_alias.ts``.
     """
 
     def __init__(self, config: S3AliasConfig) -> None:
         self.alias_config = config
         super().__init__(config.to_s3_config())
+        self._alias_ops = remap_ops_vfs(super().ops(), self.name)
+        self._alias_commands = remap_commands_vfs(
+            super().commands(), self.name
+        )
+
+    def ops(self) -> list[RegisteredOp]:
+        return self._alias_ops
+
+    def commands(self) -> list[RegisteredCommand]:
+        return self._alias_commands
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.alias_config)

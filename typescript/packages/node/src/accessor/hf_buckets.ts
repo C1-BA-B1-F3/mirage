@@ -89,10 +89,8 @@ export class HfBucketsAccessor extends Accessor {
     if (this.config.endpoint !== undefined && this.config.endpoint !== '') {
       options.endpoint = this.config.endpoint
     }
-    const keyPrefix = this.config.keyPrefix
-    if (keyPrefix !== undefined && keyPrefix !== '') {
-      options.root = `/${stripSlash(keyPrefix)}/`
-    }
+    const keyPrefix = this.keyPrefix
+    if (keyPrefix !== '') options.root = `/${stripSlash(keyPrefix)}/`
     return options
   }
 

@@ -146,17 +146,21 @@ async function graphed(
     graph.update(commit)
     if (!shown) continue
     const bodies = diff === null ? [] : await commitOutput(repo, commit, diff)
-    const blocks = bodies.length === 0 ? [''] : bodies
-    blocks.forEach((body, index) => {
+    const blocks: [string | null, string][] = []
+    bodies.forEach((body, index) => {
+      if (body !== null)
+        blocks.push([bodies.length > 1 ? (commit.parents[index] ?? null) : null, body])
+    })
+    if (!blocks.length) blocks.push([null, ''])
+    for (const [parent, body] of blocks) {
       if (shownOne && !terminated) {
         if (!missingNewline) out += graph.paddingLine()
         out += '\n'
       }
       shownOne = true
       out += graph.showCommit()
-      const parent = commit.parents[index]
       const from =
-        bodies.length > 1 && !user && parent !== undefined
+        !user && parent !== null
           ? ` (from ${parent.slice(0, fmt.kind === 'oneline' ? length : FULL_SHA)})`
           : ''
       const labels = flags.decorate ? renderTemplate('%d', commit, width, decor) : ''
@@ -177,11 +181,11 @@ async function graphed(
         if (!missingNewline) out += graph.paddingLine()
         out += '\n'
       }
-      if (body === '' || diff === null) return
+      if (body === '' || diff === null) continue
       const separator = empty ? null : separatorLine(commit, fmt.kind, diff)
       if (separator !== null) out += `${graph.paddingLine()}${separator}\n`
       for (const line of body.split('\n').slice(0, -1)) out += `${graph.paddingLine()}${line}\n`
-    })
+    }
   }
   return out
 }

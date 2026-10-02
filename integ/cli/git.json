@@ -413,10 +413,10 @@
         "git-disk",
         "git-ram"
       ],
-      "command": "git -C /repo show -s --pretty=format:%h",
+      "command": "git -C /repo show -s --pretty=format:%h; echo; git -C /repo show --format=%h --name-status HEAD -- no-such-path",
       "expect": {
         "exit": 0,
-        "stdout": "8ef2542",
+        "stdout": "8ef2542\n8ef2542\n",
         "stderr": ""
       }
     },

@@ -349,6 +349,17 @@ REDACTION_CASES = [
         ["EMAIL-PWD-LEAK"],
     ),
     (
+        "mirage.vfs.nextcloud",
+        "NextcloudVFS",
+        "NextcloudConfig",
+        dict(
+            url="https://cloud.example.com/remote.php/dav/files/u/",
+            username="u",
+            password="NC-PWD-LEAK",
+        ),
+        ["NC-PWD-LEAK"],
+    ),
+    (
         "mirage.vfs.langfuse",
         "LangfuseVFS",
         "LangfuseConfig",

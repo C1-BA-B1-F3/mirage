@@ -521,11 +521,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo hi >> /data/slashx/reg/",
+      "command": "echo hi >> /data/slashx/reg/; echo hi > /data/slashx/reg/; truncate -s 0 /data/slashx/reg/",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "/data/slashx/reg/: Is a directory\n"
+        "stderr": "/data/slashx/reg/: Is a directory\n/data/slashx/reg/: Is a directory\ntruncate: cannot open '/data/slashx/reg/' for writing: Is a directory\n"
       }
     },
     {

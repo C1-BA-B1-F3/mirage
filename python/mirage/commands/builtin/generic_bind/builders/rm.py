@@ -29,6 +29,7 @@ from mirage.commands.builtin.utils.slash_links import (
     rm_link_refusal,
 )
 from mirage.commands.builtin.utils.verbose import removal_lines
+from mirage.commands.builtin.utils.wrap import mount_points
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -102,6 +103,16 @@ async def rm(
                             )
                         )
                     await ops.require(Operation.RM_R)(accessor, p)
+                    # A removal never crosses into a mount below, so it
+                    # says so as GNU's --one-file-system does.
+                    errors.extend(
+                        f"rm: skipping '{operand_spelling(root, p)}', "
+                        "since it's on a different device"
+                        for root in mount_points(
+                            opts.ns.mounts if opts.ns is not None else None,
+                            p.virtual,
+                        )
+                    )
                 elif d:
                     if await ops.readdir(accessor, p, index=opts.index):
                         errors.append(

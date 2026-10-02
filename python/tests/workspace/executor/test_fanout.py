@@ -707,7 +707,9 @@ def test_du_fan_out_accounts_for_every_du_flag():
     # Chooses whether a run counts the symlinks on its own mount, which
     # is a per-run question; the merge only ever sees the rows.
     per_run = {"L", "P"}
-    assert spec_flag_names(SPECS["du"]) == central | per_run
+    # Keeps the walk on its operand's mount, so there is no merge at all.
+    no_fan_out = {"one_file_system"}
+    assert spec_flag_names(SPECS["du"]) == central | per_run | no_fan_out
 
 
 def test_operands_spanning_mounts_separate_dirs():

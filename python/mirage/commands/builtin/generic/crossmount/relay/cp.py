@@ -12,7 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Callable
+from collections.abc import Awaitable
+from functools import partial
+from typing import Any, Callable
 
 from mirage.commands.builtin.generic.cp import TransferLinks, parse_flags
 from mirage.commands.builtin.generic.cp import cp as generic_cp
@@ -24,9 +26,32 @@ from mirage.commands.builtin.generic.crossmount.utils import (
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.ops.types import NamespaceView
+from mirage.ops.types import MountView, NamespaceView
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec, PrimitiveCopy
+
+
+async def _own_filesystem(
+    readdir: Callable[..., Awaitable[list[str]]],
+    mounts: MountView,
+    starts: set[str],
+    path: PathSpec,
+    **kwargs: Any,
+) -> list[str]:
+    """List a directory for ``cp -x``: a mount root below the operands
+    is empty, so the copy makes the mount point and reads nothing on the
+    other filesystem, as GNU's --one-file-system does.
+
+    Args:
+        readdir (Callable): the relayed readdir.
+        mounts (MountView): the mount boundaries.
+        starts (set[str]): the operands, whose own mounts are copied.
+        path (PathSpec): the directory to list.
+        **kwargs: forwarded untouched.
+    """
+    if path.virtual not in starts and mounts.is_root(path.virtual):
+        return []
+    return await readdir(path, **kwargs)
 
 
 async def run_cp(
@@ -56,6 +81,13 @@ async def run_cp(
     """
     fl = FlagView(flag_kwargs, spec=SPECS["cp"])
     primitives = transfer_primitives(dispatch)
+    if fl.as_bool("one_file_system") and ns is not None and ns.mounts:
+        primitives["readdir"] = partial(
+            _own_filesystem,
+            primitives["readdir"],
+            ns.mounts,
+            {s.virtual for s in scopes},
+        )
     strategy = PrimitiveCopy(
         read_bytes=primitives["read_bytes"],
         write=primitives["write"],

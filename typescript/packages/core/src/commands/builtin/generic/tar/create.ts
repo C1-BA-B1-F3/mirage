@@ -51,6 +51,9 @@ export interface CreateDeps {
   directories?: readonly PathSpec[]
   links?: LinkView | null
   mounts?: MountView | null
+  // --one-file-system, asked for, so a mount left out goes unreported, as
+  // in GNU.
+  oneFileSystem?: boolean
 }
 
 function refusal(notices: string[]): CreateResult {
@@ -248,7 +251,7 @@ export async function planCreate(
       exitCode = CREATE_ERROR_EXIT
     }
     if (scan.missing) continue
-    for (const crossing of scan.crossings) {
+    for (const crossing of deps.oneFileSystem === true ? [] : scan.crossings) {
       const shown = memberName(respellOne(crossing, base, raw), 'dir')
       notices.push(`tar: ${shown}: ${OTHER_FILESYSTEM}`)
     }

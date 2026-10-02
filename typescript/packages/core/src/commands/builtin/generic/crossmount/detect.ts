@@ -37,5 +37,10 @@ export function isCrossMount(
     const m = registry.tryMountFor(s.virtual)
     if (m !== null) mounts.add(m.prefix)
   }
-  return mounts.size > 1
+  // A copy of a tree that holds a mount reads both filesystems, the way GNU
+  // cp -r copies across one, even from a single mount's operands.
+  return (
+    mounts.size > 1 ||
+    (cmdName === 'cp' && scopes.some((s) => registry.descendantMounts(s.virtual).length > 0))
+  )
 }

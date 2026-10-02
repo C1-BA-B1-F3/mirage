@@ -212,7 +212,14 @@ export async function treeGeneric(
     dirsOnly: fl.asBool('d'),
     matchPattern: matchRaw,
     mounts: opts.ns?.mounts ?? null,
-    crossReaddir: readdirPath === undefined ? null : (p: PathSpec) => readdirPath(p.virtual),
+    // -x draws a mount point but nothing in it, the way GNU tree draws a
+    // directory on another filesystem.
+    crossReaddir:
+      readdirPath === undefined
+        ? null
+        : fl.asBool('x')
+          ? () => Promise.resolve([])
+          : (p: PathSpec) => readdirPath(p.virtual),
     crossStat:
       statPath === undefined
         ? null

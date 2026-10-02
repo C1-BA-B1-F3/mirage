@@ -33,11 +33,11 @@
       "targets": [
         "ram-commands"
       ],
-      "command": "tar -cf /vault/a.tar /vault/d",
+      "command": "tar -cf /vault/a.tar /vault/d; tar -cf /vault/o.tar --one-file-system /vault/d; tar -tf /vault/o.tar; cp -r /vault/d /vault/e; find /vault/e; cp -rx /vault/d /vault/f; find /vault/f; rm -r /vault/o.tar /vault/e /vault/f; rm -r --one-file-system /vault/d; echo rc=$?; ls /vault/d; mkdir -p /vault/d/sub && echo public > /vault/d/sub/top.txt",
       "expect": {
         "exit": 0,
-        "stdout": "",
-        "stderr": "tar: Removing leading `/' from member names\ntar: vault/d/inner/: file is on a different filesystem; not dumped\n"
+        "stdout": "vault/d/\nvault/d/inner/\nvault/d/sub/\nvault/d/sub/top.txt\n/vault/e\n/vault/e/inner\n/vault/e/inner/sec.txt\n/vault/e/sub\n/vault/e/sub/top.txt\n/vault/f\n/vault/f/inner\n/vault/f/sub\n/vault/f/sub/top.txt\nrc=1\ninner\n",
+        "stderr": "tar: Removing leading `/' from member names\ntar: vault/d/inner/: file is on a different filesystem; not dumped\ntar: Removing leading `/' from member names\nrm: skipping '/vault/d/inner', since it's on a different device\n"
       }
     },
     {

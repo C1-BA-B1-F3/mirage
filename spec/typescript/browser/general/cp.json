@@ -297,6 +297,11 @@
       "long": "--suffix",
       "short": "-S",
       "type": "str"
+    },
+    {
+      "long": "--one-file-system",
+      "short": "-x",
+      "type": "bool"
     }
   ],
   "rest": {

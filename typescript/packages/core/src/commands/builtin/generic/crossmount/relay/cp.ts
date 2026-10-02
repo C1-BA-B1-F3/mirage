@@ -41,7 +41,18 @@ export async function runCp(
   const flat = flatten(scopes)
   const stat = statOp(dispatch)
   const readBytes = readBytesOp(dispatch)
-  const readdir = readdirOp(dispatch)
+  const relayed = readdirOp(dispatch)
+  // cp -x: a mount root below the operands is empty, so the copy makes the
+  // mount point and reads nothing on the other filesystem, as GNU's
+  // --one-file-system does.
+  const fl = new FlagView(flagKwargs, specOf('cp'))
+  const mounts = fl.asBool('one_file_system') ? ns?.mounts : undefined
+  const starts = new Set(scopes.map((s) => s.virtual))
+  const readdir: typeof relayed =
+    mounts === undefined
+      ? relayed
+      : (p) =>
+          !starts.has(p.virtual) && mounts.isRoot(p.virtual) ? Promise.resolve([]) : relayed(p)
   const write = async (p: PathSpec, data: Uint8Array): Promise<void> => {
     await dispatch('write', p, [data])
   }
@@ -53,7 +64,7 @@ export async function runCp(
     flat,
     stat,
     strategy,
-    parseFlags(new FlagView(flagKwargs, specOf('cp'))),
+    parseFlags(fl),
     undefined,
     storageKey,
     undefined,

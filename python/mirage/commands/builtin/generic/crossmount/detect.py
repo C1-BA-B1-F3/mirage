@@ -17,7 +17,7 @@ from mirage.commands.builtin.generic.crossmount.constants import (
     RELAY_COMMANDS,
     STREAM_COMMANDS,
 )
-from mirage.commands.builtin.generic.crossmount.types import Strategy
+from mirage.commands.builtin.generic.crossmount.types import Cmd, Strategy
 from mirage.types import PathSpec
 
 
@@ -43,4 +43,9 @@ def is_cross_mount(cmd_name: str, scopes: list[PathSpec], registry) -> bool:
         # a scope outside any mount cannot make the command cross-mount
         if m is not None:
             mounts.add(m.prefix)
-    return len(mounts) > 1
+    # A copy of a tree that holds a mount reads both filesystems, the way
+    # GNU cp -r copies across one, even from a single mount's operands.
+    return len(mounts) > 1 or (
+        cmd_name == Cmd.CP
+        and any(registry.descendant_mounts(s.virtual) for s in scopes)
+    )

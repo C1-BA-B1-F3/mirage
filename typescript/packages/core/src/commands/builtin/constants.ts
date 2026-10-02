@@ -175,6 +175,8 @@ export const FIND_BARE_PREDICATES = new Set([
   '-delete',
   '-ls',
   '-depth',
+  '-xdev',
+  '-mount',
   '-prune',
 ])
 

@@ -350,6 +350,14 @@
       "type": "bool"
     },
     {
+      "short": "-xdev",
+      "type": "bool"
+    },
+    {
+      "short": "-mount",
+      "type": "bool"
+    },
+    {
       "short": "-prune",
       "type": "bool"
     },

@@ -240,6 +240,40 @@
         "stdout": "",
         "stderr": "ls: cannot access '/data/lsmiss': No such file or directory\n"
       }
+    },
+    {
+      "id": "ls_missing_operand_beside_a_listed_dir_exits_2",
+      "seq": 14101801,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "hf",
+        "hf-prefix"
+      ],
+      "command": "mkdir -p /data/cflsm/sub/deep; printf 'nested\\ncontent\\n' > /data/cflsm/sub/nested.txt; printf 'deep\\n' > /data/cflsm/sub/deep/deeper.txt; ls /data/cflsm/nope /data/cflsm/sub 2>/dev/null; echo rc=$?; rm -rf /data/cflsm",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/cflsm/sub:\ndeep\nnested.txt\nrc=2\n",
+        "stderr": ""
+      }
     }
   ]
 }

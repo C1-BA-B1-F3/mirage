@@ -22,23 +22,9 @@ async def fail_get_detail(accessor, document_id):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("flags", [{}, {"args_l": True}], ids=["ls", "ls -l"])
 async def test_ls_lists_virtual_tree_without_detail_calls(
-    monkeypatch, dify_accessor, dify_index, knowledge_root
-):
-    monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
-    monkeypatch.setattr(stat, "get_document_detail", fail_get_detail)
-
-    stdout, io = await ls(
-        dify_accessor, [knowledge_root], [], CommandOpts(index=dify_index)
-    )
-
-    assert await materialize(stdout) == b"README.md\nguides\n"
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_ls_long_listing_uses_light_stat(
-    monkeypatch, dify_accessor, dify_index, knowledge_root
+    monkeypatch, dify_accessor, dify_index, knowledge_root, flags
 ):
     monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
     monkeypatch.setattr(stat, "get_document_detail", fail_get_detail)
@@ -47,10 +33,11 @@ async def test_ls_long_listing_uses_light_stat(
         dify_accessor,
         [knowledge_root],
         [],
-        CommandOpts(index=dify_index, flags={"args_l": True}),
+        CommandOpts(index=dify_index, flags=flags),
     )
 
-    output = await materialize(stdout)
-    assert b"README.md" in output
-    assert b"guides" in output
+    output = (await materialize(stdout)).decode()
+    rows = [r for r in output.splitlines() if not r.startswith("total ")]
+    assert [row.split()[-1] for row in rows] == ["README.md", "guides"]
+    assert output.endswith("\n")
     assert io.exit_code == 0

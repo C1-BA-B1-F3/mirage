@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qun && printf '        x\\n' > /data/qun/un.txt && unexpand -t 4 /data/qun/un.txt | cat -A",
       "expect": {

@@ -14,6 +14,7 @@
 
 import asyncio
 import errno
+import functools
 import logging
 import os
 import posixpath
@@ -26,7 +27,8 @@ from mirage.bridge.sync import run_async_from_sync
 from mirage.context import reset_current_session, set_current_session
 from mirage.fuse.platform.macos import is_macos_metadata
 from mirage.ops import Ops
-from mirage.runtime.handles import FileTable, merge_writes
+from mirage.runtime.handles import ChunkedHandle, FileTable, write_runs
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.types import FileStat, FileType
 from mirage.utils.stat_view import (
     DIR_MODE,
@@ -54,6 +56,8 @@ class Handle:
     key: str
     data: bytes | None = None
     write_buf: WriteBuf = field(default_factory=list)
+    # A large file reads a chunk at a time rather than hydrating whole.
+    chunked: ChunkedHandle | None = None
 
 
 class MountCore:
@@ -443,6 +447,8 @@ class MountCore:
         ctx = self._ctx(fh)
         if ctx is not None and ctx.data is not None:
             return ctx.data[offset : offset + size]
+        if ctx is not None and ctx.chunked is not None:
+            return ctx.chunked.pread(offset, size)
         if ctx is not None:
             path = ctx.path
         data = self.cached_data(path)
@@ -453,24 +459,24 @@ class MountCore:
         return data[offset : offset + size]
 
     def _apply_writes(self, path: str, writes: WriteBuf) -> None:
-        """Merge buffered writes over the raw base and persist the result.
+        """Land buffered writes on the mount, one pwrite per run.
 
-        The base is read raw so a flush never stores a rendered view
-        back into the mount.
+        A pwrite keeps every stored byte the handle did not write, so
+        nothing is read through the door first: a session that may write
+        a file and not read it writes through FUSE, as through a
+        write-only descriptor. A run that fails still invalidates what
+        the core holds, since the runs before it have landed.
 
         Args:
             path (str): mount path being written.
             writes (WriteBuf): (offset, payload) pairs in arrival order.
         """
-        existing = b""
+        target = self.resolve(path)
         try:
-            existing = self._run(self._ops.read(self.resolve(path), raw=True))
-        except FileNotFoundError:
-            # missing file: start from empty; the write creates it
-            pass
-        merged = merge_writes(existing, writes)
-        self._run(self._ops.write(self.resolve(path), merged))
-        self._changed(path)
+            for offset, data in write_runs(writes):
+                self._run(self._ops.pwrite(target, data, offset))
+        finally:
+            self._changed(path)
 
     def write(
         self, path: str, data: bytes, offset: int, fh: int | None
@@ -561,11 +567,13 @@ class MountCore:
         Args:
             path (str): mount path of the entry to remove.
         """
+        self._hold(path)
         self._run(self._ops.unlink(self.resolve(path)))
         self._forget(path)
 
     def rename(self, old: str, new: str) -> None:
         source, target = self.resolve(old), self.resolve(new)
+        self._hold(new)
         self._run(self._ops.rename(source, target))
         for ctx in self._handles.values():
             if ctx.key == source or ctx.key.startswith(source + "/"):
@@ -692,7 +700,58 @@ class MountCore:
             # path, so an extension whose renderer gives an empty file a body
             # is honored rather than shadowed by literal raw emptiness.
             ctx.data = self.prefetch_read(path)
+        elif s.size > READ_CHUNK and not flags & os.O_TRUNC:
+            # A file larger than a chunk is read a chunk at a time: the
+            # kernel asks in small pieces, and fetching the whole file on
+            # the first one moved all of it to answer a `head`.
+            ctx.chunked = ChunkedHandle(
+                path=path,
+                size=s.size,
+                fetch=functools.partial(self._read_chunk, ctx),
+            )
         return self._handles.add(ctx)
+
+    def _read_chunk(self, ctx: Handle, offset: int, size: int) -> bytes:
+        # The handle's path as it is now: a rename moves it.
+        return self._run(self._ops.read(self.resolve(ctx.path), offset, size))
+
+    def _hold(self, path: str) -> None:
+        """Read the rest of the chunked handles on ``path`` before it goes.
+
+        POSIX keeps an open descriptor on the bytes it had, and a chunked
+        handle holds one chunk of them, so an unlink or a rename onto the
+        file would leave the rest unreadable. One read serves every such
+        handle; FUSE runs single-threaded here, so none opens meanwhile. A
+        read that fails (a policy may allow the removal and refuse the
+        read) leaves them chunked rather than refusing a mutation the
+        caller is allowed.
+
+        Args:
+            path (str): mount path about to be removed or replaced.
+        """
+        links = self._ops.links
+        if links is not None and links.is_link(self.resolve(path)):
+            # Removing a link entry takes the link, never its target's
+            # bytes.
+            return
+        key = self.identity(path)
+        held = [
+            ctx
+            for ctx in self._handles.values()
+            if ctx.key == key and ctx.chunked is not None
+        ]
+        if not held:
+            return
+        try:
+            data = self._run(self._ops.read(self.resolve(path)))
+        except Exception as err:
+            logger.debug(
+                "fuse: holding %s before it goes failed: %r", path, err
+            )
+            return
+        for ctx in held:
+            ctx.data = data
+            ctx.chunked = None
 
     def release(self, fh: int) -> None:
         ctx = self._handles.get(fh)
@@ -763,6 +822,9 @@ class MountCore:
         self._prefetch.pop(key, None)
         if not rehydrate:
             return
+        for ctx in self._handles.values():
+            if ctx.key == key and ctx.chunked is not None:
+                ctx.chunked.drop()
         hydrated = [
             ctx
             for ctx in self._handles.values()

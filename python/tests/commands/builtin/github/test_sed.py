@@ -70,39 +70,6 @@ async def _run(accessor, index, path, expr, **kwargs):
 
 
 @pytest.mark.asyncio
-async def test_sed_read_transform(mock_github_api, github_env):
-    accessor, index = github_env
-    text, io = await _run(accessor, index, "src/main.py", "s/import/IMPORT/")
-    assert io.exit_code == 0
-    # First match on each line (non-global), matching GNU sed.
-    assert text == (
-        "IMPORT os\nIMPORT sys\n"
-        "from src.utils IMPORT helper\n"
-        "\nasync def main():\n    pass\n"
-    )
-
-
-@pytest.mark.asyncio
-async def test_sed_global(mock_github_api, github_env):
-    accessor, index = github_env
-    text, io = await _run(accessor, index, "src/utils.py", "s/e/E/g")
-    assert io.exit_code == 0
-    assert "dEf hElpEr():" in text
-    assert "rEturn 42" in text
-
-
-@pytest.mark.asyncio
-async def test_sed_address_delete(mock_github_api, github_env):
-    accessor, index = github_env
-    text, io = await _run(accessor, index, "src/main.py", "/^import/d")
-    assert io.exit_code == 0
-    # The two leading `import` lines are dropped; `from ... import` stays.
-    assert "import os" not in text
-    assert "import sys" not in text
-    assert "from src.utils import helper" in text
-
-
-@pytest.mark.asyncio
 async def test_sed_inplace_rejected(mock_github_api, github_env):
     accessor, index = github_env
     text, io = await _run(

@@ -6,9 +6,8 @@ import { DriveLoc, copyTree, renameReplace, type DriveRef, type DriveUrl } from 
 
 // drive.ts is one module implementing copy-with-monitor-polling and
 // replace-on-409 for OneDrive and SharePoint in both languages, and it had
-// no test beside it (issue #1089 item 16b). OneDrive and SharePoint are not
-// in the conformance matrix either, so nothing cross-language covered it.
-// These mock at the HTTP layer so each case pins a request sequence rather
+// no test beside it (issue #1089 item 16b), and nothing cross-language pinned
+// its request sequences either. These mock at the HTTP layer so each case pins a request sequence rather
 // than an internal call, the same way `test_drive_ops.py`'s twins do.
 
 const BASE = 'https://graph.microsoft.com/v1.0/me/drive'

@@ -102,6 +102,20 @@ describe('Ops', () => {
     expect(ws.records.map((r) => r.op)).toContain('append')
   })
 
+  it('pwrite is one write at the door, so a refused read does not stop it', async () => {
+    const ws = mkWorkspace()
+    await ws.vfs.writeFile('/data/f.txt', 'abc')
+    const seen: [string, boolean][] = []
+    ws.policies.add({
+      preOps(ctx: OpsContext): Action | null {
+        seen.push([ctx.op, ctx.write])
+        return ctx.op === 'read' ? { kind: 'deny', reason: 'write-only' } : null
+      },
+    })
+    await ws.vfs.pwrite('/data/f.txt', new TextEncoder().encode('Z'), 1)
+    expect(seen).toEqual([['pwrite', true]])
+  })
+
   it('exists returns true for existing files and dirs', async () => {
     const ws = mkWorkspace()
     await ws.vfs.writeFile('/data/hi.txt', 'hi')

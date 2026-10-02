@@ -91,6 +91,7 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-t', long: '--target-directory', type: 'path' }),
       new Option({ short: '-T', long: '--no-target-directory' }),
       new Option({ short: '-S', long: '--suffix', type: 'str' }),
+      new Option({ short: '-x', long: '--one-file-system' }),
     ],
     rest: new Operand({ type: 'path' }),
   }),

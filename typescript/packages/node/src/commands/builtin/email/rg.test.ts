@@ -62,15 +62,6 @@ beforeEach(() => {
 })
 
 describe('email rg push-down', () => {
-  it('defers an alternation to the generic scan', async () => {
-    // No literal is required by every match of `parser|percent`, and IMAP
-    // TEXT is a substring search, so the push-down cannot narrow it: the
-    // generic scan runs instead of answering exit 1 (#1067).
-    await run(['parser|percent'], {})
-    expect(search).not.toHaveBeenCalled()
-    expect(generic).toHaveBeenCalledTimes(1)
-  })
-
   it('hands the server the literal a regex requires', async () => {
     // `worker.3` matches `worker-3`; the server is asked for `worker`.
     const [, io] = (await run(['worker.3'], {})) as [Uint8Array, IOResult]

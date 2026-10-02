@@ -18,7 +18,12 @@ import io
 
 import pytest
 
+from mirage import MountMode, Workspace
+from mirage.ops.registry import op
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.runtime.python.host.file import MirageFile
+from mirage.types import PathSpec
+from mirage.vfs.ram import RAMVFS
 
 from .conftest import make_ops_with_dir
 
@@ -238,3 +243,44 @@ class TestMirageFile:
         ops, _ = make_ops_with_dir()
         with pytest.raises(ValueError, match="binary mode"):
             MirageFile(ops, "/data/dir/f.txt", "rb", **{argument: "utf-8"})
+
+
+@op("read", vfs="ram", filetype=".tally")
+async def _read_tally(accessor, path: PathSpec, **kwargs) -> bytes:
+    return b"RENDERED"
+
+
+class TestChunks:
+    def test_a_read_only_open_moves_only_the_chunk_it_reads(self):
+        # Reading a few bytes of a large file used to fetch all of it.
+        ops, _ = make_ops_with_dir()
+        _write(ops, "/data/dir/big.txt", b"x" * (3 * READ_CHUNK))
+        before = len(ops.records)
+        with MirageFile(ops, "/data/dir/big.txt", "r") as f:
+            assert f.read(5) == "xxxxx"
+        moved = [r.bytes for r in ops.records[before:] if r.op == "read"]
+        assert moved == [READ_CHUNK]
+
+    def test_lines_across_chunks_read_as_the_file_holds_them(self):
+        ops, _ = make_ops_with_dir()
+        body = b"".join(b"line %d\n" % i for i in range(300_000))
+        _write(ops, "/data/dir/lines.txt", body)
+        with MirageFile(ops, "/data/dir/lines.txt", "r") as f:
+            assert list(f) == body.decode().splitlines(keepends=True)
+        with MirageFile(ops, "/data/dir/lines.txt", "rb") as f:
+            f.seek(-7, 2)
+            assert f.read() == b"299999\n"[-7:]
+
+    def test_a_writable_open_starts_from_the_stored_bytes(self):
+        # Its flush stores what it holds, so starting from the rendering
+        # stored the rendering over the file.
+        ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+        ws.mount("/data/").register_fns([_read_tally])
+        _write(ws.vfs, "/data/books.tally", b"STORED")
+        with MirageFile(ws.vfs, "/data/books.tally", "r") as f:
+            assert f.read() == "RENDERED"
+        with MirageFile(ws.vfs, "/data/books.tally", "a") as f:
+            f.write("+")
+        assert asyncio.run(ws.vfs.read("/data/books.tally", raw=True)) == (
+            b"STORED+"
+        )

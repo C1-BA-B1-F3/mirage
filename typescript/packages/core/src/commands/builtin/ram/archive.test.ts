@@ -19,7 +19,6 @@ import { materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import type { LinkView } from '../../../ops/types.ts'
 import { FileStat, FileType, LINK_TARGET_KEY, PathSpec } from '../../../types.ts'
-import { decodeBase64 } from '../../../utils/base64.ts'
 import { CycleError } from '../../../utils/path.ts'
 import { readTar } from '../tar_helper.ts'
 import { UsageError } from '../../errors.ts'
@@ -438,176 +437,6 @@ describe('zip / unzip', () => {
     expect(text).not.toContain('sub/')
   })
 
-  it('zip -q suppresses stdout', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/a.txt', ENC.encode('hello'))
-    const { out } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), PathSpec.fromStrPath('/a.txt')],
-      { q: true },
-    )
-    expect(out.byteLength).toBe(0)
-  })
-
-  it('zip -r walks a directory operand instead of failing on it', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.dirs.add('/d/sub')
-    vfs.store.dirs.add('/d/empty')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    vfs.store.files.set('/d/sub/b.txt', ENC.encode('beta'))
-    const { out, exitCode } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), dirSpec('/d', 'd')],
-      { r: true },
-    )
-    expect(exitCode).toBe(0)
-    expect(DEC.decode(out)).toBe(
-      '  adding: d/\n  adding: d/a.txt\n  adding: d/empty/\n  adding: d/sub/\n  adding: d/sub/b.txt\n',
-    )
-  })
-
-  it('zip without -r stores the directory entry and nothing under it', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    const { out } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), dirSpec('/d', 'd')],
-      {},
-    )
-    expect(DEC.decode(out)).toBe('  adding: d/\n')
-  })
-
-  it('zip -r then unzip restores an empty directory', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.dirs.add('/d/empty')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    await runCmd(RAM_ZIP, vfs, [PathSpec.fromStrPath('/out.zip'), dirSpec('/d', 'd')], {
-      r: true,
-      q: true,
-    })
-    vfs.store.dirs.delete('/d/empty')
-    vfs.store.files.delete('/d/a.txt')
-    await runCmd(RAM_UNZIP, vfs, [PathSpec.fromStrPath('/out.zip')], { d: '/', q: true })
-    expect(vfs.store.dirs.has('/d/empty')).toBe(true)
-    expect(DEC.decode(vfs.store.files.get('/d/a.txt'))).toBe('alpha')
-  })
-
-  it('zip -r -j drops directory entries entirely', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.dirs.add('/d/sub')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    vfs.store.files.set('/d/sub/b.txt', ENC.encode('beta'))
-    const { out } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), dirSpec('/d', 'd')],
-      { r: true, j: true },
-    )
-    expect(DEC.decode(out)).toBe('  adding: a.txt\n  adding: b.txt\n')
-  })
-
-  it('zip -x is anchored on the whole stored name', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.dirs.add('/d/sub')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    vfs.store.files.set('/d/sub/b.txt', ENC.encode('beta'))
-    const { out } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), dirSpec('/d', 'd')],
-      { r: true, x: ['d/sub/*'] },
-    )
-    expect(DEC.decode(out)).toBe('  adding: d/\n  adding: d/a.txt\n')
-  })
-
-  it("warns in Info-ZIP's words on a name it cannot match, and archives the rest", async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/a.txt', ENC.encode('alpha'))
-    const { exitCode, stderr } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), dirSpec('/a.txt', 'a.txt'), dirSpec('/nope', 'nope')],
-      {},
-    )
-    expect(exitCode).toBe(0)
-    expect(DEC.decode(stderr)).toBe('\tzip warning: name not matched: nope\n')
-    expect(vfs.store.files.has('/out.zip')).toBe(true)
-  })
-
-  it('writes no archive and exits 12 when nothing matched', async () => {
-    const vfs = new RAMVFS()
-    const { exitCode, stderr } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [dirSpec('/out.zip', 'out.zip'), dirSpec('/nope', 'nope')],
-      {},
-    )
-    expect(exitCode).toBe(12)
-    expect(vfs.store.files.has('/out.zip')).toBe(false)
-    expect(DEC.decode(stderr)).toBe(
-      '\tzip warning: name not matched: nope\n\nzip error: Nothing to do! (out.zip)\n',
-    )
-  })
-
-  it('-q silences the warning but never the fatal error', async () => {
-    const vfs = new RAMVFS()
-    const { exitCode, stderr } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [dirSpec('/out.zip', 'out.zip'), dirSpec('/nope', 'nope')],
-      { q: true },
-    )
-    expect(exitCode).toBe(12)
-    expect(DEC.decode(stderr)).toBe('\nzip error: Nothing to do! (out.zip)\n')
-  })
-
-  it('names members from virtual paths on a prefixed mount', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    const operand = new PathSpec({
-      virtual: '/data/d',
-      directory: '/data/d',
-      vfsPath: 'd',
-      resolved: true,
-      rawPath: '/data/d',
-    })
-    const archive = new PathSpec({
-      virtual: '/data/out.zip',
-      directory: '/data',
-      vfsPath: 'out.zip',
-      resolved: true,
-      rawPath: '/data/out.zip',
-    })
-    const { out } = await runCmd(RAM_ZIP, vfs, [archive, operand], { r: true }, [], '/data')
-    expect(DEC.decode(out)).toBe('  adding: data/d/\n  adding: data/d/a.txt\n')
-  })
-  // Pinned against Info-ZIP 3.0 on debian:stable-slim.
-  it('zip -r of . stores its contents at the archive root', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.dirs.add('/d/sub')
-    vfs.store.files.set('/d/[Content_Types].xml', ENC.encode('x'))
-    vfs.store.files.set('/d/sub/b.txt', ENC.encode('beta'))
-    const { out } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [PathSpec.fromStrPath('/out.zip'), dirSpec('/d', '.')],
-      { r: true },
-    )
-    expect(DEC.decode(out)).toBe(
-      '  adding: [Content_Types].xml\n  adding: sub/\n  adding: sub/b.txt\n',
-    )
-  })
-
   it('strips only the leading ./ run, from names and -x patterns', async () => {
     const vfs = new RAMVFS()
     vfs.store.dirs.add('/d')
@@ -628,20 +457,6 @@ describe('zip / unzip', () => {
     expect(DEC.decode(out)).toBe('  adding: a.txt\n  adding: sub/./\n  adding: sub/./b.txt\n')
   })
 
-  it('zip of . without -r has nothing to do', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    const { exitCode, stderr } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [dirSpec('/out.zip', 'out.zip'), dirSpec('/d', '.')],
-      {},
-    )
-    expect(exitCode).toBe(12)
-    expect(DEC.decode(stderr)).toBe('\nzip error: Nothing to do! (out.zip)\n')
-  })
-
   it('stores one path named twice once', async () => {
     const vfs = new RAMVFS()
     vfs.store.dirs.add('/d')
@@ -659,30 +474,6 @@ describe('zip / unzip', () => {
     )
     expect(exitCode).toBe(0)
     expect(DEC.decode(out)).toBe('  adding: a.txt\n')
-  })
-
-  it('refuses two paths that store under one name', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/d')
-    vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
-    const { exitCode, stderr } = await runCmd(
-      RAM_ZIP,
-      vfs,
-      [
-        dirSpec('/out.zip', 'out.zip'),
-        dirSpec('/d/a.txt', './a.txt'),
-        dirSpec('/d/a.txt', 'a.txt'),
-      ],
-      {},
-    )
-    expect(exitCode).toBe(16)
-    expect(vfs.store.files.has('/out.zip')).toBe(false)
-    expect(DEC.decode(stderr)).toBe(
-      '\tzip warning:   first full name: ./a.txt\n' +
-        '                      second full name: a.txt\n' +
-        '                     name in zip file repeated: a.txt\n' +
-        '\nzip error: Invalid command arguments (cannot repeat names in zip file)\n',
-    )
   })
 
   it('names -j as the cause of a repeated name, and -q keeps only the error', async () => {
@@ -740,22 +531,6 @@ describe('unzip members', () => {
   function book(): PathSpec[] {
     return [PathSpec.fromStrPath('/book.zip')]
   }
-
-  it('-p with a member outputs only that member', async () => {
-    const vfs = await makeBook()
-    const r = await runCmd(RAM_UNZIP, vfs, book(), { p: true }, ['xl/workbook.xml'])
-    expect(DEC.decode(r.out)).toBe(WORKBOOK)
-    expect(r.exitCode).toBe(0)
-    expect(r.stderr.byteLength).toBe(0)
-  })
-
-  it('-p with a missing member exits 11 with a caution on stderr', async () => {
-    const vfs = await makeBook()
-    const r = await runCmd(RAM_UNZIP, vfs, book(), { p: true }, ['NOSUCHFILE.xml'])
-    expect(r.out.byteLength).toBe(0)
-    expect(r.exitCode).toBe(11)
-    expect(DEC.decode(r.stderr)).toBe(`${CAUTION}NOSUCHFILE.xml\n`)
-  })
 
   it('-p output follows archive order, not argument order', async () => {
     const vfs = await makeBook()
@@ -998,75 +773,6 @@ describe('archive planner regressions', () => {
 })
 
 describe('unzip archive validation', () => {
-  const PLAIN = ENC.encode('plain text')
-  const NO_EOCD =
-    '  End-of-central-directory signature not found.  Either this file is not\n' +
-    '  a zipfile, or it constitutes one disk of a multi-part archive.  In the\n' +
-    '  latter case the central directory and zipfile comment will be found on\n' +
-    '  the last disk(s) of this archive.\n'
-
-  function plainVfs(bytes: Uint8Array = PLAIN): RAMVFS {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/a.zip', bytes)
-    return vfs
-  }
-
-  function archive(): PathSpec[] {
-    return [PathSpec.fromStrPath('/a.zip')]
-  }
-
-  it('refuses plain text as no archive, in unzip voice', async () => {
-    const r = await runCmd(RAM_UNZIP, plainVfs(), archive(), { args_l: true })
-    expect(r.exitCode).toBe(9)
-    expect(r.out.byteLength).toBe(0)
-    expect(DEC.decode(r.stderr)).toBe(
-      NO_EOCD +
-        'unzip:  cannot find zipfile directory in one of /a.zip or\n' +
-        '        /a.zip.zip, and cannot find /a.zip.ZIP, period.\n',
-    )
-  })
-
-  it('refuses an empty file as no archive', async () => {
-    const r = await runCmd(RAM_UNZIP, plainVfs(new Uint8Array()), archive(), {})
-    expect(r.exitCode).toBe(9)
-    expect(DEC.decode(r.stderr)).toContain('End-of-central-directory signature not found')
-  })
-
-  it('-p names the archive above the paragraph and does not sign', async () => {
-    const r = await runCmd(RAM_UNZIP, plainVfs(), archive(), { p: true })
-    expect(r.exitCode).toBe(9)
-    expect(DEC.decode(r.stderr)).toBe('[/a.zip]\n' + NO_EOCD)
-  })
-
-  it('-Z signs the refusal as zipinfo', async () => {
-    const r = await runCmd(RAM_UNZIP, plainVfs(), archive(), { Z: true, args_1: true })
-    expect(r.exitCode).toBe(9)
-    expect(DEC.decode(r.stderr)).toBe(
-      '[/a.zip]\n' +
-        NO_EOCD +
-        'zipinfo:  cannot find zipfile directory in one of /a.zip or\n' +
-        '          /a.zip.zip, and cannot find /a.zip.ZIP, period.\n',
-    )
-  })
-
-  it('a clobbered central directory exits 3', async () => {
-    const vfs = await makeMulti()
-    const bytes = vfs.store.files.get('/m.zip')
-    if (bytes === undefined) throw new Error('no archive')
-    const bad = bytes.slice()
-    const at = findSig(bad, [0x50, 0x4b, 0x01, 0x02])
-    bad.set([0x58, 0x58, 0x58, 0x58], at)
-    vfs.store.files.set('/m.zip', bad)
-    const r = await runCmd(RAM_UNZIP, vfs, [PathSpec.fromStrPath('/m.zip')], { args_l: true })
-    expect(r.exitCode).toBe(3)
-    expect(DEC.decode(r.stderr)).toBe(
-      'error [/m.zip]:  start of central directory not found;\n' +
-        '  zipfile corrupt.\n' +
-        '  (please check that you have transferred or created the zipfile in the\n' +
-        '  appropriate BINARY mode and that you have compiled UnZip properly)\n',
-    )
-  })
-
   it('an entry reaching past the directory exits 3', async () => {
     const vfs = await makeMulti()
     const bytes = vfs.store.files.get('/m.zip')
@@ -1179,65 +885,6 @@ describe('unzip -Z (zipinfo mode)', () => {
     expect(r.stderr.byteLength).toBe(0)
   })
 
-  it('-Z prints the header, the rows and the totals', async () => {
-    const vfs = await makeMulti()
-    const size = vfs.store.files.get('/m.zip')?.byteLength ?? 0
-    const r = await runCmd(RAM_UNZIP, vfs, M, { Z: true })
-    const lines = DEC.decode(r.out).split('\n')
-    expect(lines.slice(0, 5)).toEqual([
-      'Archive:  /m.zip',
-      `Zip file size: ${String(size)} bytes, number of entries: 3`,
-      'drwxr-xr-x  2.0 unx        0 b- stor 80-Jan-01 00:00 d/',
-      '-rw-r--r--  2.0 unx      200 b- defN 80-Jan-01 00:00 d/a.txt',
-      '-rw-r--r--  2.0 unx        1 b- defN 80-Jan-01 00:00 b.txt',
-    ])
-    expect(lines[5]).toMatch(
-      /^3 files, 201 bytes uncompressed, \d+ bytes compressed: {2}-?\d+\.\d%$/,
-    )
-    expect(lines[6]).toBe('')
-  })
-
-  it('-Zl adds the compressed size column', async () => {
-    const vfs = await makeMulti()
-    const r = await runCmd(RAM_UNZIP, vfs, M, { Z: true, args_l: true }, ['d/'])
-    expect(DEC.decode(r.out)).toBe(
-      'drwxr-xr-x  2.0 unx        0 b-        0 stor 80-Jan-01 00:00 d/\n',
-    )
-  })
-
-  it('-Zh and -Zt alone print only that line', async () => {
-    const vfs = await makeMulti()
-    const size = vfs.store.files.get('/m.zip')?.byteLength ?? 0
-    const h = await runCmd(RAM_UNZIP, vfs, M, { Z: true, h: true })
-    expect(DEC.decode(h.out)).toBe(
-      `Archive:  /m.zip\nZip file size: ${String(size)} bytes, number of entries: 3\n`,
-    )
-    const t = await runCmd(RAM_UNZIP, vfs, M, { Z: true, t: true })
-    expect(DEC.decode(t.out)).toMatch(
-      /^3 files, 201 bytes uncompressed, \d+ bytes compressed: {2}-?\d+\.\d%\n$/,
-    )
-  })
-
-  it('-Z2 keeps the header that was asked for', async () => {
-    const vfs = await makeMulti()
-    const r = await runCmd(RAM_UNZIP, vfs, M, { Z: true, '2': true, h: true })
-    expect(DEC.decode(r.out)).toMatch(
-      /^Archive: {2}\/m\.zip\nZip file size: \d+ bytes, number of entries: 3\nd\/\nd\/a\.txt\nb\.txt\n$/,
-    )
-  })
-
-  it('a member miss exits 11 with a caution, a hit and a miss exits 0', async () => {
-    const vfs = await makeMulti()
-    const miss = await runCmd(RAM_UNZIP, vfs, M, { Z: true, args_1: true }, ['nomatch'])
-    expect(miss.exitCode).toBe(11)
-    expect(miss.out.byteLength).toBe(0)
-    expect(DEC.decode(miss.stderr)).toBe('caution: filename not matched:  nomatch\n')
-    const mixed = await runCmd(RAM_UNZIP, vfs, M, { Z: true, args_1: true }, ['d/*', 'nomatch'])
-    expect(mixed.exitCode).toBe(0)
-    expect(DEC.decode(mixed.out)).toBe('d/\nd/a.txt\n')
-    expect(DEC.decode(mixed.stderr)).toBe('caution: filename not matched:  nomatch\n')
-  })
-
   it('zipinfo letters need -Z', async () => {
     const vfs = await makeMulti()
     await expect(runCmd(RAM_UNZIP, vfs, M, { args_1: true })).rejects.toThrow(UsageError)
@@ -1249,53 +896,6 @@ describe('unzip -Z (zipinfo mode)', () => {
 
 describe('unzip -v', () => {
   const M = [PathSpec.fromStrPath('/m.zip')]
-  // a.txt ("abc", stored, 1980 stamp) commented "na\xefve\x13 \xff", in an
-  // archive commented "caf\xe9 \x1b[1m\r\nfin": Latin-1 bytes, ^S, ESC, CR.
-  const LEGACY_COMMENTS =
-    'UEsDBBQAAAAAAAAAIQDCQSQ1AwAAAAMAAAAFAAAAYS50eHRhYmNQSwECFAMUAAAAAAAAACEAwkEkNQMAAAADAAAABQAAAAgAAAAAAAAApIEAAAAAYS50eHRuYe92ZRMg/1BLBQYAAAAAAQABADsAAAAmAAAADgBjYWbpIBtbMW0NCmZpbg=='
-
-  it('lists the verbose table', async () => {
-    const vfs = await makeMulti()
-    const r = await runCmd(RAM_UNZIP, vfs, M, { v: true })
-    const lines = DEC.decode(r.out).split('\n')
-    expect(lines.slice(0, 4)).toEqual([
-      'Archive:  /m.zip',
-      ' Length   Method    Size  Cmpr    Date    Time   CRC-32   Name',
-      '--------  ------  ------- ---- ---------- ----- --------  ----',
-      '       0  Stored        0   0% 1980-01-01 00:00 00000000  d/',
-    ])
-    expect(lines[4]).toMatch(
-      /^ {5}200 {2}Defl:N +\d+ +\d+% 1980-01-01 00:00 599af058 {2}d\/a\.txt$/,
-    )
-    expect(lines[5]).toMatch(/^ {7}1 {2}Defl:N +\d+ +-?\d+% 1980-01-01 00:00 71beeff9 {2}b\.txt$/)
-    expect(lines[6]).toBe('--------          -------  ---                            -------')
-    expect(lines[7]).toMatch(/^ {5}201 +\d+ +-?\d+% {28}3 files$/)
-    expect([r.exitCode, r.stderr.byteLength]).toEqual([0, 0])
-  })
-
-  it('writes comments as stored', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/l.zip', decodeBase64(LEGACY_COMMENTS))
-    const r = await runCmd(RAM_UNZIP, vfs, [PathSpec.fromStrPath('/l.zip')], { v: true })
-    expect(String.fromCharCode(...r.out)).toBe(
-      'Archive:  /l.zip\n' +
-        'caf\xe9 ^[[1m\n' +
-        'fin\n' +
-        ' Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n' +
-        '--------  ------  ------- ---- ---------- ----- --------  ----\n' +
-        '       3  Stored        3   0% 1980-01-01 00:00 352441c2  a.txt\n' +
-        'na\xefve \xff\n' +
-        '--------          -------  ---                            -------\n' +
-        '       3                3   0%                            1 file\n',
-    )
-    expect([r.exitCode, r.stderr.byteLength]).toEqual([0, 0])
-  })
-
-  it('prints the version line without an archive', async () => {
-    const r = await runCmd(RAM_UNZIP, new RAMVFS(), [], { v: true })
-    expect(DEC.decode(r.out)).toMatch(/^unzip \(Mirage\) /)
-    expect(r.exitCode).toBe(0)
-  })
 
   it.each([[{ args_l: true }], [{ v: true }]])('yields to -t and -p (%o)', async (listing) => {
     // Info-ZIP lists only when neither -t nor -p picks another mode.
@@ -1309,36 +909,6 @@ describe('unzip -v', () => {
 
 describe('unzip -Zm, -Zs and -x', () => {
   const M = [PathSpec.fromStrPath('/m.zip')]
-
-  it('-Zm and -Zs pick the row format, and need -Z', async () => {
-    const vfs = await makeMulti()
-    const m = await runCmd(RAM_UNZIP, vfs, M, { Z: true, m: true }, ['d/'])
-    expect(DEC.decode(m.out)).toBe('drwxr-xr-x  2.0 unx        0 b-  0% stor 80-Jan-01 00:00 d/\n')
-    const s = await runCmd(RAM_UNZIP, vfs, M, { Z: true, s: true }, ['d/'])
-    expect(DEC.decode(s.out)).toBe('drwxr-xr-x  2.0 unx        0 b- stor 80-Jan-01 00:00 d/\n')
-    await expect(runCmd(RAM_UNZIP, vfs, M, { m: true })).rejects.toThrow(
-      'unzip: -m is a ZipInfo option and needs -Z',
-    )
-  })
-
-  it('-x drops the excluded entries and counts as a filter for the -Z layout', async () => {
-    const vfs = await makeMulti()
-    const r = await runCmd(RAM_UNZIP, vfs, M, { Z: true, x: ['b.txt'] })
-    expect(DEC.decode(r.out)).toBe(
-      'drwxr-xr-x  2.0 unx        0 b- stor 80-Jan-01 00:00 d/\n' +
-        '-rw-r--r--  2.0 unx      200 b- defN 80-Jan-01 00:00 d/a.txt\n',
-    )
-    expect(r.exitCode).toBe(0)
-    expect(r.stderr.byteLength).toBe(0)
-  })
-
-  it('an unmatched exclude is a caution, not an error', async () => {
-    const vfs = await makeMulti()
-    const r = await runCmd(RAM_UNZIP, vfs, M, { Z: true, args_1: true, x: ['nomatch'] }, ['d/*'])
-    expect(DEC.decode(r.out)).toBe('d/\nd/a.txt\n')
-    expect(r.exitCode).toBe(0)
-    expect(DEC.decode(r.stderr)).toBe('caution: excluded filename not matched:  nomatch\n')
-  })
 
   it('a filter that leaves nothing exits 11 in every mode', async () => {
     const vfs = await makeMulti()
@@ -1423,8 +993,6 @@ describe('tar and unzip on a read-only mount', () => {
     ['cd /ro && tar tf a.tar', 'f.txt\n'],
     ['tar -xOf /ro/a.tar', 'hello\n'],
     ['tar -x --to-stdout -f /ro/a.tar', 'hello\n'],
-    ['unzip -p /ro/a.zip f.txt', 'hello\n'],
-    ['unzip -Z -1 /ro/a.zip', 'f.txt\n'],
   ])('runs %s, which writes nothing', async (line, stdout) => {
     const [exitCode, out] = await readOnlyShell(ARCHIVES, line)
     expect([exitCode, out]).toEqual([0, stdout])

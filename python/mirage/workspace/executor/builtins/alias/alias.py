@@ -168,9 +168,26 @@ def alias_value(
     return value
 
 
+def expanding_aliases(session: SessionState) -> frozenset[str]:
+    """The alias names a command word would expand as right now.
+
+    bash checks a word where a command starts for an alias before it
+    checks for a reserved word, so one of these names is a command there
+    even when it is spelled ``fi`` or ``do``.
+
+    Args:
+        session (SessionState): shell session state.
+    """
+    if not session.shopts.get(
+        "expand_aliases", SHOPT_DEFAULTS["expand_aliases"]
+    ):
+        return frozenset()
+    return frozenset(session.aliases) - frozenset(session._alias_stack)
+
+
 def alias_command_text(
     session: SessionState, name: str, rest: str, mark: AliasMark
-) -> str | None:
+) -> tuple[str, list[tuple[str, str]]] | None:
     """The command line an aliased head word rewrites to, or None.
 
     The alias text replaces the word; a value ending in a blank asks for
@@ -184,11 +201,17 @@ def alias_command_text(
         name (str): the head word.
         rest (str): the source text after the head word, as typed.
         mark (AliasMark): the parse and row of the use.
+
+    Returns:
+        tuple[str, list[tuple[str, str]]] | None: the line, and each
+        alias with the text it put at the line's head, in order; the
+        rest of the line is the command's own.
     """
     value = alias_value(session, name, mark)
     if value is None:
         return None
     seen = {name}
+    texts = [(name, value)]
     out = value
     while out.endswith((" ", "\t")):
         stripped = rest.lstrip()
@@ -199,10 +222,11 @@ def alias_command_text(
         if nxt is None:
             break
         seen.add(match.group(0))
+        texts.append((match.group(0), nxt))
         out += nxt
         rest = stripped[match.end() :]
     tail = rest.strip()
-    return f"{out} {tail}" if tail else out
+    return (f"{out} {tail}" if tail else out), texts
 
 
 async def alias_builtin(call: BuiltinCall) -> Result:

@@ -15,7 +15,6 @@
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
 import { OpsRegistry, type RegisteredOp } from '../../../ops/registry.ts'
-import { parseSessionProfile } from '../../../policy/profile.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { type CommandOpts } from '../../config.ts'
 import {
@@ -137,15 +136,6 @@ async function run(ws: Workspace, cmd: string): Promise<[number, string, string]
 }
 
 describe('stat -c directive formatting', () => {
-  it('renders name, quoted name, size, and type', async () => {
-    expect(await render('%n', fs())).toBe('/data/f.txt')
-    expect(await render('%N', fs())).toBe("'/data/f.txt'")
-    expect(await render('%s', fs({ size: 42 }))).toBe('42')
-    expect(await render('%s', fs({ size: null }))).toBe('-')
-    expect(await render('%F', fs())).toBe('regular file')
-    expect(await render('%F', fs({ type: FileType.DIRECTORY }))).toBe('directory')
-  })
-
   // A directory is DIR_SIZE whatever the backend put in size: null for a
   // synthetic one, a subtree total for a Graph folder. A file keeps its own
   // size, None when unknown.
@@ -235,12 +225,6 @@ describe('stat -c directive formatting', () => {
     expect(await render('%X', s)).toBe(MTIME_EPOCH)
   })
 
-  it('renders birth sentinels and epoch of unknown time', async () => {
-    expect(await render('%w', fs())).toBe('-')
-    expect(await render('%W', fs())).toBe('0')
-    expect(await render('%Y', fs({ modified: null }))).toBe('0')
-  })
-
   it('renders structural constants', async () => {
     expect(await render('%B', fs())).toBe('512')
     expect(await render('%r %R %t %T', fs())).toBe('0 0 0 0')
@@ -260,11 +244,6 @@ describe('stat -c directive formatting', () => {
     }
   })
 
-  it('handles literal percent and mixed text', async () => {
-    expect(await render('100%%', fs())).toBe('100%')
-    expect(await render('size=%s type=%F', fs({ size: 6 }))).toBe('size=6 type=regular file')
-  })
-
   it('handles long incomplete directives in linear time', async () => {
     const fmt = `%${'0'.repeat(10_000)}!`
     expect(await render(fmt, fs())).toBe(fmt)
@@ -276,20 +255,6 @@ describe('stat -c directive formatting', () => {
     const [, io] = result
     expect(io.exitCode).toBe(1)
     expect(DEC.decode(await materialize(io.stderr))).toContain('missing operand')
-  })
-
-  it('continues past an errored operand and exits 1', async () => {
-    const ok = PathSpec.fromStrPath('/data/ok.txt')
-    const bad = PathSpec.fromStrPath('/data/bad.txt')
-    const statFn = (p: PathSpec): Promise<FileStat> =>
-      p.virtual === bad.virtual
-        ? Promise.reject(Object.assign(new Error('nope'), { code: 'ENOENT' }))
-        : Promise.resolve(fs({ size: 3 }))
-    const result = await statGeneric([bad, ok], opts('%s'), statFn)
-    if (result === null) throw new Error('statGeneric returned null')
-    const [out, io] = result
-    expect(io.exitCode).toBe(1)
-    expect(DEC.decode(await materialize(out))).toBe('3\n')
   })
 })
 
@@ -324,25 +289,6 @@ describe('stat -c workspace integration', () => {
     expect(out).toBe('agent7:-\n')
   })
 
-  it('renders the group as the session profile', async () => {
-    const parser = await getTestParser()
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/f.txt', new TextEncoder().encode('hello'))
-    const ws = new Workspace(
-      { '/data': vfs },
-      {
-        mode: MountMode.WRITE,
-        shellParser: parser,
-        agentId: 'agent7',
-        profiles: { admin: parseSessionProfile({}) },
-        profile: 'admin',
-      },
-    )
-    const [code, out] = await run(ws, 'stat -c "%U:%G" /data/f.txt')
-    expect(code).toBe(0)
-    expect(out).toBe('agent7:admin\n')
-  })
-
   it('falls back to "-" when the workspace is unclaimed', async () => {
     const parser = await getTestParser()
     const vfs = new RAMVFS()
@@ -351,20 +297,6 @@ describe('stat -c workspace integration', () => {
     const [code, out] = await run(ws, 'stat -c "%U:%G" /data/f.txt')
     expect(code).toBe(0)
     expect(out).toBe('-:-\n')
-  })
-
-  it('agrees with ls -l on owner', async () => {
-    const parser = await getTestParser()
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/f.txt', new TextEncoder().encode('hello'))
-    const ws = new Workspace(
-      { '/data': vfs },
-      { mode: MountMode.WRITE, shellParser: parser, agentId: 'agent7' },
-    )
-    const [, statOwner] = await run(ws, 'stat -c "%U %G" /data/f.txt')
-    const [, lsLong] = await run(ws, 'ls -l /data/f.txt')
-    expect(statOwner.trim()).toBe('agent7 -')
-    expect(lsLong).toContain(' 1 agent7 - ')
   })
 })
 

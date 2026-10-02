@@ -190,7 +190,12 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pver && printf 'keep' > /data/pver/f.txt && rm --version /data/pver/f.txt | cut -d' ' -f1,2",
       "expect": {
@@ -219,7 +224,12 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "sharepoint-prefix"
       ],
       "command": "cat /data/pver/f.txt",
       "expect": {

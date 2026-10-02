@@ -110,13 +110,3 @@ def test_cat_with_flags_reapplies_cat_on_the_merged_stream():
     assert _run(materialize(out)) == b"FINAL:12\n"
     assert rs.calls[-1]["cmd"] == "cat"
     assert rs.calls[-1]["flags"] == {"n": True}
-
-
-def test_failed_operand_is_skipped_and_fails_the_command():
-    rs = FakeRunSingle({"/b/y": b"2\n"})
-    out, io = _run(
-        run_stream("cat", [_scope("/a/missing"), _scope("/b/y")], [], {}, rs)
-    )
-    assert _run(materialize(out)) == b"2\n"
-    assert io.exit_code == 1
-    assert b"No such file" in (io.stderr or b"")

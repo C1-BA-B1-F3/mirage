@@ -362,6 +362,28 @@
       "flags": [
         "o"
       ]
+    },
+    {
+      "id": "grep_bre_class_and_word_start_escapes",
+      "seq": 14101001,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "printf 'a b\\nab\\n' | grep '\\s'; echo rc=$?; printf 'alpha\\nxalpha\\n' | grep '\\<alpha'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b\nrc=0\nalpha\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_bre_compile_errors_are_fatal",
+      "seq": 14101002,
+      "targets": ["ram", "opfs", "disk"],
+      "command": "printf 'x\\n' | grep 'a\\{x\\}'; echo rc=$?; printf 'x\\n' | grep '[a-c-e]'; echo rc=$?; printf 'x\\n' | grep '['; echo rc=$?; printf 'x\\n' | grep '[a'; echo rc=$?; printf 'x\\n' | grep 'a\\{32768\\}'; echo rc=$?; printf 'x\\n' | grep '\\'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\nrc=2\nrc=2\nrc=2\nrc=2\nrc=2\n",
+        "stderr": "grep: Invalid content of \\{\\}\ngrep: Invalid range end\ngrep: Invalid regular expression\ngrep: Unmatched [, [^, [:, [., or [=\ngrep: Regular expression too big\ngrep: Trailing backslash\n"
+      }
     }
   ]
 }

@@ -182,6 +182,12 @@ function treeSummary(dirs: number, files: number, dirsOnly: boolean): string {
   return `${String(dirs)} ${dirWord}, ${String(files)} ${files === 1 ? 'file' : 'files'}`
 }
 
+// List a mount point -x keeps the walk out of: empty, the way GNU tree draws
+// a directory on another filesystem.
+function notCrossed(): Promise<string[]> {
+  return Promise.resolve([])
+}
+
 export async function treeGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -212,7 +218,12 @@ export async function treeGeneric(
     dirsOnly: fl.asBool('d'),
     matchPattern: matchRaw,
     mounts: opts.ns?.mounts ?? null,
-    crossReaddir: readdirPath === undefined ? null : (p: PathSpec) => readdirPath(p.virtual),
+    crossReaddir:
+      readdirPath === undefined
+        ? null
+        : fl.asBool('x')
+          ? notCrossed
+          : (p: PathSpec) => readdirPath(p.virtual),
     crossStat:
       statPath === undefined
         ? null

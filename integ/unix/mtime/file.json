@@ -58,7 +58,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "clear_cache": true,
       "command": "ls -l /data/mtimecheck/probe.txt | grep -c \"Jan  1 00:00\"",

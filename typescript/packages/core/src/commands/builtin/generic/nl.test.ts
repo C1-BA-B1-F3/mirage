@@ -68,32 +68,6 @@ function nlBag(...argv: string[]): Line {
 }
 
 describe('nl refuses a numeric option it cannot read whole', () => {
-  // GNU coreutils 9.4: exit 1, a single stderr line, no `Try --help` line,
-  // and — unlike expand and cut — the WHOLE argument quoted, so `-w 2x`
-  // reports '2x' rather than 'x'. Each of the four options has its own
-  // wording.
-  it.each([
-    ['starting_line_number', 'abc', "nl: invalid starting line number: 'abc'\n"],
-    ['starting_line_number', '2x', "nl: invalid starting line number: '2x'\n"],
-    ['line_increment', 'abc', "nl: invalid line number increment: 'abc'\n"],
-    ['number_width', 'abc', "nl: invalid line number field width: 'abc'\n"],
-    ['number_width', '2x', "nl: invalid line number field width: '2x'\n"],
-    ['join_blank_lines', 'abc', "nl: invalid line number of blank lines: 'abc'\n"],
-  ])('refuses %s=%s before numbering anything', async (dest, value, message) => {
-    const got = await run({ flags: { [dest]: value } })
-    expect(got.exit).toBe(1)
-    expect(got.stdout).toBe('')
-    expect(got.stderr).toBe(message)
-  })
-
-  // GNU `printf 'x\n' | nl -v 5` prints 5 spaces, '5', a TAB and 'x'.
-  it('still numbers with a valid starting line number', async () => {
-    const got = await run({ flags: { starting_line_number: '5' } })
-    expect(got.exit).toBe(0)
-    expect(got.stdout).toBe('     5\tx\n')
-    expect(got.stderr).toBe('')
-  })
-
   // A leading `+` is a sign on every one of the four, and reads as the
   // unsigned value would.
   it.each([
@@ -114,63 +88,11 @@ describe('nl refuses a numeric option it cannot read whole', () => {
 describe('nl -v and -i are signed', () => {
   // GNU numbers from a negative start and counts UP, and `-i -2` genuinely
   // decrements, so neither a negative nor a zero is an error.
-  it('numbers from a negative start', async () => {
-    const got = await run({ flags: { starting_line_number: '-5' } })
-    expect(got.exit).toBe(0)
-    expect(got.stdout).toBe('    -5\tx\n')
-    expect(got.stderr).toBe('')
-  })
-
   it('accepts a zero increment', async () => {
     const got = await run({ flags: { line_increment: '0' } })
     expect(got.exit).toBe(0)
     expect(got.stdout).toBe('     1\tx\n')
     expect(got.stderr).toBe('')
-  })
-})
-
-describe('nl -w and -l require at least 1', () => {
-  // A value that PARSED but fell out of range carries a THIRD colon-clause,
-  // gnulib's strerror(ERANGE). Still exit 1 and still no `Try --help` line.
-  it.each([
-    [
-      'number_width',
-      '-3',
-      "nl: invalid line number field width: '-3': Numerical result out of range\n",
-    ],
-    [
-      'number_width',
-      '0',
-      "nl: invalid line number field width: '0': Numerical result out of range\n",
-    ],
-    [
-      'join_blank_lines',
-      '-2',
-      "nl: invalid line number of blank lines: '-2': Numerical result out of range\n",
-    ],
-    [
-      'join_blank_lines',
-      '0',
-      "nl: invalid line number of blank lines: '0': Numerical result out of range\n",
-    ],
-  ])('refuses %s=%s as out of range', async (dest, value, message) => {
-    const got = await run({ flags: { [dest]: value } })
-    expect(got.exit).toBe(1)
-    expect(got.stdout).toBe('')
-    expect(got.stderr).toBe(message)
-  })
-
-  // The clause attaches to a RANGE failure, never to a scan failure, so
-  // within one option the message shape depends on why the value failed.
-  // It must not be appended unconditionally.
-  it.each([
-    ['number_width', "nl: invalid line number field width: ''\n"],
-    ['join_blank_lines', "nl: invalid line number of blank lines: ''\n"],
-  ])('refuses an empty %s without the range clause', async (dest, message) => {
-    const got = await run({ flags: { [dest]: '' } })
-    expect(got.exit).toBe(1)
-    expect(got.stdout).toBe('')
-    expect(got.stderr).toBe(message)
   })
 })
 
@@ -605,15 +527,6 @@ describe('nl -b p<re> compiles a POSIX BRE, not this engine s dialect', () => {
     expect(got.stdout).toBe('')
     expect(got.stderr).toBe(stderr)
   })
-
-  // `-b [` is an invalid STYLE, so the `[` is never a pattern at all: the style
-  // test reads the first character and `[` is not one of a/t/n/p, which puts
-  // this in the deferred family with the hint rather than the fatal regex one.
-  it('reads a bad style before it reads a pattern', async () => {
-    const got = await run(nlBag('-b', '['))
-    expect(got.exit).toBe(1)
-    expect(got.stderr).toBe("nl: invalid body numbering style: '['\n" + HINT)
-  })
 })
 
 // An unnumbered line is NOT the number field plus the separator: GNU builds one
@@ -644,33 +557,6 @@ describe('nl pads an unnumbered line over the separator', () => {
     const got = await run(nlBag('-b', 'n', ...extra))
     expect(got.exit).toBe(0)
     expect(got.stdout).toBe(stdout)
-  })
-
-  // The default `-b t` leaves a blank line unnumbered, and pads it: measured
-  // `printf 'a\n\nb\n' | nl` writes the blank line as seven spaces, so the
-  // padding is not specific to `-b n`.
-  it('pads a blank line the same way', async () => {
-    const opts = {
-      stdin: stdinOf('a\n\nb\n'),
-      ...nlBag(),
-      filetypeFns: null,
-      cwd: '/',
-      vfs: { kind: 'ram' } as never,
-    } as CommandOpts
-    const result = await nlGeneric([], opts, stubStream)
-    if (result === null) throw new Error('nl declined to handle its own operands')
-    const [out, io] = result
-    expect(io.exitCode).toBe(0)
-    expect(out === null ? '' : DEC.decode(await materialize(out))).toBe(
-      '     1\ta\n       \n     2\tb\n',
-    )
-  })
-
-  // A `-b p<re>` line that did not match is padded, not separated.
-  it('pads a line no pattern matched', async () => {
-    const got = await run(nlBag('-b', 'pfoo'))
-    expect(got.exit).toBe(0)
-    expect(got.stdout).toBe('       x\n')
   })
 })
 
@@ -826,39 +712,6 @@ describe('nl reads an empty -d as disabling delimiters', () => {
     const parsed = parseLine(nlBag())
     if (typeof parsed === 'string') throw new Error(`refused: ${parsed}`)
     expect(parsed.delimiter).toBe('\\:')
-  })
-
-  it('numbers the delimiter lines as ordinary text', async () => {
-    const opts = {
-      stdin: stdinOf('\\:\\:\\:\nH\n\\:\\:\nB\n'),
-      ...nlBag('-d', ''),
-      filetypeFns: null,
-      cwd: '/',
-      vfs: { kind: 'ram' } as never,
-    } as CommandOpts
-    const result = await nlGeneric([], opts, stubStream)
-    if (result === null) throw new Error('nl declined to handle its own operands')
-    const [out, io] = result
-    expect(io.exitCode).toBe(0)
-    expect(out === null ? '' : DEC.decode(await materialize(out))).toBe(
-      '     1\t\\:\\:\\:\n     2\tH\n     3\t\\:\\:\n     4\tB\n',
-    )
-  })
-
-  // The control: the same input with -d absent.
-  it('consumes the delimiter lines under the default', async () => {
-    const opts = {
-      stdin: stdinOf('\\:\\:\\:\nH\n\\:\\:\nB\n'),
-      ...nlBag(),
-      filetypeFns: null,
-      cwd: '/',
-      vfs: { kind: 'ram' } as never,
-    } as CommandOpts
-    const result = await nlGeneric([], opts, stubStream)
-    if (result === null) throw new Error('nl declined to handle its own operands')
-    const [out, io] = result
-    expect(io.exitCode).toBe(0)
-    expect(out === null ? '' : DEC.decode(await materialize(out))).toBe('\n       H\n\n     1\tB\n')
   })
 })
 

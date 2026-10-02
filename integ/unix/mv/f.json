@@ -20,7 +20,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pmv2 && printf '1' > /data/pmv2/s.txt && printf '2' > /data/pmv2/d.txt && mv -f /data/pmv2/s.txt /data/pmv2/d.txt && cat /data/pmv2/d.txt",
       "expect": {

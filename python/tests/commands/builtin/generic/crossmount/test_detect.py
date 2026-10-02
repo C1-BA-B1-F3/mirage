@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import pytest
+
 from mirage.commands.builtin.generic.crossmount.constants import (
     CROSS_MOUNT_COMMANDS,
     FANOUT_COMMANDS,
@@ -41,6 +43,14 @@ class _Registry:
                 return _Mount(prefix)
         return None
 
+    def descendant_mounts(self, virtual: str) -> list[_Mount]:
+        below = virtual.rstrip("/") + "/"
+        return [
+            _Mount(prefix)
+            for prefix in self._prefixes.values()
+            if prefix.startswith(below) and prefix != below
+        ]
+
 
 def _scope(virtual: str) -> PathSpec:
     return PathSpec(
@@ -60,45 +70,33 @@ def test_sets_are_disjoint():
     )
 
 
-def test_strategy_for_stream_commands():
-    for name in ("cat", "nl", "cut"):
-        assert strategy_for(name) is Strategy.STREAM
-
-
-def test_strategy_for_fanout_commands():
-    for name in ("head", "sha256sum", "rm", "tee", "rev"):
-        assert strategy_for(name) is Strategy.FANOUT
-
-
-def test_strategy_for_relay_commands():
-    for name in (
-        "cp",
-        "mv",
-        "diff",
-        "cmp",
-        "sort",
-        "wc",
-        "grep",
-        "rg",
-        "realpath",
-    ):
-        assert strategy_for(name) is Strategy.RELAY
-
-
-def test_awk_relays_because_it_tells_its_operands_apart():
-    # FILENAME, FNR, ARGV and a var=value operand between two files all
-    # need each file as its own input, which a merged stream loses.
-    assert strategy_for("awk") is Strategy.RELAY
-
-
-def test_ls_relays_because_its_layout_spans_the_whole_line():
-    # A per-operand run sees one operand, so it can neither head its
-    # block nor sort against the operands living on other mounts.
-    assert strategy_for("ls") is Strategy.RELAY
-
-
-def test_sed_relays_to_keep_file_boundaries_and_shared_output():
-    assert strategy_for("sed") is Strategy.RELAY
+@pytest.mark.parametrize(
+    "strategy,names",
+    [
+        (Strategy.STREAM, ("cat", "nl", "cut")),
+        (Strategy.FANOUT, ("head", "sha256sum", "rm", "tee", "rev")),
+        (
+            Strategy.RELAY,
+            (
+                "cp",
+                "mv",
+                "diff",
+                "cmp",
+                "sort",
+                "wc",
+                "grep",
+                "rg",
+                "realpath",
+                "awk",
+                "ls",
+                "sed",
+            ),
+        ),
+    ],
+)
+def test_strategy_for(strategy, names):
+    for name in names:
+        assert strategy_for(name) is strategy
 
 
 def test_is_cross_mount_true_when_operands_span_mounts():
@@ -115,3 +113,12 @@ def test_is_cross_mount_false_for_single_mount_or_unknown_command():
     spanning = [_scope("/a/x.txt"), _scope("/b/y.txt")]
     assert not is_cross_mount("uniq", spanning, registry)
     assert not is_cross_mount("sort", spanning[:1], registry)
+
+
+def test_cp_crosses_for_a_source_holding_a_mount_not_the_destination():
+    registry = _Registry({"a": "/a/", "n": "/a/d/n/"})
+    tree, file, into = _scope("/a/d"), _scope("/a/f.txt"), _scope("/a/e")
+    assert is_cross_mount("cp", [tree, into], registry)
+    assert not is_cross_mount("cp", [file, tree], registry)
+    assert is_cross_mount("cp", [into, tree], registry, [into])
+    assert not is_cross_mount("cp", [tree, file], registry, [tree])

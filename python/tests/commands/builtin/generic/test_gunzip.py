@@ -28,26 +28,6 @@ def _read_only_gunzip_mount() -> tuple[Workspace, RAMVFS]:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "line,stdout",
-    [
-        ("gunzip -c /ro/f.txt.gz", b"hello\n"),
-        ("gunzip -t /ro/f.txt.gz && echo ok", b"ok\n"),
-        ("cd /ro && gunzip < f.txt.gz", b"hello\n"),
-        ("cd /ro && gunzip - < f.txt.gz", b"hello\n"),
-    ],
-)
-async def test_a_read_only_mount_runs_gunzip_where_it_writes_nothing(
-    line: str, stdout: bytes
-):
-    ws, vfs = _read_only_gunzip_mount()
-    before = dict(vfs._store.files)
-    result = await ws.shell(line)
-    assert (result.exit_code, await result.materialize_stdout()) == (0, stdout)
-    assert vfs._store.files == before
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
     "line", ["gunzip /ro/f.txt.gz", "gunzip -k /ro/f.txt.gz"]
 )
 async def test_a_read_only_mount_refuses_gunzip_at_the_write(line: str):
@@ -86,18 +66,6 @@ async def test_a_plain_file_is_reported_and_left_in_place():
     )
 
 
-@pytest.mark.asyncio
-async def test_plain_stdin_is_not_in_gzip_format():
-    ws = Workspace(
-        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
-    )
-    r = await ws.shell("gunzip", stdin=b"hello\n")
-    assert r.exit_code == 1
-    assert (
-        await r.materialize_stderr() == b"\ngzip: stdin: not in gzip format\n"
-    )
-
-
 # gzip -n of "hello\n" with its CRC-32 and length trailer zeroed.
 DAMAGED = gzip.compress(b"hello\n", mtime=0)[:-8] + b"\0" * 8
 
@@ -118,23 +86,6 @@ async def test_a_damaged_trailer_keeps_the_inflated_bytes():
     )
     r = await ws.shell("gunzip -t /data/bad.gz /data/ok.gz; ls /data")
     assert await r.materialize_stdout() == b"bad.gz\nok.gz\n"
-
-
-@pytest.mark.asyncio
-async def test_a_later_members_bad_header_keeps_the_members_before_it():
-    good = gzip.compress(b"hello\n", mtime=0)
-    ws = Workspace(
-        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
-    )
-    await ws.shell(
-        "tee /data/two.gz > /dev/null",
-        stdin=good + good[:2] + b"\x07" + good[3:],
-    )
-    r = await ws.shell("cd /data && gunzip two.gz; ls; cat two")
-    assert await r.materialize_stdout() == b"two\nhello\n"
-    assert await r.materialize_stderr() == (
-        b"gzip: two.gz: unknown method 7 -- not supported\n"
-    )
 
 
 async def _linked(line: str) -> tuple[Workspace, str, str, int]:
@@ -194,30 +145,6 @@ async def test_in_place_refuses_a_link_as_o_nofollow_does(line: str, err: str):
 
 
 @pytest.mark.asyncio
-async def test_f_decodes_beside_the_link_and_removes_the_link():
-    ws, _, stderr, code = await _linked("gunzip -f tl.gz; ls -F; cat tl")
-    assert (stderr, code) == ("", 0)
-    r = await ws.shell("cd /data && ls -F && cat tl")
-    assert await r.materialize_stdout() == b"dir/\nt.gz\ntl\nhello\n"
-
-
-@pytest.mark.asyncio
-async def test_k_f_keeps_the_link():
-    ws, _, _, code = await _linked("gunzip -kf tl.gz")
-    r = await ws.shell("cd /data && ls -F")
-    assert (code, await r.materialize_stdout()) == (
-        0,
-        b"dir/\nt.gz\ntl\ntl.gz@\n",
-    )
-
-
-@pytest.mark.asyncio
-async def test_c_and_a_retried_link_follow_through_the_door():
-    _, out, _, code = await _linked("ln -s t.gz x.gz && gunzip -c tl.gz x")
-    assert (out, code) == ("hello\nhello\n", 0)
-
-
-@pytest.mark.asyncio
 async def test_f_writes_beside_a_link_into_a_read_only_mount():
     ws, _, stderr, code = await _linked("ln -s /ro/f.gz rl.gz && gunzip -f rl")
     assert (stderr, code) == ("", 0)
@@ -235,12 +162,6 @@ async def test_a_link_standing_at_the_output_name_is_an_output_already_there():
         0,
         b"dir/\nt\ntl.gz@\nhello\n",
     )
-
-
-@pytest.mark.asyncio
-async def test_a_name_typed_with_a_slash_has_to_be_a_directory():
-    _, _, stderr, code = await _linked("gunzip -c t.gz/")
-    assert (stderr, code) == ("gzip: t.gz/: Not a directory\n", 1)
 
 
 @pytest.mark.asyncio

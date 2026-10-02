@@ -21,7 +21,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -q alpha /data/g4/notes.txt; echo rc=$?",
       "expect": {
@@ -54,7 +58,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -q zzz /data/g4/notes.txt; echo rc=$?",
       "expect": {
@@ -87,7 +95,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -q alpha /data/g4/notes.txt /data/g4/app.log; echo rc=$?",
       "expect": {
@@ -120,7 +132,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -q zzz /data/g4/notes.txt /data/g4/app.log; echo rc=$?",
       "expect": {
@@ -153,7 +169,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -qR alpha /data/g4; echo rc=$?",
       "expect": {
@@ -187,7 +207,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -ql alpha /data/g4/notes.txt /data/g4/app.log; echo rc=$?",
       "expect": {
@@ -221,7 +245,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "grep -qc zzz /data/g4/notes.txt /data/g4/app.log; echo rc=$?",
       "expect": {

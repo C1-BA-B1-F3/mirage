@@ -14,5 +14,6 @@
 
 export { NO_WRITE, planFlush } from './flush.ts'
 export { parseMode, type OpenMode } from './mode.ts'
-export { FileHandle, mergeWrites } from './file_handle.ts'
+export { FileHandle, writeRuns } from './file_handle.ts'
 export { FileTable } from './file_table.ts'
+export { ChunkedHandle } from './chunked.ts'

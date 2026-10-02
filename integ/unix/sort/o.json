@@ -20,7 +20,12 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/tier1-sort && printf 'b\\na\\n' > /data/tier1-sort/in && sort -o /data/tier1-sort/out /data/tier1-sort/in && cat /data/tier1-sort/out",
       "expect": {

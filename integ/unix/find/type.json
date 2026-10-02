@@ -60,7 +60,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -type d",
       "expect": {
@@ -76,7 +78,28 @@
       "id": "find_nextcloud_search_fields",
       "seq": 139,
       "targets": [
-        "nextcloud"
+        "nextcloud",
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "find /data -type f -name \"*.txt\" -size +10c -mtime -1",
       "expect": {

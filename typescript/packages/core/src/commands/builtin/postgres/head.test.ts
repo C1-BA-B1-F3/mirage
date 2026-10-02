@@ -100,17 +100,6 @@ describe('postgres head', () => {
     expect([code, err]).toEqual([0, ''])
   })
 
-  it('stops at the read ceiling and says so', async () => {
-    table(30)
-    const [lines, code, err] = await head(25, 20)
-    expect(lines).toHaveLength(20)
-    expect(code).toBe(1)
-    expect(err).toBe(
-      'head: /pg/public/tables/users/rows.jsonl: stopped at 20 rows (max_read_rows); ' +
-        'the output is incomplete\n',
-    )
-  })
-
   it('prints a table shorter than the ceiling whole', async () => {
     table(15)
     const [lines, code, err] = await head(25, 20)

@@ -4,9 +4,9 @@ import {
   type SubprocessSpawnSpec,
   type SubprocessHandle,
   type SubprocessOutputMode,
-  type SubprocessOutputReader,
   type SubprocessTerminalSpawnSpec,
   type SubprocessTerminalHandle,
+  type SubprocessTerminalEnvironment,
 } from '@deepseek-ai/dsh-subprocess'
 import { PassThrough } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -14,27 +14,7 @@ import { PathSpec } from '@struktoai/mirage-core/types'
 import type { ChildProcess } from '@struktoai/mirage-core/process/child'
 import type { Workspace } from '@struktoai/mirage-node'
 import './service.ts'
-
-class Tail implements SubprocessOutputReader {
-  private bytes = Buffer.alloc(0)
-  private offset = 0
-  constructor(private readonly max: number) {}
-  append(chunk: Uint8Array): void {
-    this.offset += chunk.length
-    this.bytes = Buffer.concat([this.bytes, chunk]).subarray(-this.max)
-    if (this.max === 0) this.bytes = Buffer.alloc(0)
-  }
-  readFrom(fromByte: number) {
-    if (!Number.isSafeInteger(fromByte) || fromByte < 0 || fromByte > this.offset)
-      throw new Error('invalid output offset')
-    const start = this.offset - this.bytes.length
-    return {
-      text: this.bytes.subarray(Math.max(0, fromByte - start)).toString('utf8'),
-      nextOffset: this.offset,
-      lossy: fromByte < start,
-    }
-  }
-}
+import { StreamTail } from './text.ts'
 
 function validateOutput(mode: SubprocessOutputMode): void {
   if (mode === 'pipe' || mode === 'inherit') return
@@ -127,6 +107,10 @@ export class MirageSubprocess extends SubprocessRuntime {
       throw new Error('invalid graceMs')
     validateOutput(spec.stdio.stdout)
     validateOutput(spec.stdio.stderr)
+    if (spec.stdio.control !== undefined)
+      throw new Error(
+        'a control channel is unsupported: a workspace process inherits no descriptors',
+      )
     const env: Record<string, string> = {}
     for (const [name, value] of Object.entries(spec.env ?? {})) {
       if (value === undefined) throw new Error('environment tombstones are unsupported')
@@ -138,9 +122,9 @@ export class MirageSubprocess extends SubprocessRuntime {
     const stdout = spec.stdio.stdout === 'pipe' ? new PassThrough() : undefined
     const stderr = spec.stdio.stderr === 'pipe' ? new PassThrough() : undefined
     const outTail =
-      typeof spec.stdio.stdout === 'object' ? new Tail(spec.stdio.stdout.maxBytes) : undefined
+      typeof spec.stdio.stdout === 'object' ? new StreamTail(spec.stdio.stdout.maxBytes) : undefined
     const errTail =
-      typeof spec.stdio.stderr === 'object' ? new Tail(spec.stdio.stderr.maxBytes) : undefined
+      typeof spec.stdio.stderr === 'object' ? new StreamTail(spec.stdio.stderr.maxBytes) : undefined
     let child: ChildProcess | undefined
     let workspace: Workspace | undefined
     let cancelled = false
@@ -155,7 +139,7 @@ export class MirageSubprocess extends SubprocessRuntime {
     const drain = async (
       source: AsyncIterable<Uint8Array>,
       pipe: PassThrough | undefined,
-      tail: Tail | undefined,
+      tail: StreamTail | undefined,
       inherited: NodeJS.WriteStream,
     ) => {
       if (pipe !== undefined) {
@@ -167,6 +151,7 @@ export class MirageSubprocess extends SubprocessRuntime {
         else if (!inherited.write(chunk))
           await new Promise<void>((resolve) => inherited.once('drain', resolve))
       }
+      tail?.end()
     }
     const done = this.ctx.mirage.ready
       .then(async (ws) => {
@@ -237,6 +222,7 @@ export class MirageSubprocess extends SubprocessRuntime {
         ...(outTail === undefined ? {} : { stdout: outTail }),
         ...(errTail === undefined ? {} : { stderr: errTail }),
       },
+      control: undefined,
       done,
       terminate,
       waitForExit: (signal) => waitBounded(exited, signal),
@@ -244,6 +230,11 @@ export class MirageSubprocess extends SubprocessRuntime {
     this.handles.add(handle)
     void exited.then(() => this.handles.delete(handle))
     return handle
+  }
+
+  terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    signal?.throwIfAborted()
+    return Promise.resolve({ platform: 'posix' })
   }
 
   spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {

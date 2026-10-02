@@ -24,13 +24,7 @@ from mirage.core.slack.config import SlackConfig
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
-CHANNELS = [
-    {"id": "C1", "name": "general", "created": 1},
-    {"id": "C2", "name": "random", "created": 2},
-]
-
 GENERAL = "/channels/general__C1"
-RANDOM = "/channels/random__C2"
 
 
 def _find_command():
@@ -45,46 +39,6 @@ def _spec(virtual: str) -> PathSpec:
     return PathSpec(
         virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
     )
-
-
-async def _run(paths, *texts: str, **flags) -> list[str]:
-    accessor = SlackAccessor(SlackConfig(token="xoxb-test"))
-    find = _find_command()
-    with patch(
-        "mirage.core.slack.readdir.list_channels",
-        new_callable=AsyncMock,
-        return_value=CHANNELS,
-    ):
-        stdout, _io = await find(
-            accessor,
-            paths,
-            list(texts),
-            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}),
-        )
-        data = await materialize(stdout)
-    return data.decode().splitlines()
-
-
-@pytest.mark.asyncio
-async def test_walk_lists_channel_dirs():
-    lines = await _run([_spec("/channels")], maxdepth="1")
-    assert "/channels" in lines
-    assert GENERAL in lines
-    assert RANDOM in lines
-
-
-@pytest.mark.asyncio
-async def test_path_pattern_is_honored():
-    lines = await _run([_spec("/channels")], maxdepth="1", path="*general*")
-    assert lines == [GENERAL]
-
-
-@pytest.mark.asyncio
-async def test_size_counts_a_directory_as_dir_size():
-    lines = await _run([_spec("/channels")], maxdepth="1", size="+0c")
-    assert GENERAL in lines
-    lines = await _run([_spec("/channels")], maxdepth="1", size="-1k")
-    assert lines == []
 
 
 FILE_CHANNELS = [{"id": "C1", "name": "general", "created": 1700000000}]

@@ -376,6 +376,7 @@ export async function handleCommand(
   // is not cross-mount because one of its words is empty.
   // A prepared program line already holds its positional operands.
   let routingScopes: PathSpec[] = []
+  let flagScopes: PathSpec[] = []
   if (!optionLoopExits(cmdName, cmdMount?.specFor(cmdName) ?? null, rawArgv, session.cwd)) {
     const routed = routableScopes(
       cmdName,
@@ -383,9 +384,8 @@ export async function handleCommand(
         ? pathScopes
         : routedOperands(cmdName, rawArgv, session.cwd, parts.slice(1), pathScopes),
     )
-    routingScopes = mergeScopes(routed, pathFlagScopes(cmdName, rawArgv, session.cwd)).filter(
-      (s) => s.walkError !== 'ENOENT',
-    )
+    flagScopes = pathFlagScopes(cmdName, rawArgv, session.cwd)
+    routingScopes = mergeScopes(routed, flagScopes).filter((s) => s.walkError !== 'ENOENT')
   }
 
   let findExprTokens: string[] | null = null
@@ -430,7 +430,7 @@ export async function handleCommand(
 
   // Path-valued flags count: `cp -t /other/mount/dir src` spans mounts
   // exactly like a positional destination would.
-  if (isCrossMount(cmdName, routingScopes, registry)) {
+  if (isCrossMount(cmdName, routingScopes, registry, flagScopes)) {
     // Parse against the shared spec so flags and text operands do not
     // depend on the source mount: raw argv would hand flag tokens ("-c")
     // to the generic as the search pattern. The bound single-mount runner
@@ -465,9 +465,10 @@ export async function handleCommand(
         new ExecutionNode({ command: cmdStr, exitCode: code, stderr: msg }),
       ]
     }
-    // The output flag owns a mount for routing, but is not a sort input.
-    // Parsed operands preserve aliases, order, and repeated path values.
-    let csScopes = cmdName === 'sort' ? csParsed.paths : pathScopes
+    // sort's output flag and cp/mv's -t own a mount for routing, but are not
+    // inputs. Parsed operands preserve aliases, order, and repeated path
+    // values.
+    let csScopes = ['sort', 'cp', 'mv'].includes(cmdName) ? csParsed.paths : pathScopes
     if (strategyFor(cmdName as Cmd) === Strategy.RELAY) {
       // STREAM and FANOUT run each operand natively on its mount, which
       // expands the operand's glob. RELAY sees every operand at once (wc's

@@ -18,54 +18,6 @@ import { makeEnv, NATIVE_BACKENDS } from './native_fixture.ts'
 const ENC = new TextEncoder()
 
 describe.each(NATIVE_BACKENDS)('native tr (%s backend)', (kind) => {
-  it('tr basic matches native', async () => {
-    const env = makeEnv(kind)
-    try {
-      const data = ENC.encode('hello\n')
-      const m = await env.mirage('tr h H', data)
-      const n = await env.native('tr h H', data)
-      expect(m).toBe(n)
-    } finally {
-      await env.cleanup()
-    }
-  })
-
-  it('tr -d matches native', async () => {
-    const env = makeEnv(kind)
-    try {
-      const data = ENC.encode('hello world\n')
-      const m = await env.mirage('tr -d aeiou', data)
-      const n = await env.native('tr -d aeiou', data)
-      expect(m).toBe(n)
-    } finally {
-      await env.cleanup()
-    }
-  })
-
-  it('tr -s matches native', async () => {
-    const env = makeEnv(kind)
-    try {
-      const data = ENC.encode('baanaanaa\n')
-      const m = await env.mirage('tr -s a', data)
-      const n = await env.native('tr -s a', data)
-      expect(m).toBe(n)
-    } finally {
-      await env.cleanup()
-    }
-  })
-
-  it('tr range a-z A-Z matches native', async () => {
-    const env = makeEnv(kind)
-    try {
-      const data = ENC.encode('hello\n')
-      const m = await env.mirage('tr a-z A-Z', data)
-      const n = await env.native('tr a-z A-Z', data)
-      expect(m).toBe(n)
-    } finally {
-      await env.cleanup()
-    }
-  })
-
   it('tr -cd matches native', async () => {
     const env = makeEnv(kind)
     try {

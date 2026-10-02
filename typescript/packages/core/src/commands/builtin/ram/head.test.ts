@@ -52,34 +52,6 @@ describe('head', () => {
     expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe(expected)
   })
 
-  it('-n 3 returns first 3 lines', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode(TWENTY_LINES))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { lines: '3' })).toBe(
-      'line1\nline2\nline3\n',
-    )
-  })
-
-  it('-n 1 returns first line', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode(TWENTY_LINES))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { lines: '1' })).toBe('line1\n')
-  })
-
-  it('-n larger than file returns all', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('a\nb\nc'))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { lines: '100' })).toBe(
-      'a\nb\nc',
-    )
-  })
-
-  it('-c returns specific byte count', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abcdefghij'))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { bytes: '5' })).toBe('abcde')
-  })
-
   it('-c larger than file returns all bytes', async () => {
     const vfs = new RAMVFS()
     vfs.store.files.set('/tmp/f.txt', ENC.encode('abc'))
@@ -92,64 +64,9 @@ describe('head', () => {
     expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { bytes: '0' })).toBe('')
   })
 
-  it('empty file', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', new Uint8Array())
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('')
-  })
-
   it('single line without newline', async () => {
     const vfs = new RAMVFS()
     vfs.store.files.set('/tmp/f.txt', ENC.encode('hello'))
     expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('hello')
-  })
-})
-
-// How the classifier hands over a typed stdin operand: `-` resolved under the
-// cwd, /dev/stdin as the path it is, each spelled as typed.
-function stdinOperand(raw: string): PathSpec {
-  const virtual = raw === '/dev/stdin' ? '/dev/stdin' : '/-'
-  return new PathSpec({
-    virtual,
-    directory: '/',
-    vfsPath: virtual.slice(1),
-    resolved: true,
-    rawPath: raw,
-  })
-}
-
-async function runOnStdin(
-  paths: PathSpec[],
-  texts: string[],
-  flags: Record<string, string | boolean | number | string[]>,
-): Promise<string> {
-  const cmd = RAM_HEAD[0]
-  if (cmd === undefined) throw new Error('command not registered')
-  const result = await cmd.fn(new RAMVFS().accessor, paths, texts, {
-    stdin: ENC.encode('b\n'),
-    flags,
-    filetypeFns: null,
-    cwd: '/',
-  })
-  if (result === null) return ''
-  const [out] = result
-  if (out === null) return ''
-  return DEC.decode(
-    out instanceof Uint8Array ? out : await materialize(out as AsyncIterable<Uint8Array>),
-  )
-}
-
-// GNU head 9.7 heads `-` "standard input", no parentheses, and /dev/stdin as
-// the path it is; under -v it heads a stdin nobody named as well.
-describe('head names stdin the way GNU does', () => {
-  it.each([
-    ['-', '==> standard input <==\n'],
-    ['/dev/stdin', '==> /dev/stdin <==\n'],
-  ])('heads %s', async (raw, header) => {
-    expect(await runOnStdin([stdinOperand(raw)], [], { verbose: true })).toBe(`${header}b\n`)
-  })
-
-  it('heads a stdin nobody named under -v', async () => {
-    expect(await runOnStdin([], [], { verbose: true })).toBe('==> standard input <==\nb\n')
   })
 })

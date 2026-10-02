@@ -13,7 +13,6 @@ permissions:
       - typescript/**
       - examples/typescript/**
       - integ/**
-      - conformance/**
       # Pre-commit skips knip and integ-typecheck, so a hook definition
       # changing there has to reach this workflow to be checked at all.
       - .pre-commit-config.yaml
@@ -46,7 +45,6 @@ jobs:
               - 'typescript/**'
               - 'examples/typescript/**'
               - 'integ/**'
-              - 'conformance/**'
               - '.pre-commit-config.yaml'
               - '.gitignore'
               - '.github/workflows/test_typescript.yml'
@@ -92,11 +90,10 @@ jobs:
           --health-retries 5
 
     # Job level, not step level: 27 test files across core and node skip
-    # themselves when REDIS_URL is unset -- mostly `describe.skipIf(...)`, but
-    # node/src/conformance.test.ts spells it `? it.skip : it`, so grepping for
-    # skipIf alone undercounts. A leg that does not carry this variable skips
-    # those files and still reports green, which is how a split silently drops
-    # coverage. One declaration cannot drift between legs the way three could.
+    # themselves through `skipIf(...)` when REDIS_URL is unset. A leg that
+    # does not carry this variable skips those files and still reports green,
+    # which is how a split silently drops coverage. One declaration cannot
+    # drift between legs the way three could.
     env:
       REDIS_URL: redis://localhost:6379/0
 

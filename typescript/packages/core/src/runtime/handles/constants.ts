@@ -20,3 +20,9 @@ export const MODE_CHARS = 'rwaxbt+'
 // The legal base-letter spellings: CPython's four plus C fopen's wx
 // (exclusive create), which CPython spells as a bare x.
 export const MODE_BASES: readonly string[] = ['r', 'w', 'a', 'x', 'wx']
+
+// The least a read-only handle fetches per trip to the mount. A guest
+// reads in small pieces (a line, a 4 KiB buffer), so one chunk per
+// request keeps a sequential read at one round trip per MiB rather than
+// one per call. Mirrors Python's READ_CHUNK.
+export const READ_CHUNK = 1 << 20

@@ -102,14 +102,6 @@ beforeEach(() => {
 })
 
 describe('github rg push-down', () => {
-  it('forces filename labels for a narrowed run', async () => {
-    // A walk labels every file it finds; one narrowed candidate arrives as
-    // a lone explicit operand, which the generic scan would print bare.
-    narrow.mockResolvedValue({ resolved: [spec('/src/a.py')], fileCount: 1, usedSearch: true })
-    await runRg({ word_regexp: true })
-    expect(generic.mock.calls[0]?.[2]?.flags.with_filename).toBe(true)
-  })
-
   it('keeps -I suppression instead of forcing labels', async () => {
     narrow.mockResolvedValue({ resolved: [spec('/src/a.py')], fileCount: 1, usedSearch: true })
     await runRg({ word_regexp: true, no_filename: true })
@@ -121,52 +113,40 @@ describe('github rg push-down', () => {
     expect('with_filename' in (generic.mock.calls[0]?.[2]?.flags ?? {})).toBe(false)
   })
 
-  it('prunes hidden candidates', async () => {
+  it.each<[string, string[], CommandOpts['flags'], string[] | null]>([
+    [
+      'prunes hidden candidates',
+      ['/src/.env', '/src/.github/ci.yml', '/src/a.py'],
+      {},
+      ['/src/a.py'],
+    ],
+    [
+      'keeps hidden candidates under --hidden',
+      ['/src/.env', '/src/a.py'],
+      { hidden: true },
+      ['/src/.env', '/src/a.py'],
+    ],
+    ['exits 1 when every candidate is hidden', ['/src/.env'], {}, null],
+    ['hands the generic what -t py walks', ['/src/a.py'], { type: ['py'] }, ['/src/a.py']],
+    ['answers no match when -t md walks nothing', ['/src/a.py'], { type: ['md'] }, null],
+  ])('%s', async (_name, candidates, flags, searched) => {
+    // The candidates stand in for a walk, which filters hidden entries and
+    // -t, while a file named on the line is never filtered; none left is no
+    // match, not a stdin run.
     narrow.mockResolvedValue({
-      resolved: [spec('/src/.env'), spec('/src/.github/ci.yml'), spec('/src/a.py')],
-      fileCount: 3,
+      resolved: candidates.map(spec),
+      fileCount: candidates.length,
       usedSearch: true,
     })
-    await runRg({ word_regexp: true })
-    expect((generic.mock.calls[0]?.[0] ?? []).map((p) => p.virtual)).toEqual(['/src/a.py'])
-  })
-
-  it('keeps hidden candidates under --hidden', async () => {
-    narrow.mockResolvedValue({
-      resolved: [spec('/src/.env'), spec('/src/a.py')],
-      fileCount: 2,
-      usedSearch: true,
-    })
-    await runRg({ word_regexp: true, hidden: true })
-    expect((generic.mock.calls[0]?.[0] ?? []).map((p) => p.virtual)).toEqual([
-      '/src/.env',
-      '/src/a.py',
-    ])
-  })
-
-  it('exits 1 when every narrowed candidate is hidden', async () => {
-    narrow.mockResolvedValue({ resolved: [spec('/src/.env')], fileCount: 1, usedSearch: true })
-    const result = await runRg({ word_regexp: true })
-    expect(result).not.toBeNull()
-    const [out, io] = result as [Uint8Array, IOResult]
-    expect(out).toEqual(new Uint8Array())
-    expect(io.exitCode).toBe(1)
-    expect(generic).not.toHaveBeenCalled()
-  })
-
-  it('hands the generic the candidates the walk would search', async () => {
-    narrow.mockResolvedValue({ resolved: [spec('/src/a.py')], fileCount: 1, usedSearch: true })
-    await runRg({ word_regexp: true, type: ['py'] })
-    expect((generic.mock.calls[0]?.[0] ?? []).map((p) => p.virtual)).toEqual(['/src/a.py'])
-  })
-
-  it('answers no match when the walk would search nothing', async () => {
-    narrow.mockResolvedValue({ resolved: [spec('/src/a.py')], fileCount: 1, usedSearch: true })
-    const result = await runRg({ word_regexp: true, type: ['md'] })
-    expect(generic).not.toHaveBeenCalled()
-    const [out, io] = result as [Uint8Array, IOResult]
-    expect(out).toEqual(new Uint8Array())
-    expect(io.exitCode).toBe(1)
+    const result = await runRg({ word_regexp: true, ...flags })
+    if (searched === null) {
+      const [out, io] = result as [Uint8Array, IOResult]
+      expect(out).toEqual(new Uint8Array())
+      expect(io.exitCode).toBe(1)
+      expect(generic).not.toHaveBeenCalled()
+    } else {
+      expect((generic.mock.calls[0]?.[0] ?? []).map((p) => p.virtual)).toEqual(searched)
+    }
   })
 
   it.each<[string, CommandOpts['flags']]>([

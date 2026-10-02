@@ -339,6 +339,45 @@
       "flags": [
         "c"
       ]
+    },
+    {
+      "id": "grep_m_zero_prints_no_context_count",
+      "seq": 14101501,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/cfgA; printf 'hello\\nworld\\nfoo\\nbar\\nbaz\\n' > /data/cfgA/a.txt; grep -m 0 -B1 -c hello /data/cfgA/a.txt; echo rc=$?; rm -rf /data/cfgA",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "m",
+        "B",
+        "c"
+      ]
     }
   ]
 }

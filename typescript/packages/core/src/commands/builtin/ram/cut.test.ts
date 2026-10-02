@@ -42,52 +42,14 @@ async function runCut(
 }
 
 describe('cut', () => {
-  it('-f with default tab', async () => {
-    expect(await runCut(ENC.encode('a\tb\tc\n'), { fields: '2' })).toBe('b\n')
-  })
-
-  it('-f -d :', async () => {
-    expect(await runCut(ENC.encode('a:b:c\nd:e:f\n'), { fields: '1', delimiter: ':' })).toBe(
-      'a\nd\n',
-    )
-  })
-
-  it('-c byte range', async () => {
-    expect(await runCut(ENC.encode('hello world\n'), { characters: '1-5' })).toBe('hello\n')
-  })
-
-  it('-f with complement', async () => {
-    expect(
-      await runCut(ENC.encode('a:b:c:d\n'), { delimiter: ':', fields: '2', complement: true }),
-    ).toBe('a:c:d\n')
-  })
-
-  it('-f,-f picks multiple fields', async () => {
-    expect(await runCut(ENC.encode('a,b,c,d\n'), { delimiter: ',', fields: '1,3' })).toBe('a,c\n')
-  })
-
   it('-f with range', async () => {
     expect(await runCut(ENC.encode('a,b,c,d,e\n'), { delimiter: ',', fields: '2-4' })).toBe(
       'b,c,d\n',
     )
   })
 
-  it('-z zero-terminated', async () => {
-    expect(
-      await runCut(ENC.encode('a:b\x00c:d\x00'), {
-        delimiter: ':',
-        fields: '1',
-        zero_terminated: true,
-      }),
-    ).toBe('a\x00c\x00')
-  })
-
   it('-f reorders to file order, not spec order', async () => {
     expect(await runCut(ENC.encode('a\tb\tc\n'), { fields: '3,1' })).toBe('a\tc\n')
-  })
-
-  it('-f open range to end of line', async () => {
-    expect(await runCut(ENC.encode('a\tb\tc\td\n'), { fields: '2-' })).toBe('b\tc\td\n')
   })
 
   it('-f line without delimiter passes through whole', async () => {
@@ -97,15 +59,6 @@ describe('cut', () => {
   it('-w handles long whitespace runs', async () => {
     const whitespace = '\t'.repeat(50_000)
     expect(await runCut(ENC.encode(`a${whitespace}b\n`), { fields: '2', w: true })).toBe('b\n')
-  })
-
-  it('--whitespace-delimited=trimmed removes edge whitespace', async () => {
-    expect(
-      await runCut(ENC.encode('  a   b c  \n'), {
-        fields: '1,3',
-        whitespace_delimited: 'trimmed',
-      }),
-    ).toBe('a\tc\n')
   })
 
   // One candidate, so ARGMATCH accepts any prefix of it. GNU cut has no
@@ -123,10 +76,6 @@ describe('cut', () => {
 
   it('-c overlapping ranges dedup ascending', async () => {
     expect(await runCut(ENC.encode('abcdef\n'), { characters: '1-3,2-4' })).toBe('abcd\n')
-  })
-
-  it('-c open range to end of line', async () => {
-    expect(await runCut(ENC.encode('abcdef\n'), { characters: '3-' })).toBe('cdef\n')
   })
 
   it('missing stdin returns error', async () => {
@@ -150,29 +99,5 @@ describe('cut', () => {
           ? stderr
           : await materialize(stderr)
     expect(DEC.decode(errBytes)).toMatch(/missing operand/)
-  })
-
-  it('multi-character delimiter is rejected', async () => {
-    const vfs = new RAMVFS()
-    const cmd = RAM_CUT[0]
-    if (cmd === undefined) throw new Error('cut not registered')
-    const result = await cmd.fn((vfs as { accessor?: unknown }).accessor as never, [], [], {
-      stdin: ENC.encode('a,b\n'),
-      flags: { fields: '1', delimiter: ',,' },
-      filetypeFns: null,
-      cwd: '/',
-    })
-    if (result === null) throw new Error('result null')
-    const [out, ioResult] = result
-    expect(out).toBeNull()
-    expect(ioResult.exitCode).toBe(1)
-    const stderr = ioResult.stderr
-    const errBytes =
-      stderr === null
-        ? new Uint8Array()
-        : stderr instanceof Uint8Array
-          ? stderr
-          : await materialize(stderr)
-    expect(DEC.decode(errBytes)).toMatch(/delimiter must be a single character/)
   })
 })

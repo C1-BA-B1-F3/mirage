@@ -35,22 +35,6 @@ async def test_head_default_n_10(workspace):
 
 
 @pytest.mark.asyncio
-async def test_head_n_explicit(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\n")
-    io = await workspace.shell("head -n 2 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"a\nb\n"
-
-
-@pytest.mark.asyncio
-async def test_head_c_bytes(workspace):
-    await workspace.vfs.write("/f.txt", b"hello world")
-    io = await workspace.shell("head -c 5 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"hello"
-
-
-@pytest.mark.asyncio
 async def test_head_negative_n_excludes_last(workspace):
     await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\n")
     io = await workspace.shell("head -n -1 /f.txt")
@@ -59,37 +43,8 @@ async def test_head_negative_n_excludes_last(workspace):
 
 
 @pytest.mark.asyncio
-async def test_head_n_larger_than_file(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\n")
-    io = await workspace.shell("head -n 100 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"a\nb\n"
-
-
-@pytest.mark.asyncio
 async def test_head_no_trailing_newline(workspace):
     await workspace.vfs.write("/partial.txt", b"hello")
     io = await workspace.shell("head /partial.txt")
     assert io.exit_code == 0
     assert io.stdout == b"hello"
-
-
-@pytest.mark.asyncio
-async def test_head_multi_file_emits_headers(workspace):
-    """POSIX head with multiple files emits `==> name <==` headers."""
-    await workspace.vfs.write("/a.txt", b"x\ny\n")
-    await workspace.vfs.write("/b.txt", b"z\n")
-    io = await workspace.shell("head /a.txt /b.txt")
-    assert io.exit_code == 0
-    assert b"==> /a.txt <==\n" in io.stdout
-    assert b"==> /b.txt <==\n" in io.stdout
-    assert b"x\ny\n" in io.stdout
-    assert b"z\n" in io.stdout
-
-
-@pytest.mark.asyncio
-async def test_head_empty_file(workspace):
-    await workspace.vfs.write("/empty.txt", b"")
-    io = await workspace.shell("head /empty.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b""

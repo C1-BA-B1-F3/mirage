@@ -47,8 +47,12 @@ import type { TSNodeLike } from '../../shell/types.ts'
 import { runExternal } from '../executor/command/external.ts'
 import { handleCommand } from '../executor/command/command.ts'
 import type { ExecuteNodeOpts } from '../executor/jobs.ts'
-import { type AliasMark, aliasCommandText } from '../executor/builtins/alias/index.ts'
-import { findSyntaxError, syntaxErrorMessage } from '../../shell/parse/index.ts'
+import {
+  type AliasMark,
+  aliasCommandText,
+  expandingAliases,
+} from '../executor/builtins/alias/index.ts'
+import { findSyntaxError, syntaxErrorMessage, type ShellParser } from '../../shell/parse/index.ts'
 import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import { guardIO, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import {
@@ -136,9 +140,9 @@ export async function executeCommand(
   runtimeBindings?: Record<string, Runtime>,
   routingDecision?: RouteDecision,
   signal?: AbortSignal,
-  // Parse one line into a tree; only alias expansion needs it. Absent
-  // means an alias is stored and printed but never expanded.
-  reparse?: (line: string) => TSNodeLike,
+  // The shell parser; only alias expansion needs it. Absent means an
+  // alias is stored and printed but never expanded.
+  parser?: ShellParser,
   // The agent the line is attributed to, which an approval request names.
   agentId = '',
   // The line's hand-off, which its gate claims on and runs on.
@@ -159,7 +163,7 @@ export async function executeCommand(
   // inside a function still means the function's argument.
   const headNode = nonPrefixParts[0]
   if (
-    reparse !== undefined &&
+    parser !== undefined &&
     Object.keys(session.aliases).length > 0 &&
     headNode?.type === NT.COMMAND_NAME &&
     headNode.namedChildren[0]?.type === NT.WORD
@@ -169,11 +173,25 @@ export async function executeCommand(
     const source = getText(node)
     const base = node.startIndex ?? 0
     const rest = source.slice((headNode.endIndex ?? 0) - base)
-    const rewritten = aliasCommandText(session, head, rest, mark)
-    if (rewritten !== null) {
-      const line = source.slice(0, (headNode.startIndex ?? 0) - base) + rewritten
-      const ast = reparse(line)
-      const offending = findSyntaxError(ast, reparse)
+    const rewrite = aliasCommandText(session, head, rest, mark)
+    if (rewrite !== null) {
+      const [rewritten, texts] = rewrite
+      let at = (headNode.startIndex ?? 0) - base
+      const line = source.slice(0, at) + rewritten
+      const ast = parser.parse(line)
+      const own = new Map<string, readonly [number, number]>()
+      for (const [alias, text] of texts) {
+        own.set(alias, [at, at + text.length])
+        at += text.length
+      }
+      const reparse = (text: string): TSNodeLike => parser.parse(text)
+      const offending = findSyntaxError(
+        ast,
+        reparse,
+        expandingAliases(session),
+        own,
+        parser.sourceOffsets(line, ast),
+      )
       if (offending !== null) {
         const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))
         return [

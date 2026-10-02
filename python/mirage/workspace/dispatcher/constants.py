@@ -26,6 +26,7 @@ DISPATCH_WRITE_OPS = frozenset(
         "write",
         "write_bytes",
         "append",
+        "pwrite",
         "unlink",
         "create",
         "truncate",
@@ -63,7 +64,9 @@ LINK_ENTRY_OPS = frozenset({"unlink", "rename", "stat"})
 
 # Ops that open the regular file they name with O_CREAT, which answers
 # a slash-terminated name (`x/`, only ever a directory) with EISDIR.
-FILE_CREATE_OPS = frozenset({"write", "write_bytes", "append", "create"})
+FILE_CREATE_OPS = frozenset(
+    {"write", "write_bytes", "append", "pwrite", "create"}
+)
 
 # Ops that create the path they name. A hidden target refuses these
 # through `hidden_refusal` with `create` set: EACCES when the directory

@@ -545,7 +545,9 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "hf",
+        "hf-prefix"
       ],
       "command": "cat <<END > HOUT\nwritten\nEND\ncat HOUT",
       "expect": {

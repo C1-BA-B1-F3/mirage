@@ -31,7 +31,10 @@ const CONTAINER_TYPES = new Set<string>([
   NT.NEGATION_EXPRESSION,
   NT.PARENTHESIZED_EXPRESSION,
 ])
-const FLAT_OP_TOKENS = new Set(['=', '==', '!=', '<', '>', '!', '(', ')'])
+// `[` is a command, so every operator the grammar folds into the test
+// reaches it as an operand word for test to judge (`=~` and `+` are refused
+// there, not dropped); `&&` and `||` end the command in bash.
+const FLAT_SKIP_TOKENS = new Set(['&&', '||'])
 const COND_OP_TOKENS = new Set(['=', '==', '!=', '=~', '<', '>', '&&', '||'])
 
 /**
@@ -77,7 +80,7 @@ async function flatten(
       continue
     }
     if (child.isNamed !== true) {
-      if (FLAT_OP_TOKENS.has(ctype)) out.push(child.text)
+      if (!FLAT_SKIP_TOKENS.has(ctype)) out.push(child.text)
       continue
     }
     if (CONTAINER_TYPES.has(ctype)) {

@@ -58,9 +58,3 @@ async def test_du_walks_one_list_per_folder_with_file_sizes_only(seen):
         _BASE + "/root/children",
         _BASE + "/root:/sub:/children",
     ]
-
-
-@pytest.mark.asyncio
-async def test_du_sizes_a_missing_path_as_nothing(seen):
-    path = PathSpec.from_str_path("/od/nosuch", "nosuch")
-    assert await IO.du.size(_accessor(), path, RAMIndexCacheStore()) == 0

@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { FsError } from '@deepseek-ai/dsh-fs'
+import type { SubprocessOutputRead, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 
 const BINARY_SAMPLE_BYTES = 8192
 
@@ -94,6 +95,29 @@ function charBoundary(bytes: Uint8Array, from: number): number {
   return start
 }
 
+// The end of the last whole UTF-8 sequence, so a read of a stream still
+// arriving leaves a character it holds only part of for the next read. Only
+// a valid lead byte opens one; any other byte (0xC0, 0xC1, 0xF5 and up)
+// decodes as a replacement mark at once rather than waiting on bytes that
+// cannot complete it.
+function charEnd(bytes: Uint8Array): number {
+  const end = bytes.byteLength
+  for (let back = 1; back <= Math.min(4, end); back++) {
+    const byte = bytes[end - back] ?? 0
+    if ((byte & 0xc0) === 0x80) continue
+    const width =
+      byte >= 0xc2 && byte <= 0xdf
+        ? 2
+        : byte >= 0xe0 && byte <= 0xef
+          ? 3
+          : byte >= 0xf0 && byte <= 0xf4
+            ? 4
+            : 1
+    return width > back ? end - back : end
+  }
+  return end
+}
+
 // Byte-accurate tail cap: keep the LAST maxBytes bytes of the encoded text,
 // re-aligned to a UTF-8 sequence boundary so the kept tail still decodes.
 export function tailCap(text: string, maxBytes: number): { text: string; truncated: boolean } {
@@ -152,6 +176,35 @@ export class TailBuffer {
     return true
   }
 
+  /** How many bytes are held. */
+  get size(): number {
+    return this.bytes
+  }
+
+  /**
+   * The held bytes after the first `skip`, joined, leaving them held: only
+   * what is asked for is copied.
+   *
+   * @param skip how many of the oldest held bytes to leave out.
+   * @returns the rest, oldest first.
+   */
+  since(skip: number): Uint8Array {
+    const out = new Uint8Array(Math.max(0, this.bytes - skip))
+    let left = skip
+    let at = 0
+    for (const part of this.parts) {
+      if (left >= part.byteLength) {
+        left -= part.byteLength
+        continue
+      }
+      const piece = part.subarray(left)
+      left = 0
+      out.set(piece, at)
+      at += piece.byteLength
+    }
+    return out
+  }
+
   /**
    * Drain everything held, decoded as text.
    *
@@ -163,16 +216,60 @@ export class TailBuffer {
    */
   take(): string {
     if (this.parts.length === 0) return ''
-    const joined = new Uint8Array(this.bytes)
-    let at = 0
-    for (const part of this.parts) {
-      joined.set(part, at)
-      at += part.byteLength
-    }
+    const joined = this.since(0)
     this.parts = []
     this.bytes = 0
     return new TextDecoder('utf-8', { fatal: false }).decode(
       joined.subarray(charBoundary(joined, 0)),
     )
+  }
+}
+
+/**
+ * One collected output stream as a whole-stream offset reader over its
+ * bounded tail: `readFrom(0)` after it settles is the batch result, and an
+ * offset that slid out of the tail reads `lossy` with the whole tail.
+ */
+export class StreamTail implements SubprocessOutputReader {
+  private readonly tail: TailBuffer
+  private offset = 0
+  private ended = false
+
+  constructor(max: number) {
+    this.tail = new TailBuffer(max)
+  }
+
+  /** Whether the tail has lost its head, so the stream is truncated. */
+  get truncated(): boolean {
+    return this.offset > this.tail.size
+  }
+
+  append(chunk: Uint8Array): void {
+    this.offset += chunk.byteLength
+    this.tail.append(chunk)
+  }
+
+  /** Mark the stream finished, so a read decodes through its last byte. */
+  end(): void {
+    this.ended = true
+  }
+
+  readFrom(fromByte: number): SubprocessOutputRead {
+    if (!Number.isSafeInteger(fromByte) || fromByte < 0 || fromByte > this.offset)
+      throw new Error('invalid output offset')
+    const start = this.offset - this.tail.size
+    const skip = Math.max(0, fromByte - start)
+    let bytes = this.tail.since(skip)
+    // A tail that lost its head can begin mid-character; the reader is
+    // handed whole characters only, so the stray continuation bytes go.
+    if (skip === 0 && start > 0) bytes = bytes.subarray(charBoundary(bytes, 0))
+    // A stream still arriving can stop mid-character too: the read ends
+    // before it, so the next read decodes it whole.
+    const stop = this.ended ? bytes.byteLength : charEnd(bytes)
+    return {
+      text: new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, stop)),
+      nextOffset: this.offset - bytes.byteLength + stop,
+      lossy: fromByte < start,
+    }
   }
 }

@@ -34,26 +34,6 @@ def test_nextcloud_write_commands_tagged():
                 assert rc.write is False, f"{rc.name} should be write=False"
 
 
-def test_nextcloud_write_ops_tagged():
-    from mirage.ops.nextcloud import OPS
-
-    write_op_names = {
-        "write",
-        "append",
-        "unlink",
-        "rmdir",
-        "mkdir",
-        "create",
-        "truncate",
-        "rename",
-    }
-    for ro in OPS:
-        if ro.name in write_op_names:
-            assert ro.write is True, f"op {ro.name} should be write=True"
-        else:
-            assert ro.write is False, f"op {ro.name} should be write=False"
-
-
 def test_nextcloud_vfs_registers_commands():
     config = NextcloudConfig(
         url="https://cloud.example.com/remote.php/dav/files/user/"

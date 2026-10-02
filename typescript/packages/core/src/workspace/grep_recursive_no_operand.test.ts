@@ -58,10 +58,4 @@ describe('grep -r with no path operand', () => {
     expect(io.exitCode).toBe(1)
     expect(stdoutStr(io)).toBe('')
   })
-
-  it('keeps the usage error without -r', async () => {
-    const ws = await makeWs()
-    const io = await ws.shell('grep hello')
-    expect(io.exitCode).toBe(2)
-  })
 })

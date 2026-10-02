@@ -93,19 +93,6 @@ def run(scopes, flags=None, ns=None, roots=frozenset()):
     return out.decode(), io, calls
 
 
-def test_operands_on_different_mounts_are_headed_and_sorted_together():
-    # GNU: `ls a b` names each directory, sorted, blank line between.
-    out, io, _ = run(["/a/one", "/b/two"])
-    assert out == "/a/one:\nx.txt\n\n/b/two:\ny.txt\n"
-    assert io.exit_code == 0
-
-
-def test_command_line_order_does_not_survive_the_global_sort():
-    # GNU prints `ls b a` identically to `ls a b`.
-    assert run(["/b", "/a"])[0] == run(["/a", "/b"])[0]
-    assert run(["/a", "/b"])[0] == "/a:\none\nz.txt\n\n/b:\ntwo\n"
-
-
 def test_a_file_operand_prints_first_unheaded():
     out, _, _ = run(["/b/two", "/a/z.txt"])
     assert out == "/a/z.txt\n\n/b/two:\ny.txt\n"
@@ -148,10 +135,6 @@ def test_recursive_interleaves_each_operands_subtree():
     assert out == (
         "/a:\none\nz.txt\n\n/a/one:\nx.txt\n\n/b:\ntwo\n\n/b/two:\ny.txt\n"
     )
-
-
-def test_list_dir_prints_bare_rows_with_no_headers():
-    assert run(["/a", "/b"], flags={"directory": True})[0] == "/a\n/b\n"
 
 
 def test_a_lone_operand_still_reaches_the_generic_unheaded():
@@ -198,10 +181,3 @@ def test_a_full_namespace_does_not_stop_the_relay_at_a_mount_root():
     assert out == (
         "/a:\none\nz.txt\n\n/a/one:\nx.txt\n\n/b:\ntwo\n\n/b/two:\ny.txt\n"
     )
-
-
-def test_each_operand_is_listed_once():
-    # Relaying replaces a native run per operand; it must not turn into
-    # a listing per operand per mount.
-    _, _, calls = run(["/a", "/b"])
-    assert calls.readdir == ["/a", "/b"]

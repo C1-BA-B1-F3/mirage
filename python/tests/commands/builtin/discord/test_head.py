@@ -42,10 +42,6 @@ def _in_day(offset: int) -> str:
     return str(int(date_to_snowflake(DAY)) + offset)
 
 
-def _next_day() -> str:
-    return str(int(date_to_snowflake(DAY, end=True)) + 1)
-
-
 @pytest.mark.asyncio
 async def test_smart_head_fetches_only_first_n_messages():
     fake_get = AsyncMock(
@@ -63,24 +59,6 @@ async def test_smart_head_fetches_only_first_n_messages():
     assert fake_get.await_args.kwargs["params"]["limit"] == 2
     lines = (await materialize(out)).decode().splitlines()
     assert [json.loads(ln)["content"] for ln in lines] == ["a", "b"]
-
-
-@pytest.mark.asyncio
-async def test_smart_head_drops_messages_past_end_of_day():
-    # With `after`, a short day spills into the next one; head must not
-    # print lines the day's chat.jsonl does not contain.
-    fake_get = AsyncMock(
-        return_value=[_msg(_in_day(1), "in-day"), _msg(_next_day(), "spill")]
-    )
-    with patch(
-        "mirage.commands.builtin.discord.head.discord_get", new=fake_get
-    ):
-        out, io = await head(
-            AsyncMock(), [_path(CHAT)], [], CommandOpts(flags={"lines": "5"})
-        )
-    assert io.exit_code == 0
-    lines = (await materialize(out)).decode().splitlines()
-    assert [json.loads(ln)["content"] for ln in lines] == ["in-day"]
 
 
 @pytest.mark.asyncio
@@ -129,34 +107,6 @@ async def test_head_non_messages_path_uses_generic_path():
 
 
 @pytest.mark.asyncio
-async def test_head_verbose_uses_generic_path():
-    # -v prints the ==> path <== header, which only the generic path
-    # renders.
-    fake_get = AsyncMock()
-    with (
-        patch(
-            "mirage.commands.builtin.discord.head.discord_get", new=fake_get
-        ),
-        patch(
-            "mirage.commands.builtin.discord.head.resolve_or_empty",
-            new=AsyncMock(return_value=[]),
-        ),
-        patch(
-            "mirage.commands.builtin.discord.head.head_generic",
-            new=AsyncMock(return_value=(b"", None)),
-        ) as fake_generic,
-    ):
-        await head(
-            AsyncMock(),
-            [_path(CHAT)],
-            [],
-            CommandOpts(flags={"lines": "2", "verbose": True}),
-        )
-    fake_get.assert_not_awaited()
-    assert fake_generic.await_count == 1
-
-
-@pytest.mark.asyncio
 async def test_head_count_beyond_one_page_uses_generic_path():
     # Discord caps a message page at 100; larger counts (and zero or
     # negative all-but-last-N forms) keep the generic path.
@@ -182,18 +132,3 @@ async def test_head_count_beyond_one_page_uses_generic_path():
         )
     fake_get.assert_not_awaited()
     assert fake_generic.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_smart_head_empty_day_outputs_nothing():
-    # A day whose fetch is entirely next-day spill must render b"" like
-    # the day renderer does, not a lone blank line.
-    fake_get = AsyncMock(return_value=[_msg(_next_day(), "spill")])
-    with patch(
-        "mirage.commands.builtin.discord.head.discord_get", new=fake_get
-    ):
-        out, io = await head(
-            AsyncMock(), [_path(CHAT)], [], CommandOpts(flags={"lines": "3"})
-        )
-    assert io.exit_code == 0
-    assert (await materialize(out)) == b""

@@ -265,6 +265,20 @@ describe('resolveGlobWith', () => {
     const out = await resolveGlobWith(fakeReaddir, null, [spec], undefined)
     expect(out).toEqual([])
   })
+
+  it.each([
+    ['a resolved path', true],
+    ['an unresolved path with no pattern', false],
+  ])('passes %s through without listing', async (_name, resolved) => {
+    const spec = new PathSpec({
+      virtual: '/notion/pages',
+      directory: '/notion/',
+      vfsPath: 'pages',
+      resolved,
+    })
+    expect(await resolveGlobWith(fakeReaddir, null, [spec], undefined)).toEqual([spec])
+    expect(calls).toEqual([])
+  })
 })
 
 describe('resolveGlobWith under hidden paths', () => {

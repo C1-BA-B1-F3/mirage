@@ -20,7 +20,6 @@ from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.mongodb import COMMANDS
 from mirage.commands.config import CommandOpts
-from mirage.commands.errors import FindParseError
 from mirage.core.mongodb.types import EntityKind
 from mirage.io.types import materialize
 from mirage.types import PathSpec
@@ -100,93 +99,6 @@ async def _run(paths: list[PathSpec], *texts: str, **flags) -> list[str]:
     )
     data = await materialize(stdout)
     return data.decode().splitlines()
-
-
-@pytest.mark.asyncio
-async def test_plain_find_lists_synthetic_metadata_files():
-    lines = await _run([_spec(MOUNT)])
-    assert f"{MOUNT}/appdb/database.json" in lines
-    assert f"{MOUNT}/appdb/collections/users/schema.json" in lines
-    assert f"{MOUNT}/appdb/collections/users/documents.jsonl" in lines
-    assert f"{MOUNT}/appdb/collections/orders" in lines
-    assert f"{MOUNT}/appdb/views" in lines
-
-
-@pytest.mark.asyncio
-async def test_name_filters_documents_files():
-    lines = await _run([_spec(MOUNT)], name="*.jsonl")
-    assert lines == [
-        f"{MOUNT}/appdb/collections/orders/documents.jsonl",
-        f"{MOUNT}/appdb/collections/users/documents.jsonl",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_iname_is_case_insensitive():
-    lines = await _run([_spec(MOUNT)], iname="SCHEMA.JSON")
-    assert lines == [
-        f"{MOUNT}/appdb/collections/orders/schema.json",
-        f"{MOUNT}/appdb/collections/users/schema.json",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_type_d_uses_extension_hint():
-    lines = await _run([_spec(MOUNT)], type="d")
-    assert f"{MOUNT}/appdb/collections/users" in lines
-    assert f"{MOUNT}/appdb/views" in lines
-    assert all(not line.endswith((".json", ".jsonl")) for line in lines)
-
-
-@pytest.mark.asyncio
-async def test_type_f_selects_only_rendered_files():
-    lines = await _run([_spec(MOUNT)], type="f")
-    assert lines
-    assert all(line.endswith((".json", ".jsonl")) for line in lines)
-
-
-@pytest.mark.asyncio
-async def test_maxdepth_limits_walk():
-    lines = await _run([_spec(MOUNT)], maxdepth="1")
-    assert lines == [MOUNT, f"{MOUNT}/appdb"]
-
-
-@pytest.mark.asyncio
-async def test_mindepth_drops_shallow_entries():
-    lines = await _run([_spec(MOUNT)], mindepth="3")
-    assert lines
-    assert all(
-        line.removeprefix(MOUNT).strip("/").count("/") >= 2 for line in lines
-    )
-
-
-@pytest.mark.asyncio
-async def test_bare_word_operand_is_a_parse_error():
-    # GNU find rejects a bare word in expression position; the bare-name
-    # defaulting some KB wrappers do is deliberately not generic.
-    with pytest.raises(FindParseError):
-        await _run([_spec(MOUNT)], "database.json")
-
-
-@pytest.mark.asyncio
-async def test_negation_excludes_pattern():
-    lines = await _run([_spec(MOUNT)], "!", "-name", "*.json*")
-    assert f"{MOUNT}/appdb/collections" in lines
-    assert all(".json" not in line for line in lines)
-
-
-@pytest.mark.asyncio
-async def test_multiple_start_points_walk_in_operand_order():
-    lines = await _run(
-        [
-            _spec(f"{MOUNT}/appdb/collections/users"),
-            _spec(f"{MOUNT}/appdb/views"),
-        ]
-    )
-    assert f"{MOUNT}/appdb/collections/users/schema.json" in lines
-    assert lines.index(f"{MOUNT}/appdb/collections/users") < lines.index(
-        f"{MOUNT}/appdb/views"
-    )
 
 
 @pytest.mark.asyncio

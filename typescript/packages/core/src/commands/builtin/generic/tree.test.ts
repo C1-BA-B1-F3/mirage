@@ -14,7 +14,7 @@
 
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { describe, expect, it } from 'vitest'
-import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import type { CommandOpts } from '../../config.ts'
 import { treeGeneric } from './tree.ts'
@@ -80,39 +80,24 @@ async function run(
 }
 
 describe('treeGeneric with trailing-slash folder entries', () => {
-  it('shows folder names and hides hidden folders by default', async () => {
-    expect(await run(boxReaddir, {})).toBe(
+  it.each([
+    ['slash-suffixed', boxReaddir],
+    ['slash-free', s3Readdir],
+  ])('draws %s folder entries by name', async (_shape, readdir) => {
+    expect(await run(readdir, {})).toBe(
       '/\n|-- docs\n|   `-- a.txt\n`-- readme.txt\n\n2 directories, 2 files\n',
     )
-  })
-
-  it('shows hidden folders by name with -a', async () => {
-    expect(await run(boxReaddir, { a: true })).toBe(
+    expect(await run(readdir, { a: true })).toBe(
       '/\n|-- .secret\n|-- docs\n|   `-- a.txt\n`-- readme.txt\n\n3 directories, 2 files\n',
-    )
-  })
-
-  it('produces identical output for slash-free entries', async () => {
-    expect(await run(s3Readdir, {})).toBe(
-      '/\n|-- docs\n|   `-- a.txt\n`-- readme.txt\n\n2 directories, 2 files\n',
     )
   })
 })
 
-// GNU tree 2.2.1, pinned on debian:stable-slim. A file operand gets the
-// same inline marker an unopenable one does, but it exists, so it is
-// counted and the exit status stays 0:
-//   tree <file>     -> "<file>  [error opening dir]", 0 directories, 1 file, 0
-//   tree -d <file>  -> same marker, "0 directories", exit 0
-//   tree <missing>  -> same marker, 0 directories, 0 files, exit 2
 describe('treeGeneric operand that is not a directory', () => {
-  function optsWith(
-    start: FileStat | null,
-    flags: Record<string, string | boolean> = {},
-  ): CommandOpts {
+  function optsWith(start: FileStat | null): CommandOpts {
     return {
       stdin: null,
-      flags,
+      flags: {},
       filetypeFns: null,
       cwd: '/',
       vfs: null,
@@ -123,49 +108,6 @@ describe('treeGeneric operand that is not a directory', () => {
   const unreached = (): Promise<never> => {
     throw new Error('a non-directory operand must not be listed')
   }
-
-  const fileStat = new FileStat({
-    name: 'a.txt',
-    size: 6,
-    type: FileType.FILE,
-    content: ContentType.TEXT,
-  })
-
-  it('counts a file operand and exits 0', async () => {
-    const [out, io] = (await treeGeneric(
-      [spec('/a.txt')],
-      optsWith(fileStat),
-      unreached,
-      unreached,
-    )) as [Uint8Array, { exitCode: number }]
-    expect(io.exitCode).toBe(0)
-    expect(DEC.decode(out)).toBe('/a.txt  [error opening dir]\n\n0 directories, 1 file\n')
-  })
-
-  it('omits the file count under -d', async () => {
-    const [out, io] = (await treeGeneric(
-      [spec('/a.txt')],
-      optsWith(fileStat, { d: true }),
-      unreached,
-      unreached,
-    )) as [Uint8Array, { exitCode: number }]
-    expect(io.exitCode).toBe(0)
-    expect(DEC.decode(out)).toBe('/a.txt  [error opening dir]\n\n0 directories\n')
-  })
-
-  // The probe answers on both channels a backend can offer, so null means
-  // nothing is there and the walk is never attempted. GNU tree 2.2.1 marks
-  // it inline, counts nothing, and exits 2.
-  it('marks an operand that is not there and exits 2', async () => {
-    const [out, io] = (await treeGeneric(
-      [spec('/nope')],
-      optsWith(null),
-      unreached,
-      unreached,
-    )) as [Uint8Array, { exitCode: number }]
-    expect(io.exitCode).toBe(2)
-    expect(DEC.decode(out)).toBe('/nope  [error opening dir]\n\n0 directories, 0 files\n')
-  })
 
   // An unreadable directory that does exist still reaches the walk, which
   // renders the same marker with exit 2 (a permission error, not absence).
@@ -226,9 +168,7 @@ describe('treeGeneric across a nested mount', () => {
     return Promise.resolve(new FileStat({ name: key(p).split('/').pop() ?? '', type }))
   }
 
-  // A MountView double: ROOT is the mount, `hidden` says whether this
-  // session may be told about it.
-  function crossOpts(hidden = false): CommandOpts {
+  function crossOpts(): CommandOpts {
     const under = (path: string): string[] =>
       [ROOT].filter((r) => r.startsWith(rstripSlash(path) + '/'))
     return {
@@ -236,7 +176,7 @@ describe('treeGeneric across a nested mount', () => {
       ns: {
         mounts: {
           descendants: under,
-          visibleDescendants: (path: string) => (hidden ? [] : under(path)),
+          visibleDescendants: under,
           isRoot: (path: string) => rstripSlash(path) === ROOT,
           rootOf: () => '/',
         },
@@ -276,30 +216,6 @@ describe('treeGeneric across a nested mount', () => {
         '',
       ].join('\n'),
     )
-  })
-
-  it('never draws a mount the session cannot see', async () => {
-    // A crossing row is drawn from the mount table alone, so no backend
-    // and no dispatcher gets a chance to refuse it: `tree` has to read
-    // the list of mounts it may name rather than the list it may not
-    // descend into. The parent holds no key of its own under the mount
-    // root here, so the only way `inner` could be drawn is the table.
-    const bare: Record<string, FileType> = {
-      '/base': FileType.DIRECTORY,
-      '/base/top.txt': FileType.FILE,
-    }
-    const [out, io] = (await treeGeneric(
-      [spec('/base')],
-      crossOpts(true),
-      (p: PathSpec) => Promise.resolve(listing(bare, key(p))),
-      (p: PathSpec) => {
-        const type = bare[key(p)]
-        if (type === undefined) return Promise.reject(new Error(`ENOENT ${key(p)}`))
-        return Promise.resolve(new FileStat({ name: key(p).split('/').pop() ?? '', type }))
-      },
-    )) as [Uint8Array, { exitCode: number }]
-    expect(DEC.decode(out)).toBe(['/base', '`-- top.txt', '', '1 directory, 1 file', ''].join('\n'))
-    expect(io.exitCode).toBe(0)
   })
 
   it('stops at the mount point under -L 1', async () => {

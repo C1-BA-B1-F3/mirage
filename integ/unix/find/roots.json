@@ -21,7 +21,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "mkdir -p /data/roots1/sub && printf 'r1\\n' > /data/roots1/r1.txt && printf 'r2\\n' > /data/roots1/sub/r2.txt",
       "expect": {
@@ -51,7 +55,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/roots1 /data/a.txt -name '*.txt'",
       "expect": {

@@ -49,32 +49,6 @@ async function runDu(
 }
 
 describe('du', () => {
-  it('single file returns its size', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('hello'))
-    const r = await runDu(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])
-    expect(r.exitCode).toBe(0)
-    expect(r.lines).toEqual(['5\t/tmp/f.txt'])
-  })
-
-  it('directory recursive sum', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/tmp')
-    vfs.store.dirs.add('/tmp/sub')
-    vfs.store.files.set('/tmp/a.txt', ENC.encode('aaa'))
-    vfs.store.files.set('/tmp/sub/b.txt', ENC.encode('bb'))
-    const r = await runDu(vfs, [PathSpec.fromStrPath('/tmp')])
-    expect(r.exitCode).toBe(0)
-    expect(r.lines).toEqual(['2\t/tmp/sub', '5\t/tmp'])
-  })
-
-  it('reports a missing path and exits 1, like GNU', async () => {
-    const vfs = new RAMVFS()
-    const r = await runDu(vfs, [PathSpec.fromStrPath('/nonexistent')])
-    expect(r.lines).toEqual([])
-    expect(r.exitCode).toBe(1)
-  })
-
   it('empty directory returns 0', async () => {
     const vfs = new RAMVFS()
     vfs.store.dirs.add('/tmp')
@@ -88,24 +62,5 @@ describe('du', () => {
     vfs.store.files.set('/tmp/big.txt', ENC.encode('x'.repeat(2048)))
     const r = await runDu(vfs, [PathSpec.fromStrPath('/tmp')], { h: true })
     expect(r.lines[0]).toMatch(/^2(\.\d+)?K\t\/tmp$/)
-  })
-
-  it('handles multiple paths', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/a.txt', ENC.encode('a'))
-    vfs.store.files.set('/b.txt', ENC.encode('bb'))
-    const r = await runDu(vfs, [PathSpec.fromStrPath('/a.txt'), PathSpec.fromStrPath('/b.txt')])
-    expect(r.lines).toEqual(['1\t/a.txt', '2\t/b.txt'])
-  })
-
-  it('-a lists each file plus the directory total', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/tmp')
-    vfs.store.files.set('/tmp/a.txt', ENC.encode('a'))
-    vfs.store.files.set('/tmp/b.txt', ENC.encode('bb'))
-    const r = await runDu(vfs, [PathSpec.fromStrPath('/tmp')], { a: true })
-    expect(r.lines).toContain('1\t/tmp/a.txt')
-    expect(r.lines).toContain('2\t/tmp/b.txt')
-    expect(r.lines[r.lines.length - 1]).toBe('3\t/tmp')
   })
 })

@@ -48,7 +48,18 @@
         "s3-prefix",
         "databricks-prefix",
         "gridfs-prefix",
-        "ssh"
+        "ssh",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "touch '/data/zg*zg.txt' /data/zgXzg.txt && echo /data/zg*zg.txt && rm /data/zg*zg.txt",
       "expect": {

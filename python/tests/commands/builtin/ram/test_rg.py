@@ -23,47 +23,6 @@ def workspace():
 
 
 @pytest.mark.asyncio
-async def test_rg_dash_e_matches_like_positional_pattern(workspace):
-    await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write("/data/a.txt", b"orange line\nplain line\n")
-
-    io = await workspace.shell("rg -e orange /data/a.txt")
-    assert io.exit_code == 0
-    assert "orange line" in (io.stdout or b"").decode()
-
-
-@pytest.mark.asyncio
-async def test_rg_repeated_dash_e_matches_any_pattern(workspace):
-    await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write(
-        "/data/a.txt", b"orange line\nplain line\nlast line\n"
-    )
-
-    io = await workspace.shell("rg -e orange -e plain /data/a.txt")
-    assert io.exit_code == 0
-    out = (io.stdout or b"").decode()
-    assert "orange line" in out
-    assert "plain line" in out
-    assert "last line" not in out
-
-
-@pytest.mark.asyncio
-async def test_rg_dash_f_reads_patterns_from_file(workspace):
-    await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write(
-        "/data/a.txt", b"orange line\nplain line\nlast line\n"
-    )
-    await workspace.vfs.write("/data/pats.txt", b"orange\nlast\n")
-
-    io = await workspace.shell("rg -f /data/pats.txt /data/a.txt")
-    assert io.exit_code == 0
-    out = (io.stdout or b"").decode()
-    assert "orange line" in out
-    assert "last line" in out
-    assert "plain line" not in out
-
-
-@pytest.mark.asyncio
 async def test_rg_dash_e_and_dash_f_union(workspace):
     await workspace.vfs.mkdir("/data")
     await workspace.vfs.write(

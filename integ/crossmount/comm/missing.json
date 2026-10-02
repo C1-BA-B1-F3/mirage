@@ -22,7 +22,10 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "gridfs",
+        "gridfs-prefix",
+        "box"
       ],
       "command": "printf 'a\\n' | tee /data/xrl_c.txt > /dev/null && comm /data/xrl_c.txt /data2/xrl_nope.txt",
       "expect": {

@@ -75,6 +75,7 @@ class VFSAdapter:
             du=self.native.du,
             write=self.writes.write,
             append=self.writes.append,
+            pwrite=self.writes.pwrite,
             create=self.writes.create,
             mkdir=self.writes.mkdir,
             unlink=self.writes.unlink,

@@ -339,6 +339,40 @@
         "stdout": "nested\ncontent\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "cat_binary_passes_invalid_utf8_through",
+      "seq": 14100101,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\000\\001\\002hello\\377\\376' > /data/cfcat.bin; cat /data/cfcat.bin | od -An -tx1; echo rc=${PIPESTATUS[0]}; rm -f /data/cfcat.bin",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 01 02 68 65 6c 6c 6f ff fe\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

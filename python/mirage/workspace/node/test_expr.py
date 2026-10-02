@@ -39,7 +39,10 @@ _CONTAINER_TYPES = (
     NT.NEGATION_EXPRESSION,
     NT.PARENTHESIZED_EXPRESSION,
 )
-_FLAT_OP_TOKENS = frozenset({"=", "==", "!=", "<", ">", "!", "(", ")"})
+# `[` is a command, so every operator the grammar folds into the test
+# reaches it as an operand word for test to judge (`=~` and `+` are
+# refused there, not dropped); `&&` and `||` end the command in bash.
+_FLAT_SKIP_TOKENS = frozenset({"&&", "||"})
 _COND_OP_TOKENS = frozenset({"=", "==", "!=", "=~", "<", ">", "&&", "||"})
 
 
@@ -99,7 +102,7 @@ async def _flatten(
                 return False
             continue
         if not child.is_named:
-            if ctype in _FLAT_OP_TOKENS:
+            if ctype not in _FLAT_SKIP_TOKENS:
                 out.append(child.text.decode())
             continue
         if ctype in _CONTAINER_TYPES:

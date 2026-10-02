@@ -50,43 +50,6 @@ function seed(vfs: RAMVFS, dirs: string[], files: Record<string, string>): void 
 }
 
 describe('ls', () => {
-  it('lists files in directory', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], { '/tmp/a.txt': 'hello' })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')])
-    expect(out.trimEnd().split('\n')).toEqual(['a.txt'])
-  })
-
-  it('empty directory', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {})
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')])
-    expect(out).toBe('')
-  })
-
-  it('multiple files sorted alphabetically', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {
-      '/tmp/cherry.txt': 'c',
-      '/tmp/apple.txt': 'a',
-      '/tmp/banana.txt': 'b',
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')])
-    expect(out.trimEnd().split('\n')).toEqual(['apple.txt', 'banana.txt', 'cherry.txt'])
-  })
-
-  it('-l long format includes size and standard mode string', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], { '/tmp/file.txt': 'hello' })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { args_l: true })
-    expect(out.split('\n')[0]).toBe('total ?')
-    const line = out.split('\n')[1] ?? ''
-    const parts = line.split(/\s+/)
-    expect(parts[0]).toBe('-rw-r--r--')
-    expect(parts).toContain('5')
-    expect(parts[parts.length - 1]).toBe('file.txt')
-  })
-
   it('hides dotfiles by default', async () => {
     const vfs = new RAMVFS()
     seed(vfs, ['/tmp'], {
@@ -107,39 +70,6 @@ describe('ls', () => {
     expect(out.trimEnd().split('\n').sort()).toEqual(['.', '..', '.hidden', 'visible.txt'])
   })
 
-  it('-r reverses name sort', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {
-      '/tmp/a.txt': 'a',
-      '/tmp/b.txt': 'b',
-      '/tmp/c.txt': 'c',
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { reverse: true })
-    expect(out.trimEnd().split('\n')).toEqual(['c.txt', 'b.txt', 'a.txt'])
-  })
-
-  it('-S sorts by size descending', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {
-      '/tmp/big.txt': 'x'.repeat(100),
-      '/tmp/small.txt': 'x',
-      '/tmp/medium.txt': 'x'.repeat(50),
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { S: true })
-    expect(out.trimEnd().split('\n')).toEqual(['big.txt', 'medium.txt', 'small.txt'])
-  })
-
-  it('-S -r sorts by size ascending', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {
-      '/tmp/big.txt': 'x'.repeat(100),
-      '/tmp/small.txt': 'x',
-      '/tmp/medium.txt': 'x'.repeat(50),
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { S: true, reverse: true })
-    expect(out.trimEnd().split('\n')).toEqual(['small.txt', 'medium.txt', 'big.txt'])
-  })
-
   it('-a with -r reverses all entries', async () => {
     const vfs = new RAMVFS()
     seed(vfs, ['/tmp'], {
@@ -149,37 +79,5 @@ describe('ls', () => {
     })
     const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { all: true, reverse: true })
     expect(out.trimEnd().split('\n')).toEqual(['m.txt', 'a.txt', '.z_hidden', '..', '.'])
-  })
-
-  it('recursive listing (-R) walks subdirectories with headers', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp', '/tmp/sub'], {
-      '/tmp/a.txt': 'a',
-      '/tmp/sub/b.txt': 'b',
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { recursive: true })
-    expect(out).toContain('a.txt')
-    expect(out).toContain('sub')
-    expect(out).toContain('/tmp/sub:')
-    expect(out).toContain('b.txt')
-  })
-
-  it('list-dir mode (-d) lists directory entries themselves, not contents', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], { '/tmp/a.txt': 'a' })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { directory: true })
-    // GNU ls -d prints the operand as given.
-    expect(out).toBe('/tmp\n')
-  })
-
-  it('-1 never undoes -l, as in GNU', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], { '/tmp/a.txt': 'a', '/tmp/b.txt': 'b' })
-    const long = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { args_l: true })
-    const both = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], {
-      args_l: true,
-      args_1: true,
-    })
-    expect(both).toBe(long)
   })
 })

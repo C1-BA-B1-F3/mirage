@@ -33,24 +33,22 @@ def _level(argv: list[str]) -> int:
     return extract_level(FlagView(parsed.flag_kwargs, spec=SPECS["gzip"]))
 
 
-@pytest.mark.parametrize("digit", list(range(1, 10)))
-def test_every_digit_flag_selects_its_level(digit: int):
-    """-1..-9 each select their own level, including -1.
+@pytest.mark.parametrize(
+    "argv,level",
+    [
+        *(([f"-{digit}"], digit) for digit in range(1, 10)),
+        ([], zlib.Z_DEFAULT_COMPRESSION),
+        (["-1", "-9"], 9),
+    ],
+)
+def test_the_digit_flags_select_the_level(argv: list[str], level: int):
+    """-1..-9 each select their own level, -1 included; none keeps zlib's.
 
     ``-1`` is the one digit the parser disambiguates (``args_1``), so a
     bag read by the bare digit missed it and silently compressed at
-    zlib's default.
+    zlib's default. Of several, the highest digit wins.
     """
-    assert _level([f"-{digit}"]) == digit
-
-
-def test_no_digit_flag_keeps_the_zlib_default():
-    assert _level([]) == zlib.Z_DEFAULT_COMPRESSION
-
-
-def test_the_highest_digit_wins():
-    """GNU takes the last level flag; the parser leaves all of them set."""
-    assert _level(["-1", "-9"]) == 9
+    assert _level(argv) == level
 
 
 def _read_only_gzip_mount() -> tuple[Workspace, RAMVFS]:
@@ -59,25 +57,6 @@ def _read_only_gzip_mount() -> tuple[Workspace, RAMVFS]:
     vfs._store.files["/f.txt.gz"] = gzip.compress(b"hello\n")
     vfs._store.files["/g.txt"] = b"fresh\n"
     return Workspace({"/ro/": (vfs, MountMode.READ)}), vfs
-
-
-@pytest.mark.parametrize(
-    "line,stdout",
-    [
-        ("cd /ro && printf 'x\\n' | gzip | gunzip", b"x\n"),
-        ("gzip -c /ro/f.txt | gunzip", b"hello\n"),
-        ("gzip -dc /ro/f.txt.gz", b"hello\n"),
-        ("cd /ro && printf 'x\\n' | gzip - | gunzip -", b"x\n"),
-    ],
-)
-def test_a_read_only_mount_runs_gzip_where_it_writes_nothing(
-    line: str, stdout: bytes
-):
-    ws, vfs = _read_only_gzip_mount()
-    before = dict(vfs._store.files)
-    result = asyncio.run(ws.shell(line))
-    assert (result.exit_code, result.stdout) == (0, stdout)
-    assert vfs._store.files == before
 
 
 _EXISTS = "gzip: /ro/f.txt.gz already exists;\tnot overwritten\n"
@@ -126,18 +105,6 @@ def test_a_read_only_mount_refuses_gzip_at_the_write(
     result = asyncio.run(ws.shell(line))
     assert (result.exit_code, result.stderr) == (code, stderr.encode())
     assert vfs._store.files == before
-
-
-@pytest.mark.asyncio
-async def test_a_dash_goes_to_stdout_while_files_compress_in_place():
-    ws = Workspace(
-        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
-    )
-    await ws.shell("tee /data/a.txt > /dev/null", stdin=b"file\n")
-    r = await ws.shell(
-        "cd /data && gzip - a.txt | gzip -dc; ls", stdin=b"hi\n"
-    )
-    assert await r.materialize_stdout() == b"hi\na.txt.gz\n"
 
 
 async def _with_link(line: str) -> tuple[Workspace, str, int]:

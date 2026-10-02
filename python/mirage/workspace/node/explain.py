@@ -230,7 +230,9 @@ def _unread_paths(
     for: what a word only the runtime expands names, and, once a ``cd``
     lost the cwd, the cwd and what every relative word names. Judged as
     typed in the cwd the pass last knew, a glob in a rule matched them
-    and refused lines that touch only allowed files.
+    and refused lines that touch only allowed files. A path some word
+    states outright stays read: ``rm -rf /data/old`` names
+    ``/data/old`` even when that is the cwd a ``cd`` lost.
 
     Args:
         words (Sequence[Word]): the command's words after its name, and
@@ -239,13 +241,12 @@ def _unread_paths(
         lost (bool): whether a ``cd`` the walk could not follow ran
             before the command.
     """
-    found = {cwd} if lost else set()
-    found.update(
-        resolve_path(w.value, cwd)
-        for w in words
-        if w.text is None or (lost and not w.value.startswith("/"))
-    )
-    return frozenset(found)
+    unread = {cwd} if lost else set()
+    read = set()
+    for w in words:
+        stale = w.text is None or (lost and not w.value.startswith("/"))
+        (unread if stale else read).add(resolve_path(w.value, cwd))
+    return frozenset(unread - read)
 
 
 async def _judge_words(

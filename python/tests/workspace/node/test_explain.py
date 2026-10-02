@@ -891,7 +891,8 @@ async def test_an_expanded_name_is_explained_as_the_route_reads_it():
 async def test_a_path_the_pass_cannot_read_is_left_to_the_gate():
     # Read as typed in the cwd the pass last knew, `$F` and a relative
     # word after `cd "$d"` matched the rule's glob, refusing whole lines
-    # that remove only an allowed file, and `.` read as a mount root.
+    # that remove only an allowed file, and `.` read as a mount root. A
+    # path a word names outright stays read though it is the lost cwd.
     ws = Workspace(
         {"/data/": RAMVFS()}, mode=MountMode.EXEC, profiles={"r": PROFILE}
     )
@@ -905,6 +906,12 @@ async def test_a_path_the_pass_cannot_read_is_left_to_the_gate():
             ("s", "cd /data/prod; F=/data/x; rm $F; echo ok", 0),
             ("s", 'cd /data/prod; d=/data; cd "$d" && rm w; echo ok', 0),
             ("s", 'd=/data; cd "$d" && rm /data/prod/y; echo ok', 1),
+            (
+                "s",
+                'cd /data/prod; mkdir v; cd v; d=/data; cd "$d" && rm -r '
+                "/data/prod/v; echo ok",
+                1,
+            ),
             (
                 "t",
                 'cd /data; d=prod; cd "$d" && tar -cf /data/t.tar . && echo ok',

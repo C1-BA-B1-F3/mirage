@@ -700,7 +700,8 @@ describe('prejudge', () => {
   it('leaves a path the pass cannot read to the gate', async () => {
     // Read as typed in the cwd the pass last knew, `$F` and a relative
     // word after `cd "$d"` matched the rule's glob, refusing whole lines
-    // that remove only an allowed file, and `.` read as a mount root.
+    // that remove only an allowed file, and `.` read as a mount root. A
+    // path a word names outright stays read though it is the lost cwd.
     const w = new Workspace(
       { '/data': new RAMVFS() },
       { mode: MountMode.EXEC, shellParser: await getTestParser(), profiles: { r: PROFILE } },
@@ -713,6 +714,7 @@ describe('prejudge', () => {
       ['s', 'cd /data/prod; F=/data/x; rm $F; echo ok', 0],
       ['s', 'cd /data/prod; d=/data; cd "$d" && rm w; echo ok', 0],
       ['s', 'd=/data; cd "$d" && rm /data/prod/y; echo ok', 1],
+      ['s', 'cd /data/prod; mkdir v; cd v; d=/data; cd "$d" && rm -r /data/prod/v; echo ok', 1],
       ['t', 'cd /data; d=prod; cd "$d" && tar -cf /data/t.tar . && echo ok', 0],
     ] as const) {
       const said = await w.explain(line, session)

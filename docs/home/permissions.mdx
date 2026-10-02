@@ -152,6 +152,13 @@ A rule holds past the paths typed on the line:
 - **The read cache.** Bytes another session left in the shared cache are
   refused exactly as a cold read of them.
 
+Unlike GNU, a rule answers before "No such file or directory" does. A path
+typed on the line is refused with the rule's reason even when it does not
+exist (`sed: /data/nope/y: sealed`), and so is a path a command opens
+itself whose parent directory is missing or that is a dangling link. Only
+a `..` through a missing directory answers "No such file or directory"
+first, as GNU does.
+
 Not covered yet: the file access of a CLI or interpreter (`git`, `python3`)
 and of the builtins `getfattr`, `setfattr`, `ln` and `readlink`, which
 answer to their operands and to `paths` rules only; and a backend that

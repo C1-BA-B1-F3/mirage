@@ -130,15 +130,20 @@ type Walk = Generator<Walked, [SessionState, boolean]>
  * what a word only the runtime expands names, and, once a `cd` lost the
  * cwd, the cwd and what every relative word names. Judged as typed in
  * the cwd the pass last knew, a glob in a rule matched them and refused
- * lines that touch only allowed files.
+ * lines that touch only allowed files. A path some word states outright
+ * stays read: `rm -rf /data/old` names `/data/old` even when that is the
+ * cwd a `cd` lost.
  */
 function unreadPaths(words: readonly Word[], cwd: string, lost: boolean): Set<string> {
-  const found = new Set(lost ? [cwd] : [])
+  const unread = new Set(lost ? [cwd] : [])
+  const read = new Set<string>()
   for (const w of words) {
     const value = wordValue(w)
-    if (w.text === null || (lost && !value.startsWith('/'))) found.add(resolvePath(value, cwd))
+    const stale = w.text === null || (lost && !value.startsWith('/'))
+    ;(stale ? unread : read).add(resolvePath(value, cwd))
   }
-  return found
+  for (const path of read) unread.delete(path)
+  return unread
 }
 
 function unreadableWord(raw: string): Explanation {

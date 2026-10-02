@@ -834,9 +834,7 @@ async def _route_argv(
                 if early is not None:
                     return early
         except CycleError as exc:
-            err = (
-                f"{name}: {exc}: Too many levels of symbolic links\n"
-            ).encode()
+            err = f"{name}: {exc.filename}: {exc.strerror}\n".encode()
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),

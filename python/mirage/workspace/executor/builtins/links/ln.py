@@ -41,7 +41,7 @@ from mirage.io.stream import materialize
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, word_text
 from mirage.utils.errors import FS_ERRORS, DotWalkLoop, fs_strerror
-from mirage.utils.path import CycleError
+from mirage.utils.path import CycleError, dotted_spelling
 from mirage.workspace.executor.builtins.shared import abs_path, fail, result
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
@@ -248,14 +248,14 @@ def _follow_visible(namespace: Namespace, virtual: str) -> str:
     return namespace.follow(virtual) if path_allowed(virtual) else virtual
 
 
-def _operand_abs(namespace: Namespace, arg: str | PathSpec, cwd: str) -> str:
+def operand_abs(namespace: Namespace, arg: str | PathSpec, cwd: str) -> str:
     """An operand as the path the kernel reaches, its final name kept.
 
     Command dispatch walks the links above the name of every operand it
-    classifies; ln's relative words arrive unclassified, so they are
-    walked here, and every namespace read in this module sees the name
-    the door will. A hidden path stays as typed, and a loop is left for
-    the door to report when the link is made.
+    classifies; the relative words of ln, readlink and ``[`` arrive
+    unclassified, so they are walked here, and every namespace read sees
+    the name the door will. A hidden path stays as typed, and a loop is
+    left for the door to report when the link is made.
 
     Args:
         namespace (Namespace): the link table.
@@ -266,7 +266,9 @@ def _operand_abs(namespace: Namespace, arg: str | PathSpec, cwd: str) -> str:
     if isinstance(arg, PathSpec) or not path_allowed(virtual):
         return virtual
     try:
-        return namespace.follow_parent(virtual)
+        return posixpath.normpath(
+            namespace.follow_parent(dotted_spelling(arg, cwd) or virtual)
+        )
     except CycleError:
         return virtual
 
@@ -444,7 +446,9 @@ async def plan_links(
         if why is not None:
             return [], f"ln: failed to access '{typed}': {why}\n"
         unwalked = await dot_refusal(
-            partial(dispatch_stat, dispatch), typed_spec(typed, cwd)
+            partial(dispatch_stat, dispatch),
+            typed_spec(typed, cwd),
+            namespace.follow,
         )
         if unwalked is not None:
             return [], (
@@ -453,7 +457,7 @@ async def plan_links(
         resolved, stat = await _dir_at(
             namespace,
             dispatch,
-            _operand_abs(namespace, target_dir, cwd),
+            operand_abs(namespace, target_dir, cwd),
             flags.no_dereference,
         )
         if stat is None:
@@ -479,12 +483,12 @@ async def plan_links(
         return [
             LinkPlan(
                 operands[0],
-                _operand_abs(namespace, operands[1], cwd),
+                operand_abs(namespace, operands[1], cwd),
                 word_text(operands[1]),
             )
         ], None
     last = operands[-1]
-    last_abs = _operand_abs(namespace, last, cwd)
+    last_abs = operand_abs(namespace, last, cwd)
     # The empty name reads as the working directory in `last_abs`, and it
     # is no directory to link into.
     resolved, stat = (
@@ -624,14 +628,18 @@ async def make_link(
         errors.append(_refused(flags, typed, target_typed, why))
         return
     if not flags.symbolic:
-        unwalked = await dot_refusal(walker, typed_spec(plan.source, cwd))
+        unwalked = await dot_refusal(
+            walker, typed_spec(plan.source, cwd), namespace.follow
+        )
         if unwalked is not None:
             errors.append(
                 f"ln: failed to access '{target_typed}': "
                 f"{fs_strerror(unwalked)}\n"
             )
             return
-    unwalked = await dot_refusal(walker, typed_spec(typed, cwd))
+    unwalked = await dot_refusal(
+        walker, typed_spec(typed, cwd), namespace.follow
+    )
     if unwalked is not None:
         errors.append(
             _refused(
@@ -660,7 +668,7 @@ async def make_link(
                 pass
             link_target = posixpath.relpath(target_abs, link_dir)
     else:
-        src_abs = _operand_abs(namespace, plan.source, cwd)
+        src_abs = operand_abs(namespace, plan.source, cwd)
         if _visible_link(namespace, src_abs) and not flags.logical:
             link_target = namespace.readlink(src_abs)
         else:
@@ -717,7 +725,7 @@ async def make_link(
     if (
         flags.force
         and not backs
-        and _operand_abs(namespace, plan.source, cwd) == plan.link_abs
+        and operand_abs(namespace, plan.source, cwd) == plan.link_abs
         and (
             _visible_link(namespace, plan.link_abs)
             or await path_stat(dispatch, plan.link_abs) is not None

@@ -16,7 +16,7 @@ import { materialize, type ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
 import { combinedExit } from './exit.ts'
 import { duTotal } from './du.ts'
-import { Cmd, type CrossResult, type OperandRun, type RunSingle } from '../types.ts'
+import { Cmd, type CrossResult, type RunSingle } from '../types.ts'
 import { mergeOperandIos, runOperands, runSeparator } from '../utils.ts'
 import { labelFlags } from '../../rg.ts'
 import { FlagView, flagOccurrences } from '../../../../spec/flag_view.ts'
@@ -25,20 +25,8 @@ import { specOf } from '../../../../spec/builtins.ts'
 
 const ENC = new TextEncoder()
 
-function concatRuns(results: OperandRun[]): Uint8Array {
-  const nonEmpty = results.map((r) => r.data).filter((d) => d.byteLength > 0)
-  const size = nonEmpty.reduce((n, d) => n + d.byteLength, 0)
-  const out = new Uint8Array(size)
-  let offset = 0
-  for (const d of nonEmpty) {
-    out.set(d, offset)
-    offset += d.byteLength
-  }
-  return out
-}
-
-function joinRuns(results: OperandRun[], separator: string): Uint8Array {
-  const parts = results.map((r) => r.data).filter((d) => d.byteLength > 0)
+export function joinRuns(runs: readonly Uint8Array[], separator: string): Uint8Array {
+  const parts = runs.filter((d) => d.byteLength > 0)
   const sep = ENC.encode(separator)
   const size =
     parts.reduce((n, d) => n + d.byteLength, 0) + sep.byteLength * Math.max(0, parts.length - 1)
@@ -115,6 +103,7 @@ export async function runFanout(
     quiet,
   )
 
+  const runs = results.map((r) => r.data)
   let body: ByteSource | null
   if (duC) {
     body = duTotal(results, duHuman)
@@ -126,14 +115,12 @@ export async function runFanout(
   ) {
     // Blank line between per-operand blocks, like one native run separates
     // its own file blocks.
-    body = joinRuns(results, '\n')
-  } else if (runSeparator(cmdName, flags) !== '') {
+    body = joinRuns(runs, '\n')
+  } else {
     // grep and ripgrep set one file's context off from the next file's (and
     // ripgrep one --heading group from the next), as one native run
     // separates its own files.
-    body = joinRuns(results, runSeparator(cmdName, flags))
-  } else {
-    body = concatRuns(results)
+    body = joinRuns(runs, runSeparator(cmdName, flags))
   }
 
   const io = await mergeOperandIos(results, exitCode)

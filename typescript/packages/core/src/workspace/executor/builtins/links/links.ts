@@ -23,7 +23,7 @@ import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { fail } from '../shared.ts'
-import { dispatchStat } from '../../../../commands/builtin/utils/paths.ts'
+import { dispatchStat, walkSpelling } from '../../../../commands/builtin/utils/paths.ts'
 import { statOrNull } from '../../../mount/namespace/probe.ts'
 import type { Result } from '../types.ts'
 import type { FlagValue } from '../../../../commands/spec/types.ts'
@@ -80,7 +80,8 @@ export function followPaths(
     const last = followLast || (slashFollows && item.rawPath.endsWith('/'))
     let followed: string
     try {
-      followed = last ? namespace.follow(item.virtual) : followParent(namespace, item.virtual)
+      const spelled = walkSpelling(item, (path) => namespace.follow(path))
+      followed = last ? namespace.follow(spelled) : followParent(namespace, spelled)
     } catch (err) {
       if (!(err instanceof CycleError)) throw err
       out.push(

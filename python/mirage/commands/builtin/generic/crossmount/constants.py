@@ -23,8 +23,6 @@ LINE_STREAM_COMMANDS = frozenset({Cmd.NL, Cmd.CUT})
 FANOUT_COMMANDS = frozenset(
     {
         Cmd.REV,
-        Cmd.GREP,
-        Cmd.RG,
         Cmd.HEAD,
         Cmd.TAIL,
         Cmd.DU,
@@ -64,6 +62,9 @@ RELAY_COMMANDS = frozenset(
         Cmd.WC,
         Cmd.AWK,
         Cmd.SED,
+        Cmd.REALPATH,
+        Cmd.GREP,
+        Cmd.RG,
     }
 )
 CROSS_MOUNT_COMMANDS = STREAM_COMMANDS | FANOUT_COMMANDS | RELAY_COMMANDS

@@ -336,43 +336,6 @@
       ]
     },
     {
-      "id": "rg_bn_context_gets_every_field_right",
-      "seq": 612107,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "box"
-      ],
-      "command": "printf 'one\\n\\377\\ntwo abc\\nthree\\n' > /data/rcx.bin; rg -bn -A1 -B1 abc /data/rcx.bin",
-      "expect": {
-        "exit": 0,
-        "stdout": "2-4-�\n3:6:two abc\n4-14-three\n",
-        "stderr": ""
-      },
-      "flags": [
-        "b",
-        "n",
-        "A",
-        "B"
-      ],
-      "note": "ripgrep prints the invalid byte raw; the battery compares a replacing decode, so it reads as U+FFFD here (rg_bn_context_prints_the_raw_byte pins the byte through od)"
-    },
-    {
       "id": "rg_bn_context_prints_the_raw_byte",
       "seq": 14102401,
       "targets": [

@@ -129,6 +129,20 @@
         "stdout": "/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl:1:{\"id\":\"1510934682009600000\",\"channel_id\":\"200000000000000001\",\"author\":{\"id\":\"300000000000000001\",\"username\":\"alice\",\"global_name\":\"Alice\",\"bot\":false},\"content\":\"deploy is green\",\"timestamp\":\"2026-06-01T09:15:00.000000+00:00\",\"edited_timestamp\":null,\"tts\":false,\"pinned\":false,\"mention_everyone\":false,\"mentions\":[],\"mention_roles\":[],\"attachments\":[],\"embeds\":[],\"type\":0}\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "dc_grep_rg_several_patterns_defer_to_scan",
+      "seq": 690210,
+      "targets": [
+        "discord"
+      ],
+      "command": "grep -w -e green -e standup '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001'; echo rc=$?; rg -w -e green -e standup '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001' | sort; echo rc=${PIPESTATUS[0]}",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl:{\"id\":\"1510934682009600000\",\"channel_id\":\"200000000000000001\",\"author\":{\"id\":\"300000000000000001\",\"username\":\"alice\",\"global_name\":\"Alice\",\"bot\":false},\"content\":\"deploy is green\",\"timestamp\":\"2026-06-01T09:15:00.000000+00:00\",\"edited_timestamp\":null,\"tts\":false,\"pinned\":false,\"mention_everyone\":false,\"mentions\":[],\"mention_roles\":[],\"attachments\":[],\"embeds\":[],\"type\":0}\n/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-02/chat.jsonl:{\"id\":\"1511278195507200000\",\"channel_id\":\"200000000000000001\",\"author\":{\"id\":\"300000000000000002\",\"username\":\"bob\",\"global_name\":\"Bob\",\"bot\":false},\"content\":\"second day standup\",\"timestamp\":\"2026-06-02T08:00:00.000000+00:00\",\"edited_timestamp\":null,\"tts\":false,\"pinned\":false,\"mention_everyone\":false,\"mentions\":[],\"mention_roles\":[],\"attachments\":[],\"embeds\":[],\"type\":0}\nrc=0\n",
+        "stderr": "grep: /discord/Mirage HQ__100000000000000001/channels/general__200000000000000001: Is a directory\n"
+      },
+      "note": "The guild search takes one term, so several -e patterns must leave the channel to the scan: grep refuses the directory operand as GNU does, rg walks it."
     }
   ]
 }

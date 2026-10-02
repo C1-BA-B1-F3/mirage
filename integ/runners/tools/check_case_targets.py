@@ -138,10 +138,6 @@ def excuse(
 
     A stale entry is the failure mode every hand-maintained allowlist in
     this repo has already hit, so it is reported as loudly as a new gap.
-    An entry maps a case to one reason per dropped target, or to a single
-    reason that excuses every target it drops: a case bound to the one
-    target that declares its session or mount, or one whose subject no
-    backend can vary.
 
     Args:
         found (dict[str, list[str]]): every gap.
@@ -167,8 +163,6 @@ def excuse(
         if path in excused_files:
             continue
         per_case = excused_entries.get(rel)
-        if isinstance(per_case, str):
-            continue
         excused = set(per_case) if isinstance(per_case, dict) else set()
         left = [name for name in missing if name not in excused]
         for name in excused:

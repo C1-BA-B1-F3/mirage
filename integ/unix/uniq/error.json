@@ -31,7 +31,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: invalid count: '2junk'"
+        "stderr": "uniq: invalid count: '2junk'\n"
       },
       "flags": [
         "f"

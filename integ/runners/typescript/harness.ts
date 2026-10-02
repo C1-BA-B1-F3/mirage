@@ -27,7 +27,7 @@ import type { ReadSpec } from '@struktoai/mirage-node'
 // integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
 const CASE_DIRS = ['unix', 'bash', 'crossmount', 'vfs', 'cli', 'session', 'console', 'secrets']
 const ENC = new TextEncoder()
-const DEC = new TextDecoder()
+const DEC = new TextDecoder('utf-8', { ignoreBOM: true })
 
 export interface Mount {
   path: string
@@ -800,6 +800,21 @@ export function explainNotes(
   return notes
 }
 
+/**
+ * Name each stream whose bytes are not UTF-8. The battery compares a
+ * replacing decode, which reads a raw byte as U+FFFD, so a host that printed
+ * the byte and one that printed U+FFFD would pass alike. A case whose output
+ * is not text pins its bytes through `od -An -tx1` instead.
+ */
+function undecodable(streams: Record<string, Uint8Array>): string[] {
+  return Object.entries(streams)
+    .filter(([, raw]) => {
+      const back = ENC.encode(DEC.decode(raw))
+      return back.length !== raw.length || back.some((b, i) => b !== raw[i])
+    })
+    .map(([name]) => `${name}: not UTF-8; pin the bytes with od -An -tx1`)
+}
+
 export async function runCase(
   ws: ExecWorkspace,
   c: Case,
@@ -855,7 +870,10 @@ export async function runCase(
     err,
     elapsed,
     checkOut,
-    notes: checks ? explainNotes(predicted, recorded, result.exitCode, out, err, reasons) : [],
+    notes: [
+      ...undecodable({ stdout: result.stdout, stderr: result.stderr }),
+      ...(checks ? explainNotes(predicted, recorded, result.exitCode, out, err, reasons) : []),
+    ],
   }
 }
 
@@ -872,7 +890,7 @@ export function compare(
   if (exitCode !== c.expect.exit) diffs.push(`exit: expected ${c.expect.exit}, got ${exitCode}`)
   if (out !== c.expect.stdout)
     diffs.push(`stdout: expected ${JSON.stringify(c.expect.stdout)}, got ${JSON.stringify(out)}`)
-  if (err.replace(/\n+$/, '') !== c.expect.stderr.replace(/\n+$/, ''))
+  if (err !== c.expect.stderr)
     diffs.push(`stderr: expected ${JSON.stringify(c.expect.stderr)}, got ${JSON.stringify(err)}`)
   if (c.check !== undefined && checkOut !== c.expect.check)
     diffs.push(`check: expected ${JSON.stringify(c.expect.check)}, got ${JSON.stringify(checkOut)}`)

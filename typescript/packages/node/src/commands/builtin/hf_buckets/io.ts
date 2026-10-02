@@ -42,7 +42,7 @@ export const HF_BUCKETS_IO: CommandIO<HfBucketsAccessor> = new VFSAdapter<HfBuck
   },
   writes: {
     write: hfWrite,
-    mkdir: (accessor, path) => hfMkdir(accessor, path),
+    mkdir: hfMkdir,
     unlink: hfUnlink,
     rmR: hfRmR,
     create: hfCreate,

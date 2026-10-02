@@ -127,7 +127,6 @@ export function makeTruncate<A extends Accessor, C>(
   }
 }
 
-/** Build the marker-object mkdir over one driver. */
 /** Whether the store holds `path`, as a key or a prefix. */
 async function found<A extends Accessor>(
   stat: StatFn<A>,
@@ -143,6 +142,7 @@ async function found<A extends Accessor>(
   }
 }
 
+/** Build the marker-object mkdir over one driver. */
 export function makeMkdir<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>): MkdirFn<A> {
   const stat = makeStat(driver)
   return async function mkdir(accessor, path, parents = false) {

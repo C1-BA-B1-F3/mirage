@@ -24,7 +24,11 @@ from dulwich.objectspec import parse_commit
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.add import entry_mode
-from mirage.commands.cli.builtin.git.constants import GITLINK, HEAD_REF
+from mirage.commands.cli.builtin.git.constants import (
+    GITLINK,
+    HEAD_REF,
+    SYMLINK,
+)
 from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.io import entry_bytes
 from mirage.commands.cli.builtin.git.objects import VfsObjectStore
@@ -37,13 +41,14 @@ from mirage.commands.cli.builtin.git.types import (
 from mirage.commands.cli.builtin.git.worktree import UNTRACKED_NO, scan
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
-from mirage.types import FileStat
+from mirage.types import FileStat, FileType
 from mirage.utils.errors import MISS_ERRORS
 
 UNCHANGED = " "
 MODIFIED = "M"
 ADDED = "A"
 DELETED = "D"
+TYPE_CHANGED = "T"
 RENAMED = "R"
 UNTRACKED = "?"
 # git's own two rename knobs: a pair counts as a rename at 60% shared
@@ -412,6 +417,11 @@ async def work_changes(
             continue
         if name not in found.files:
             changes[name] = DELETED
+        elif (found.files[name].type is FileType.SYMLINK) != (
+            S_IFMT(entry.mode) == SYMLINK
+        ):
+            # A symlink and a file holding its target text hash alike.
+            changes[name] = TYPE_CHANGED
         elif await _differs(
             dispatch, worktree, name, entry, found.files[name]
         ):
@@ -443,8 +453,10 @@ async def work_entries(
     The index stands for every file the walk found unchanged; a modified
     file is hashed and its blob held in the store for this invocation
     only, as git writes nothing on a diff. Untracked files are not part
-    of it, and neither is a path the index holds only as conflict
-    stages: git shows those as a combined diff, which is not offered.
+    of it. A path the index holds only as conflict stages is the file
+    standing there, if any: what a revision is compared with, while the
+    index side leaves it out (git shows a combined diff there, which is
+    not offered).
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -456,7 +468,8 @@ async def work_entries(
         links (LinkView | None): the name plane's link facts.
     """
     tracked = {
-        path.decode("utf-8", errors="replace") for path in state.entries
+        path.decode("utf-8", errors="replace")
+        for path in (set(state.entries) | set(state.conflicts))
     }
     found = await scan(
         dispatch, stat_path, location, tracked, UNTRACKED_NO, links
@@ -465,10 +478,18 @@ async def work_entries(
         dispatch, location.worktree, state.entries, found
     )
     entries = staged_entries(state)
+    paths = {
+        path.decode("utf-8", errors="replace"): path
+        for path in (set(entries) | set(state.conflicts))
+    }
+    for path in state.conflicts:
+        name = path.decode("utf-8", errors="replace")
+        if name in found.files:
+            changes[name] = MODIFIED
     store = repo.object_store
     assert isinstance(store, VfsObjectStore)
     for name, code in changes.items():
-        path = name.encode()
+        path = paths[name]
         if code == DELETED:
             del entries[path]
             continue

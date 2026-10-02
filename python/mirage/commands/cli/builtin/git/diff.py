@@ -217,10 +217,13 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             )
             if new is None:
                 state = await read_index(dispatch, location.gitdir)
-                before = staged_entries(state) if old is None else old
                 after = await work_entries(
                     dispatch, stat_path, repo, location, state, links_of(doors)
                 )
+                if old is None:
+                    for path in state.conflicts:
+                        after.pop(path, None)
+                before = staged_entries(state) if old is None else old
             else:
                 before, after = old or {}, new
         parsed = replace(

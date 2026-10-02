@@ -940,12 +940,13 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/slashr/d && printf 'hi\\n' > /data/slashr/a.txt",
+      "command": "mkdir -p /data/slashr/d && printf 'x\\n' > /data/slashr/d/f && printf 'hi\\n' > /data/slashr/a.txt",
       "expect": {
         "exit": 0,
         "stdout": "",
         "stderr": ""
-      }
+      },
+      "note": "d holds a file: a store that shows no empty directory (hf) would answer test -d d/ false."
     },
     {
       "id": "slash_reg_readers",
@@ -1154,8 +1155,43 @@
       }
     },
     {
-      "id": "slash_reg_cleanup",
+      "id": "slash_reg_crossmount",
       "seq": 94109,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'B\\n' > /data2/slashr_reg && cp /data/slashr/a.txt/ /data2/slashr_x 2>&1; mv /data/slashr/a.txt/ /data2/slashr_x 2>&1; cp /data/slashr/a.txt /data2/slashr_reg/ 2>&1; mv /data/slashr/a.txt /data2/slashr_reg/ 2>&1; cat /data/slashr/a.txt /data2/slashr_reg; ls /data2/slashr_x 2>&1; rm /data2/slashr_reg",
+      "note": "GNU on debian:stable-slim (one filesystem; the wording does not depend on it): a slashed plain-file source or destination fails the stat across mounts too, and neither side changes.",
+      "expect": {
+        "exit": 0,
+        "stdout": "cp: cannot stat '/data/slashr/a.txt/': Not a directory\nmv: cannot stat '/data/slashr/a.txt/': Not a directory\ncp: cannot stat '/data2/slashr_reg/': Not a directory\nmv: cannot stat '/data2/slashr_reg/': Not a directory\nhi\nB\nls: cannot access '/data2/slashr_x': No such file or directory\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_cleanup",
+      "seq": 94110,
       "targets": [
         "ram",
         "disk",

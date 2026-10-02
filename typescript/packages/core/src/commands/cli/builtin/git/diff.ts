@@ -118,8 +118,9 @@ export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
       warning = note
       if (fresh === null) {
         const state = await readIndex(repo, repo.dispatch)
-        before = old ?? stagedEntries(state)
         after = await workEntries(repo, repo.dispatch, statPath, state, doors.ns?.links ?? null)
+        if (old === null) for (const path of state.conflicts.keys()) after.delete(path)
+        before = old ?? stagedEntries(state)
       } else {
         before = old ?? new Map<string, TreeEntry>()
         after = fresh

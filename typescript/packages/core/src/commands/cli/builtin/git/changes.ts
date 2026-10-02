@@ -15,10 +15,10 @@
 import git from 'isomorphic-git'
 
 import type { LinkView, StatPath } from '../../../../ops/types.ts'
-import type { FileStat } from '../../../../types.ts'
+import { FileType, type FileStat } from '../../../../types.ts'
 import { isMissingPath } from '../../../../utils/errors.ts'
 import { entryMode } from './add.ts'
-import { GITLINK_MODE } from './constants.ts'
+import { GITLINK_MODE, SYMLINK } from './constants.ts'
 import { readIndex } from './index_file.ts'
 import { entryBytes, under } from './io.ts'
 import { readBlobBytes, type Repo } from './repo.ts'
@@ -40,6 +40,7 @@ const UNCHANGED = ' '
 export const MODIFIED = 'M'
 export const ADDED = 'A'
 export const DELETED = 'D'
+export const TYPE_CHANGED = 'T'
 const RENAMED = 'R'
 const UNTRACKED = '?'
 // git's own two rename knobs: a pair counts as a rename at 60% shared content,
@@ -367,7 +368,10 @@ export async function workChanges(
     if (entry.mode === Number.parseInt(GITLINK_MODE, 8)) continue
     const info = found.files.get(path)
     if (info === undefined) changes.set(path, DELETED)
-    else if (await differs(repo, dispatch, worktree, path, entry, info)) {
+    // A symlink and a file holding its target text hash alike.
+    else if ((info.type === FileType.SYMLINK) !== ((entry.mode & 0o170000) === SYMLINK)) {
+      changes.set(path, TYPE_CHANGED)
+    } else if (await differs(repo, dispatch, worktree, path, entry, info)) {
       changes.set(path, MODIFIED)
     }
   }
@@ -389,9 +393,10 @@ export function stagedEntries(state: IndexState): Map<string, TreeEntry> {
  *
  * The index stands for every file the walk found unchanged; a modified file is
  * hashed and its blob held on the repo for this invocation only, as git writes
- * nothing on a diff. Untracked files are not part of it, and neither is a path
- * the index holds only as conflict stages: git shows those as a combined diff,
- * which is not offered. Mirrors Python's work_entries.
+ * nothing on a diff. Untracked files are not part of it. A path the index holds
+ * only as conflict stages is the file standing there, if any: what a revision
+ * is compared with, while the index side leaves it out (git shows a combined
+ * diff there, which is not offered). Mirrors Python's work_entries.
  */
 export async function workEntries(
   repo: Repo,
@@ -400,10 +405,13 @@ export async function workEntries(
   state: IndexState,
   links: LinkView | null = null,
 ): Promise<Map<string, TreeEntry>> {
-  const tracked = new Set(state.entries.keys())
+  const tracked = new Set([...state.entries.keys(), ...state.conflicts.keys()])
   const found = await scan(dispatch, statPath, repo.location, tracked, UNTRACKED_NO, links)
   const changes = await workChanges(repo, dispatch, repo.location.worktree, state.entries, found)
   const entries = stagedEntries(state)
+  for (const path of state.conflicts.keys()) {
+    if (found.files.has(path)) changes.set(path, MODIFIED)
+  }
   for (const [path, code] of changes) {
     const info = found.files.get(path)
     if (code === DELETED || info === undefined) {

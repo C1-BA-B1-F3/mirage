@@ -2697,6 +2697,7 @@ describe('a dispatched op meets the rule on the path the door reaches', () => {
       '',
       "sed: couldn't open file /data/flink: No such file or directory\n",
     ])
+    expect(stdoutStr(await ws.shell('cat /data/real/secret'))).toBe('s\n')
     expect(await line(ws, `awk 'BEGIN { print "x" > "/data/missing/../alias" }'`)).toEqual([
       2,
       '',
@@ -2776,5 +2777,99 @@ describe('a walk the executor fans out meets the command rules', () => {
       "find: cannot delete '/data/w/a.txt': sealed\n",
     ])
     expect((await line(ws, 'ls /data/w'))[1]).toBe('a.txt\nb.txt\n')
+  })
+})
+
+describe('a dispatched op is judged by the gate of the command that issued it', () => {
+  const SEALED_DOC = parseSessionProfile({
+    commands: {
+      allow: ['sed', 'find', 'cat', 'echo', 'mkdir'],
+      deny: [{ reason: 'sealed', commands: { sed: ['/data/real/secret'] } }],
+    },
+  })
+  const OPEN_DOC = parseSessionProfile({ commands: { allow: ['sed'] } })
+
+  async function sealedWs(): Promise<Workspace> {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        shellParser: parser,
+        profiles: { sealed: SEALED_DOC, open: OPEN_DOC },
+      },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'sealed' })
+    ws.createSession('h', { profile: 'open' })
+    await ws.shell('mkdir -p /data/real && echo s > /data/real/secret && echo o > /data/f')
+    return ws
+  }
+
+  async function line(
+    ws: Workspace,
+    text: string,
+    sessionId: string,
+  ): Promise<[number, string, string]> {
+    const r = await ws.shell(text, { sessionId })
+    return [r.exitCode, stdoutStr(r), voicedStderr(r)]
+  }
+
+  // find -exec runs sed as a line of its own: sed's write is judged by sed's
+  // rules, and the outer find (no rule) lends it nothing.
+  it('judges a nested line by its own command', async () => {
+    const ws = await sealedWs()
+    const [, , err] = await line(ws, "find /data/f -exec sed -n 'w /data/real/secret' {} \\;", 'g')
+    expect(err).toContain("sed: couldn't open file /data/real/secret: Permission denied")
+    expect(stdoutStr(await ws.shell('cat /data/real/secret'))).toBe('s\n')
+  })
+
+  // Two sessions write at once: each op carries its own command's gate, so
+  // the sealed session is refused and the open one is not.
+  it('keeps concurrent sessions to their own gates', async () => {
+    const ws = await sealedWs()
+    const [sealed, opened] = await Promise.all([
+      line(ws, "sed -n 'w /data/real/secret' /data/f", 'g'),
+      line(ws, "sed -n 'w /data/real/other' /data/f", 'h'),
+    ])
+    expect(sealed).toEqual([
+      4,
+      '',
+      "sed: couldn't open file /data/real/secret: Permission denied\n",
+    ])
+    expect(opened).toEqual([0, '', ''])
+    expect(stdoutStr(await ws.shell('cat /data/real/other'))).toBe('o\n')
+  })
+
+  // The command rules bind what a command does; the session's raw door
+  // (ws.vfs, the agent's file tool) is held to paths rules only, as before.
+  it('leaves the raw vfs route to its own policy scope', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        shellParser: parser,
+        profiles: {
+          mixed: parseSessionProfile({
+            commands: {
+              allow: ['cat'],
+              deny: [
+                { reason: 'sealed', commands: { cat: ['/data/real/secret'] } },
+                { reason: 'walled', paths: ['/data/real/walled'] },
+              ],
+            },
+          }),
+        },
+      },
+    )
+    open.push(ws)
+    await ws.shell(
+      'mkdir -p /data/real && echo s > /data/real/secret && echo w > /data/real/walled',
+    )
+    const handle = await ws.session('g', { profile: 'mixed' })
+    expect(await handle.vfs.readFileText('/data/real/secret')).toBe('s\n')
+    await expect(handle.vfs.readFile('/data/real/walled')).rejects.toThrow()
+    expect((await handle.shell('cat /data/real/secret')).exitCode).toBe(1)
   })
 })

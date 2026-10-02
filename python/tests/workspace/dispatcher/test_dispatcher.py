@@ -1225,3 +1225,99 @@ async def test_the_mark_never_reaches_the_op(monkeypatch):
         assert gate.asked == ["/data/real/secret"]
     finally:
         await ws.close()
+
+
+async def _text(ws: Workspace, virtual: str) -> bytes:
+    data, _ = await ws.dispatch("read", _path(virtual))
+    return data
+
+
+@pytest.mark.asyncio
+async def test_a_refused_marked_rename_overwrites_nothing():
+    # A rename whose destination reaches a protected file through a linked
+    # parent is refused before the move: the protected bytes stay.
+    ws = await _linked_ws()
+    try:
+        await ws.shell("echo new > /data/real/other")
+        gate = _RefusingGate("/data/real/secret")
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "rename",
+                _path("/data/real/other"),
+                dst=_path("/data/alias/secret"),
+                rule_gate=gate,
+            )
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+        assert await _text(ws, "/data/real/other") == b"new\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_marked_nofollow_write_is_judged_through_a_linked_parent():
+    # `nofollow` keeps the final name but not the linked directories above
+    # it: the write reaches /data/real/secret, and is judged there.
+    ws = await _linked_ws()
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "write",
+                _path("/data/alias/secret"),
+                data=b"x\n",
+                nofollow=True,
+                rule_gate=gate,
+            )
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_marked_unlink_of_a_link_is_judged_on_the_link_not_its_referent():
+    # Removing a link touches the link entry, never what it points at: a
+    # rule on the referent leaves link removal alone, and the referent
+    # stays.
+    ws = await _linked_ws()
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        await ws.dispatch("unlink", _path("/data/flink"), rule_gate=gate)
+        assert gate.asked == ["/data/flink"]
+        with pytest.raises(FileNotFoundError):
+            await ws.dispatch("readlink", _path("/data/flink"))
+        assert await _text(ws, "/data/real/secret") == b"s\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_rename_endpoint_answers_before_a_rule_on_the_other():
+    # Hiding answers first for either endpoint: a rule on the visible one
+    # is never asked, so no refusal names a path next to hidden space.
+    ws = await _linked_ws()
+    await ws.shell("mkdir -p /data/hid && echo h > /data/hid/h")
+    session = SessionState(
+        session_id="hider", hidden_paths=HiddenPaths(paths=("/data/hid",))
+    )
+    token = set_current_session(session)
+    try:
+        into = _RefusingGate("/data/real/secret")
+        with pytest.raises(FileNotFoundError):
+            await ws.dispatch(
+                "rename",
+                _path("/data/real/secret"),
+                dst=_path("/data/hid/x"),
+                rule_gate=into,
+            )
+        out_of = _RefusingGate("/data/real/moved")
+        with pytest.raises(FileNotFoundError):
+            await ws.dispatch(
+                "rename",
+                _path("/data/hid/h"),
+                dst=_path("/data/real/moved"),
+                rule_gate=out_of,
+            )
+        assert into.asked == [] and out_of.asked == []
+    finally:
+        reset_current_session(token)
+        await ws.close()

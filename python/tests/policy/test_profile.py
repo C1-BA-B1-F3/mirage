@@ -2591,6 +2591,116 @@ async def test_a_rule_spelled_through_a_linked_parent_binds_a_dispatched_op():
         await ws.close()
 
 
+SPELLED_DOC = {
+    "commands": {
+        "allow": ["sed", "find", "cat", "echo", "mkdir"],
+        "deny": [
+            {"reason": "sealed", "commands": {"sed": ["/data/real/secret"]}}
+        ],
+    }
+}
+
+
+async def _sealed_ws() -> Workspace:
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={
+            "sealed": SPELLED_DOC,
+            "open": {"commands": {"allow": ["sed"]}},
+        },
+    )
+    ws.create_session("g", profile="sealed")
+    ws.create_session("h", profile="open")
+    await ws.shell(
+        "mkdir -p /data/real && echo s > /data/real/secret && echo o > /data/f"
+    )
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_a_nested_line_judges_its_dispatched_ops_by_its_own_command():
+    # find -exec runs sed as a line of its own: sed's write is judged by
+    # sed's rules, and the outer find (no rule) lends it nothing.
+    ws = await _sealed_ws()
+    try:
+        code, _, err = await _line(
+            ws,
+            "find /data/f -exec sed -n 'w /data/real/secret' {} \\;",
+            "g",
+        )
+        assert (
+            "sed: couldn't open file /data/real/secret: Permission denied"
+            in err
+        )
+        assert (
+            await (await ws.shell("cat /data/real/secret")).stdout_str()
+            == "s\n"
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sessions_judge_dispatched_ops_by_their_own_gate():
+    # Two sessions write at once: each op carries its own command's gate,
+    # so the sealed session is refused and the open one is not.
+    ws = await _sealed_ws()
+    try:
+        sealed, opened = await asyncio.gather(
+            _line(ws, "sed -n 'w /data/real/secret' /data/f", "g"),
+            _line(ws, "sed -n 'w /data/real/other' /data/f", "h"),
+        )
+        assert sealed == (
+            4,
+            "",
+            "sed: couldn't open file /data/real/secret: Permission denied\n",
+        )
+        assert opened == (0, "", "")
+        assert (
+            await (await ws.shell("cat /data/real/other")).stdout_str()
+            == "o\n"
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_raw_vfs_route_keeps_its_own_policy_scope():
+    # The command rules bind what a command does; the session's raw door
+    # (ws.vfs, the agent's file tool) is held to paths rules only, as
+    # before.
+    doc = {
+        "commands": {
+            "allow": ["cat"],
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {"cat": ["/data/real/secret"]},
+                },
+                {"reason": "walled", "paths": ["/data/real/walled"]},
+            ],
+        }
+    }
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"mixed": doc},
+    )
+    try:
+        await ws.shell(
+            "mkdir -p /data/real && echo s > /data/real/secret && "
+            "echo w > /data/real/walled"
+        )
+        handle = await ws.session("g", profile="mixed")
+        assert await handle.vfs.read("/data/real/secret") == b"s\n"
+        with pytest.raises(PermissionError):
+            await handle.vfs.read("/data/real/walled")
+        assert (await handle.shell("cat /data/real/secret")).exit_code == 1
+    finally:
+        await ws.close()
+
+
 @pytest.mark.asyncio
 async def test_a_dispatched_op_answers_missing_before_any_rule():
     # The door answers for the path it can actually reach first: a link
@@ -2627,6 +2737,10 @@ async def test_a_dispatched_op_answers_missing_before_any_rule():
             4,
             "",
             "sed: couldn't open file /data/flink: No such file or directory\n",
+        )
+        assert (
+            await (await ws.shell("cat /data/real/secret")).stdout_str()
+            == "s\n"
         )
         assert await _line(
             ws, 'awk \'BEGIN { print "x" > "/data/missing/../alias" }\'', "g"

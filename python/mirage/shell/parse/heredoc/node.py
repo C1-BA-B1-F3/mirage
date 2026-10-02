@@ -14,9 +14,8 @@
 
 from typing import Any
 
-import tree_sitter
-
 from mirage.shell.parse.heredoc.types import Heredoc, HeredocSource
+from mirage.shell.types import TSNodeLike
 
 
 class HeredocNode:
@@ -27,14 +26,14 @@ class HeredocNode:
     cannot overwrite one another's documents.
     """
 
-    def __init__(self, node: tree_sitter.Node, source: HeredocSource):
+    def __init__(self, node: TSNodeLike, source: HeredocSource):
         self._node = node
         self._source = source
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._node, name)
 
-    def _wrap(self, node: tree_sitter.Node | None) -> "HeredocNode | None":
+    def _wrap(self, node: TSNodeLike | None) -> "HeredocNode | None":
         return None if node is None else HeredocNode(node, self._source)
 
     @property

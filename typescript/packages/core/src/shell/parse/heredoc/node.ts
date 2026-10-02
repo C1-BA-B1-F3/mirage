@@ -12,13 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { Node } from 'web-tree-sitter'
 import type { ShellNode } from '../../types.ts'
 import type { Heredoc, HeredocSource } from './types.ts'
 
 export class HeredocNode implements ShellNode {
   constructor(
-    private readonly node: Node,
+    private readonly node: ShellNode,
     private readonly source: HeredocSource,
   ) {}
   get childCount(): number {
@@ -63,7 +62,7 @@ export class HeredocNode implements ShellNode {
   get namedChildren(): HeredocNode[] {
     return this.node.namedChildren.map((node) => new HeredocNode(node, this.source))
   }
-  private wrap(node: Node | null): HeredocNode | null {
+  private wrap(node: ShellNode | null): HeredocNode | null {
     return node === null ? null : new HeredocNode(node, this.source)
   }
   get parent(): HeredocNode | null {

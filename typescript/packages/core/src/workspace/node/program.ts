@@ -14,6 +14,7 @@
 
 import { CommandTimeoutError } from '../../commands/errors.ts'
 import { isControlFlowError } from '../workspace/failure.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -25,12 +26,14 @@ import { pipelineTransparent } from '../../shell/node_kind.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import { fd0Binding, recordStatus, statementStdin } from '../executor/statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
-import { readFailExitCode } from '../../commands/spec/usage.ts'
-import { formatFsError, isFsError } from '../../utils/errors.ts'
+import { isFsError } from '../../utils/errors.ts'
 import { ReturnSignal } from '../../shell/errors.ts'
-import { BreakSignal, ContinueSignal } from '../executor/control.ts'
-import { divertStatement, stdoutToStderr } from '../executor/builtins/exec/index.ts'
-import { handleBackground } from '../executor/jobs.ts'
+import { BreakSignal, ContinueSignal, carried, isUnwinding } from '../executor/control.ts'
+import { divertStatement } from '../executor/builtins/exec/index.ts'
+import { type ExecuteNodeFn, handleBackground } from '../executor/jobs.ts'
+import { failedRead, land, statementOutput } from '../executor/statement.ts'
+import { ENCLOSING, Recorder, type StreamOwner } from '../../shell/descriptors.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
 import type { Decisions } from '../../policy/decisions.ts'
 import type { HandOff } from '../../policy/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
@@ -40,12 +43,7 @@ import { ExecutionNode } from '../types.ts'
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
 export async function executeProgram(
-  recurse: (
-    n: TSNodeLike,
-    s: SessionState,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
+  recurse: ExecuteNodeFn,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -59,6 +57,16 @@ export async function executeProgram(
   // The line's hand-off and its ledger, for a background job to borrow.
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
+  // Takes each statement's output as it finishes, in the order it was
+  // written, instead of the result. The outermost program of a session's
+  // line routes what a statement wrote to the session's terminal through a
+  // copy (`exec 3>&1`); a nested one (`eval`, `source`) leaves that to it.
+  sink: JobConsole | null = null,
+  // An inline program runs in its caller's frame (`eval`, an alias), so an
+  // `exit`, `return`, `break` or `continue` goes on into the caller, after
+  // what the program wrote; any other program is a shell of its own and
+  // ends there.
+  inline = false,
 ): Promise<Result> {
   // Every program loop is one parse, which is the unit bash's alias rule
   // counts in: an alias defined on this parse and row is not expanded by
@@ -67,6 +75,8 @@ export async function executeProgram(
   session.parseSeq += 1
   const outerParse = session.parseCurrent
   session.parseCurrent = session.parseSeq
+  const root = !session.lineOpen
+  session.lineOpen = true
   try {
     return await runProgram(
       recurse,
@@ -79,19 +89,18 @@ export async function executeProgram(
       dispatch,
       handed,
       decisions,
+      sink,
+      root ? session.terminal : null,
+      inline,
     )
   } finally {
     session.parseCurrent = outerParse
+    if (root) session.lineOpen = false
   }
 }
 
 async function runProgram(
-  recurse: (
-    n: TSNodeLike,
-    s: SessionState,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
+  recurse: ExecuteNodeFn,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -101,9 +110,12 @@ async function runProgram(
   dispatch?: DispatchFn,
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
+  sink: JobConsole | null = null,
+  own: StreamOwner | null = null,
+  inline = false,
 ): Promise<Result> {
   const children = node.children
-  const allStdout: ByteSource[] = []
+  const allStdout: (ByteSource | null)[] = []
   let mergedIo = new IOResult()
   let lastExec = new ExecutionNode({ command: '', exitCode: 0 })
   // Source lines and the highest one `set -v` has already echoed.
@@ -214,13 +226,32 @@ async function runProgram(
       let s: ByteSource | null
       let ioResult: IOResult
       let execNode: ExecutionNode
+      // Each statement writes to a recorder rather than straight to the
+      // program's output, so what it wrote to the terminal through a copy
+      // (`exec 3>&1`) keeps its place, past an `exec` diversion, and what it
+      // wrote to an enclosing level's stream goes on there.
+      const recorder = new Recorder()
       try {
         // `exec < file` feeds the shell's stdin: a later `read` or
         // `while read` sees it, and each statement reads on from where
         // the one before it stopped.
         const childStdin = statementStdin(session, stdin, bound)
-        ;[s, ioResult, execNode] = await recurse(child, session, childStdin, callStack)
+        ;[s, ioResult, execNode] = await ENCLOSING.run(recorder, () =>
+          recurse(child, session, childStdin, callStack, { sink: recorder }),
+        )
       } catch (err) {
+        if (isUnwinding(err)) {
+          mergedIo = await land(
+            await statementOutput(recorder, null, new IOResult(), own, sink),
+            sink,
+            allStdout,
+            mergedIo,
+          )
+          if (inline || (err instanceof ReturnSignal && session.sourceDepth <= 0)) {
+            const parts = allStdout.filter((part): part is ByteSource => part !== null)
+            throw await carried(err, parts.length > 0 ? asyncChain(parts) : null, mergedIo)
+          }
+        }
         if (err instanceof ExitSignal) {
           // exit (or a fatal expansion error) ends the line: keep
           // what earlier statements produced, drop the rest.
@@ -240,7 +271,7 @@ async function runProgram(
           // `return` inside a sourced file ends the source; the file's
           // status becomes the return's. Anywhere else the signal
           // belongs to an enclosing function call.
-          if (session.sourceDepth <= 0) throw err
+          if (err.stdout !== null) allStdout.push(err.stdout)
           if (err.stderr.byteLength > 0) {
             mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
           }
@@ -261,63 +292,42 @@ async function runProgram(
         }
         throw err
       }
-      let drainErr: string | null = null
-      // Only a filesystem failure reads its code off the command; anything
-      // else keeps the catch-all 1, so the two arms below do not share the
-      // assignment.
-      let drainExit = 1
       try {
         stdout = await materialize(s)
       } catch (err) {
         if (isControlFlowError(err) || err instanceof CommandTimeoutError) throw err
-        // Lazy reads can fail on the first pull (e.g. a backend size guard);
-        // surface that as a failed statement, not a crash. Filesystem
-        // errors format as a GNU coreutils line, respelling the path as
-        // typed via the operands the leaf node carries, mirroring the
-        // eager executor chokepoint.
-        if (isFsError(err)) {
-          const cmdName = execNode.command?.split(' ')[0] ?? ''
-          drainErr = new TextDecoder().decode(formatFsError(cmdName, err, execNode.paths))
-          drainExit = readFailExitCode(cmdName, err)
-        } else {
-          drainErr = `${err instanceof Error ? err.message : String(err)}\n`
+        // Lazy reads can fail on the first pull (e.g. a backend size guard),
+        // which is the command's failure, not a crash.
+        if (isFsError(err)) await failedRead(ioResult, err, execNode)
+        else {
+          ioResult.stderr = concat([
+            await materialize(ioResult.stderr),
+            new TextEncoder().encode(`${err instanceof Error ? err.message : String(err)}\n`),
+          ])
+          ioResult.exitCode = 1
         }
+        execNode.exitCode = ioResult.exitCode
         stdout = null
-      }
-      if (drainErr !== null) {
-        const existing = await materialize(ioResult.stderr)
-        const added = new TextEncoder().encode(drainErr)
-        const merged = new Uint8Array(existing.byteLength + added.byteLength)
-        merged.set(existing, 0)
-        merged.set(added, existing.byteLength)
-        ioResult.stderr = merged
-        ioResult.exitCode = drainExit
-        execNode.exitCode = drainExit
       }
       recordStatus(session, ioResult.exitCode, pipelineTransparent(child))
       io = ioResult
       lastExec = execNode
       i += 1
-    }
-
-    // An `exec` redirect sends the shell's own output to a file: every
-    // statement after the `exec` diverts here, so nothing bubbles to the
-    // terminal and stderr lands in its own target.
-    if (dispatch !== undefined && (session.execStdout !== null || session.execStderr !== null)) {
-      const bytes = stdout === null ? null : await materialize(stdout)
-      const beforeDivert = io.exitCode
-      stdout = await divertStatement(
+      // An `exec` redirect sends the shell's own output to a file: every
+      // statement after the `exec` diverts here, so nothing bubbles to the
+      // terminal and stderr lands in its own target.
+      const written = await divertStatement(
         dispatch,
         session,
-        bytes,
+        await statementOutput(recorder, stdout, io, own, sink),
         io,
+        child,
         lastExec.command ?? '',
-        stdoutToStderr(child),
       )
-      // A write the binding refused is the statement's failure, which
-      // `$?` has to show.
-      if (io.exitCode !== beforeDivert) recordStatus(session, io.exitCode)
+      stdout = null
+      mergedIo = await land(written, sink, allStdout, mergedIo)
     }
+
     if (stdout !== null) allStdout.push(stdout)
     mergedIo = await mergedIo.merge(io)
 
@@ -333,9 +343,10 @@ async function runProgram(
     }
   }
 
-  if (allStdout.length === 1 && allStdout[0] !== undefined) {
-    return [allStdout[0], mergedIo, lastExec]
+  const parts = allStdout.filter((part): part is ByteSource => part !== null)
+  if (parts.length === 1 && parts[0] !== undefined) {
+    return [parts[0], mergedIo, lastExec]
   }
-  const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
+  const combined = parts.length > 0 ? asyncChain(parts) : null
   return [combined, mergedIo, lastExec]
 }

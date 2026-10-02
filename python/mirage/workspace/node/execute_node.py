@@ -36,7 +36,7 @@ from mirage.runtime.types import DispatchFn
 from mirage.shell.arith import evaluate_arith
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
-from mirage.shell.console import Channel, JobConsole
+from mirage.shell.console import JobConsole
 from mirage.shell.constants import (
     ERREXIT_EXEMPT_TYPES,
     FORK_FAILED,
@@ -69,7 +69,10 @@ from mirage.types import PathSpec
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.builtins import handle_test, handle_unset
 from mirage.workspace.executor.builtins.exec import install_exec_redirects
+from mirage.workspace.executor.builtins.shared import is_valid_name
 from mirage.workspace.executor.control import (
+    UNWINDING,
+    carried,
     handle_case,
     handle_cfor,
     handle_for,
@@ -78,7 +81,7 @@ from mirage.workspace.executor.control import (
     handle_until,
     handle_while,
 )
-from mirage.workspace.executor.jobs import pump, run_statement
+from mirage.workspace.executor.jobs import drained, run_statement
 from mirage.workspace.executor.pipes import (
     handle_connection,
     handle_pipe,
@@ -570,6 +573,8 @@ async def _run_redirected(
     session: SessionState,
     stdin: Any,
     call_stack: CallStack | None,
+    *,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Run a redirected statement: the command under its redirects, then
     the pipeline a heredoc's operator line fed it into.
@@ -594,7 +599,13 @@ async def _run_redirected(
         session (SessionState): shell session state.
         stdin (Any): input stream.
         call_stack (CallStack | None): shell call stack.
+        sink (JobConsole | None): where the redirect writes what it
+            routes as it goes, None to return it.
     """
+    if command is not None and command.type == NT.FUNCTION_DEFINITION:
+        # The redirects belong to the function, applied at each call
+        # (get_function_body), not to the definition.
+        return await recurse(command, session, stdin, call_stack)
     if command is not None and command.type == NT.LIST:
         # tree-sitter hoists a trailing redirect over the whole
         # &&/|| list; bash binds it to the last command:
@@ -647,6 +658,7 @@ async def _run_redirected(
             session,
             stdin,
             call_stack,
+            sink=sink,
         )
         return await _negated(stdout, io, exec_node, session, inner)
     expanded_redirects, pipe_node = await expand_redirects(
@@ -658,8 +670,10 @@ async def _run_redirected(
     # through to the ordinary path, which refuses the command form.
     if _is_bare_exec(command):
         return await install_exec_redirects(
-            dispatch, session, expanded_redirects
+            dispatch, session, expanded_redirects, stdin
         )
+    # A heredoc's operator line reads the routed stdout, so then it is
+    # returned rather than written.
     stdout, io, exec_node = await handle_redirect(
         recurse,
         dispatch,
@@ -668,6 +682,7 @@ async def _run_redirected(
         session,
         stdin,
         call_stack,
+        sink=sink if pipe_node is None else None,
     )
     if pipe_node is not None and stdout is not None:
         stdout, io2, exec_node2 = await recurse(
@@ -940,18 +955,17 @@ async def _execute_node(
 
     # A sink turns this walk from "return your output" into "write your
     # output". Sequencing constructs pass it to their children so each
-    # statement lands as it finishes; everything else runs unchanged and
-    # has its result drained here. Only the kinds below inherit a sink,
-    # so capture sites keep receiving their output as a value.
-    if sink is not None and kind not in STREAMING_KINDS:
-        stdout, io, exec_node = await recurse(node, session, stdin, cs)
-        await pump(sink, Channel.STDOUT, stdout)
-        stderr = await io.materialize_stderr()
-        if stderr:
-            await sink.emit(Channel.STDERR, stderr)
-            # Cleared so the job's tail does not emit it a second time.
-            io.stderr = None
-        return None, io, exec_node
+    # statement lands as it finishes, and so do a command (a function
+    # body, a nested shell) and a redirect (what it routes), draining
+    # whatever they return after; everything else runs unchanged and has
+    # its result drained here. Only these kinds inherit a sink, so
+    # capture sites keep receiving their output as a value.
+    if (
+        sink is not None
+        and kind not in STREAMING_KINDS
+        and kind not in (NodeKind.COMMAND, NodeKind.REDIRECT)
+    ):
+        return await drained(sink, *await recurse(node, session, stdin, cs))
 
     stream = partial(recurse, sink=sink) if sink is not None else recurse
 
@@ -973,8 +987,10 @@ async def _execute_node(
 
     # ── program (root / semicolons) ─────────────
     if kind == NodeKind.PROGRAM:
+        # A root run in a caller's frame is the caller's own line (eval,
+        # an alias); one given none is a shell of its own.
         return await execute_program(
-            stream,
+            recurse,
             node,
             session,
             stdin,
@@ -984,12 +1000,14 @@ async def _execute_node(
             dispatch,
             handed,
             registry.decisions,
+            sink=sink,
+            inline=call_stack is not None,
         )
 
     # ── command ─────────────────────────────────
     if kind == NodeKind.COMMAND:
         async with command_scope():
-            return await execute_command(
+            result = await execute_command(
                 recurse,
                 dispatch,
                 registry,
@@ -1004,7 +1022,9 @@ async def _execute_node(
                 routing_decision=routing_decision,
                 agent_id=agent_id,
                 handed=handed,
+                sink=sink,
             )
+        return result if sink is None else await drained(sink, *result)
 
     # ── pipeline ────────────────────────────────
     if kind == NodeKind.PIPELINE:
@@ -1049,12 +1069,15 @@ async def _execute_node(
             command,
             redirects,
             job_table.processes if job_table is not None else None,
+            sink=sink,
         )
         if not continuation:
-            return await run_left(session, stdin, cs)
-        return await _run_continuation(
-            recurse, run_left, node, continuation, session, stdin, cs
-        )
+            result = await run_left(session, stdin, cs)
+        else:
+            result = await _run_continuation(
+                recurse, run_left, node, continuation, session, stdin, cs
+            )
+        return result if sink is None else await drained(sink, *result)
 
     # ── subshell ────────────────────────────────
     if kind == NodeKind.SUBSHELL:
@@ -1075,7 +1098,6 @@ async def _execute_node(
             agent_id,
             cancel=cancel,
             routing_decision=routing_decision,
-            sink=sink,
             handed=handed,
         )
         child_session = session.fork()
@@ -1099,6 +1121,7 @@ async def _execute_node(
                     dispatch,
                     handed,
                     registry.decisions,
+                    sink=sink,
                 )
                 results.append(result)
                 return result[1].exit_code
@@ -1203,18 +1226,21 @@ async def _execute_node(
         for child in node.named_children:
             if child.type == NT.COMMENT:
                 continue
-            stdout, io, last_exec = await run_statement(
-                stream,
-                child,
-                session,
-                stdin,
-                bound,
-                cs,
-                job_table,
-                agent_id,
-                handed,
-                registry.decisions,
-            )
+            try:
+                stdout, io, last_exec = await run_statement(
+                    stream,
+                    child,
+                    session,
+                    stdin,
+                    bound,
+                    cs,
+                    job_table,
+                    agent_id,
+                    handed,
+                    registry.decisions,
+                )
+            except UNWINDING as sig:
+                raise await carried(sig, async_chain(all_stdout), merged_io)
             stdout = await finish_statement(stdout, io, session, child)
             if stdout is not None:
                 all_stdout.append(stdout)
@@ -1275,6 +1301,13 @@ async def _execute_node(
     # ── for / select ────────────────────────────
     if kind in (NodeKind.FOR, NodeKind.SELECT):
         var, values, body = get_for_parts(node)
+        if not is_valid_name(var):
+            err = f"bash: `{var}': not a valid identifier\n".encode()
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=kind.value, exit_code=1, stderr=err),
+            )
         async with command_scope():
             classified = await expand_and_classify(
                 values,
@@ -1308,6 +1341,7 @@ async def _execute_node(
                 agent_id=agent_id,
                 handed=handed,
                 decisions=registry.decisions,
+                sink=sink,
             )
         return await handle_for(
             stream,

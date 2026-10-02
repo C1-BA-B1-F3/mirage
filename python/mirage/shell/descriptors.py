@@ -13,16 +13,20 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import errno
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from contextvars import ContextVar
+from dataclasses import dataclass
 
-from mirage.shell.constants import FD_BOTH, FD_CLOSE, SHELL_FDS
+from mirage.io.async_line_iterator import SharedInput
+from mirage.shell.console import Channel, JobConsole
+from mirage.shell.constants import FD_BOTH, FD_CLOSE
 from mirage.shell.types import Redirect, RedirectKind
+from mirage.types import PathSpec
 from mirage.utils.errors import BadDescriptorError
 
 
 def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
-    """The first descriptor a redirect list names that the shell has no
-    table for, or None when every one is 0, 1 or 2.
+    """The first descriptor outside the signed 32-bit range, or None.
 
     Both slots count: the descriptor a redirect claims (`3>f`, `3<f`,
     `3>&1`, `3>&-`) and the one it duplicates from (`>&3`, `<&3`,
@@ -39,11 +43,11 @@ def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
     for r in redirects:
         if r.kind == RedirectKind.AMBIGUOUS:
             continue
-        if r.fd not in SHELL_FDS and r.fd != FD_BOTH:
+        if not 0 <= r.fd < 2**31 and r.fd != FD_BOTH:
             return r.fd
         if (
             isinstance(r.target, int)
-            and r.target not in SHELL_FDS
+            and not 0 <= r.target < 2**31
             and r.target != FD_CLOSE
         ):
             return r.target
@@ -51,12 +55,7 @@ def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
 
 
 def bad_descriptor_line(fd: int) -> bytes:
-    """bash's line for a descriptor that is not open: `3: Bad file
-    descriptor`. mirage has descriptors 0, 1 and 2 and can never open
-    another, so a redirect that claims one bash would open (`3>f`) is
-    refused with the same words as one bash would refuse (`>&3`): in
-    both cases nothing here backs fd 3. The `bash: line N:` prefix is
-    dropped, the house style every shell-attributed error follows.
+    """Bash's error for a closed descriptor, without the line-number prefix.
 
     Args:
         fd (int): the descriptor that was named.
@@ -76,3 +75,101 @@ async def unreadable_stdin() -> AsyncIterator[bytes]:
     """
     raise BadDescriptorError(errno.EBADF, "Bad file descriptor", "-")
     yield b""  # pragma: no cover - makes this an async generator
+
+
+class FileInput(SharedInput):
+    def __init__(self, description: "FileDescription", data: bytes) -> None:
+        super().__init__(data)
+        self.description = description
+
+    def dup(self) -> "FileInput":
+        return self
+
+
+@dataclass
+class FileDescription:
+    scope: PathSpec
+    append: bool = False
+    opened: bool = False
+    offset: int = 0
+    source: FileInput | None = None
+    emit: Callable[[bytes], Awaitable[None]] | None = None
+
+
+class StreamOwner:
+    """Who a stream a level was given belongs to: a redirect level's
+    recorder, or a session, whose own line its terminal streams are."""
+
+
+@dataclass(frozen=True, eq=False)
+class Inherited:
+    """The stdout or stderr a level was given rather than opened.
+
+    A descriptor copied from it (``3>&1``, ``exec 3>&1``) keeps naming it
+    after the level rebinds its own (``3>&1 >f``), as bash's copy keeps
+    the open file description.
+    """
+
+    owner: StreamOwner
+    channel: Channel
+
+
+class Recorder(JobConsole, StreamOwner):
+    """What one level's command wrote, in order, for the level to route.
+
+    A chunk on a channel goes through the level's descriptor table; one
+    written to a stream another level owns stays in place on its way up
+    to that level, so it lands among the bytes written around it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.chunks: list[tuple[Channel | Inherited, bytes]] = []
+
+    async def emit(self, channel: Channel, data: bytes) -> None:
+        self.chunks.append((channel, data))
+
+    async def emit_to(self, stream: Inherited, data: bytes) -> None:
+        self.chunks.append((stream, data))
+
+
+# The recorder of the innermost level running a command, for a level
+# whose output is a value (a substitution's) to send another level's
+# stream bytes toward it.
+ENCLOSING: ContextVar[Recorder | None] = ContextVar(
+    "enclosing_recorder", default=None
+)
+
+
+async def deliver(
+    sink: JobConsole | None, stream: Inherited, data: bytes
+) -> bool:
+    """Send bytes written to a stream another level owns toward it.
+
+    They go up through the sink, or the enclosing level's recorder when
+    the level returns its output as a value. A console that keeps no
+    streams takes them on their channel. False when there is nowhere
+    above.
+
+    Args:
+        sink (JobConsole | None): where the level writes.
+        stream (Inherited): the stream the bytes were written to.
+        data (bytes): the bytes.
+    """
+    target = sink if sink is not None else ENCLOSING.get()
+    if isinstance(target, Recorder):
+        await target.emit_to(stream, data)
+    elif target is not None:
+        await target.emit(stream.channel, data)
+    else:
+        return False
+    return True
+
+
+@dataclass(frozen=True)
+class Descriptor:
+    identity: str
+    append: bool = False
+    source: SharedInput | None = None
+    file: FileDescription | None = None
+    stream: Inherited | None = None

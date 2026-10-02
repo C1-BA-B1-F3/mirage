@@ -19,6 +19,7 @@ import type { MountRegistry } from '../../../mount/registry.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { handleCommandBuiltin } from '../command/command.ts'
 import type { ByteSource } from '../../../../io/types.ts'
+import type { JobConsole } from '../../../../shell/console/index.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
@@ -106,6 +107,7 @@ export async function handleExecPath(
   registry: MountRegistry,
   namespace: Namespace,
   stdin: ByteSource | null = null,
+  sink?: JobConsole,
 ): Promise<Result> {
   let script: string
   try {
@@ -146,10 +148,15 @@ export async function handleExecPath(
       session,
       stdin,
       interp,
+      sink,
     )
   }
   const line = [...words, path, ...args].map(quoteWord).join(' ')
-  const io = await executeFn(line, { sessionId: session.sessionId, stdin })
+  const io = await executeFn(line, {
+    sessionId: session.sessionId,
+    stdin,
+    ...(sink === undefined ? {} : { sink }),
+  })
   const label = args.length > 0 ? `${path} ${args.join(' ')}` : path
   return [io.stdout, io, new ExecutionNode({ command: label, exitCode: io.exitCode })]
 }

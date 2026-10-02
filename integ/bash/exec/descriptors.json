@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "id": "exec_fd3_refused_keeps_stdout",
+      "id": "exec_fd3_keeps_stdout",
       "seq": 980010,
       "targets": [
         "ram",
@@ -27,15 +27,15 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "exec 3>/data/exec3.txt; echo code=$?; echo still; test -e /data/exec3.txt; echo exists=$?",
+      "command": "( exec 3>/data/exec3.txt; echo code=$?; echo still; test -e /data/exec3.txt; echo exists=$?; exec 3>&- )",
       "expect": {
         "exit": 0,
-        "stdout": "code=1\nstill\nexists=1\n",
-        "stderr": "3: Bad file descriptor\n"
+        "stdout": "code=0\nstill\nexists=0\n",
+        "stderr": ""
       }
     },
     {
-      "id": "exec_close_fd3_refused_keeps_stdout",
+      "id": "exec_close_fd3_keeps_stdout",
       "seq": 980011,
       "targets": [
         "ram",
@@ -64,8 +64,8 @@
       "command": "exec 3>&-; echo code=$?; echo still",
       "expect": {
         "exit": 0,
-        "stdout": "code=1\nstill\n",
-        "stderr": "3: Bad file descriptor\n"
+        "stdout": "code=0\nstill\n",
+        "stderr": ""
       }
     },
     {

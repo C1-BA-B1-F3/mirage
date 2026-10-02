@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { HandOff } from '../../policy/types.ts'
+import type { CallStack } from '../../shell/call_stack.ts'
 import type { CacheConfig } from '../../cache/file/config.ts'
 import type { CLISpec } from '../../commands/cli/types.ts'
 import type { ByteSource } from '../../io/types.ts'
@@ -283,4 +284,11 @@ export interface ExecuteOptions {
    * grants the outer line's pass claimed for it.
    */
   handed?: HandOff
+  /**
+   * @internal The frames of the caller a nested line runs in place of
+   * (`eval`): its commands see the caller's positional parameters and
+   * locals, and an `exit`, `return`, `break` or `continue` in it unwinds
+   * into the caller instead of ending the line.
+   */
+  callStack?: CallStack
 }

@@ -14,6 +14,7 @@
 
 import type { SessionView } from '../../ops/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
 import { quotedParts } from '../../shell/helpers.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { ByteSource, IOResult } from '../../io/types.ts'
@@ -24,7 +25,7 @@ import { expandTilde } from '../../utils/path.ts'
 import { homeDir } from '../session/shell_dirs.ts'
 import { evaluateArith } from '../../shell/arith.ts'
 import { splitBacktickRegion } from '../../shell/backticks.ts'
-import { ArithError, ExitSignal } from '../../shell/errors.ts'
+import { ArithError, BadSubstitution, ExitSignal, named } from '../../shell/errors.ts'
 import { decodeAnsiC, unescapeDquoted, unescapeUnquoted } from '../../shell/escapes.ts'
 import { ARITH_DELIMITERS, ARITH_OPERATORS } from './constants.ts'
 import { scanParameter } from '../../shell/parameter.ts'
@@ -57,6 +58,8 @@ export type ExecuteFn = (
     span?: readonly [number, number]
     handed?: HandOff
     substitution?: boolean
+    sink?: JobConsole
+    callStack?: CallStack
   },
 ) => Promise<IOResult>
 
@@ -199,7 +202,34 @@ export function arithExit(expr: string, err: ArithError): ExitSignal {
   )
 }
 
+/**
+ * Reconstruct arithmetic expression text for the shared evaluator. A bad
+ * substitution names the expression as written.
+ */
 export async function expandArith(
+  tsNode: TSNodeLike,
+  session: SessionState,
+  executeFn: ExecuteFn,
+  callStack: CallStack | null,
+  view?: SessionView,
+): Promise<string> {
+  return named(arithInside(tsNode), arithText(tsNode, session, executeFn, callStack, view))
+}
+
+function arithInside(tsNode: TSNodeLike): string {
+  const text = tsNode.text.trimStart()
+  for (const [opener, closer] of [
+    ['$((', '))'],
+    ['((', '))'],
+    ['$[', ']'],
+  ] as const) {
+    if (text.startsWith(opener) && text.endsWith(closer))
+      return text.slice(opener.length, -closer.length)
+  }
+  return text
+}
+
+async function arithText(
   tsNode: TSNodeLike,
   session: SessionState,
   executeFn: ExecuteFn,
@@ -221,7 +251,7 @@ export async function expandArith(
       child.type === NT.TERNARY_EXPRESSION ||
       child.type === NT.POSTFIX_EXPRESSION
     ) {
-      parts.push(await expandArith(child, session, executeFn, callStack, view))
+      parts.push(await arithText(child, session, executeFn, callStack, view))
     } else if (child.type === 'subscript') {
       parts.push(await arithSubscript(child, session, executeFn, callStack, view))
     } else if (ARITH_OPERATORS.has(child.type)) {
@@ -328,7 +358,8 @@ export async function expandNodeMarked(
  * protects does not; a splat's elements are separate fields.
  * `splitFields` turns the pieces into words and `joinChunks` into the
  * one string a context without splitting reads. `quoted` says whether
- * the node sits inside double quotes.
+ * the node sits inside double quotes. A bad substitution leaving it is
+ * renamed after the node, unless a boundary inside named it for good.
  */
 export async function expandChunks(
   tsNode: TSNodeLike,
@@ -337,6 +368,22 @@ export async function expandChunks(
   callStack: CallStack | null = null,
   view?: SessionView,
   quoted = false,
+): Promise<Chunk[]> {
+  try {
+    return await nodeChunks(tsNode, session, executeFn, callStack, view, quoted)
+  } catch (err) {
+    if (err instanceof BadSubstitution) throw err.within(tsNode.text.trimStart())
+    throw err
+  }
+}
+
+async function nodeChunks(
+  tsNode: TSNodeLike,
+  session: SessionState,
+  executeFn: ExecuteFn,
+  callStack: CallStack | null,
+  view: SessionView | undefined,
+  quoted: boolean,
 ): Promise<Chunk[]> {
   const ntype = tsNode.type
 
@@ -426,7 +473,8 @@ export async function expandChunks(
  * elements, with no other text, is no field at all: with no parameters
  * `"$@"` and `"$u$@"` are nothing, while one empty parameter is one
  * empty word. Only the element count decides that, never the rendered
- * text.
+ * text. A bad substitution names what the quotes enclose, or the whole
+ * document of a heredoc the string stands for.
  */
 async function stringChunks(
   node: TSNodeLike,
@@ -438,12 +486,16 @@ async function stringChunks(
   const chunks: Chunk[] = [piece('')]
   let splat = false
   let yielded = false
+  const inside = node.parent?.heredoc?.body ?? node.text.slice(1, -1)
   for (const part of quotedParts(node)) {
     if (typeof part === 'string') {
       chunks.push(piece(markGlobs(part)))
       continue
     }
-    const pieces = await expandChunks(part, session, executeFn, callStack, view, true)
+    const pieces = await named(
+      inside,
+      expandChunks(part, session, executeFn, callStack, view, true),
+    )
     if (isAtSplat(part)) {
       splat = true
       yielded = yielded || pieces.length > 0

@@ -50,7 +50,13 @@ export async function expandRedirects(
       let body: unknown = r.target
       const heredocNode = r.targetNode as TSNodeLike | null
       if (r.expandVars && heredocNode !== null) {
-        body = await expandNode(heredocNode, session, executeFn, callStack, view)
+        try {
+          body = await expandNode(heredocNode, session, executeFn, callStack, view)
+        } catch (err) {
+          if (!(err instanceof ExitSignal) || r.kind !== RedirectKind.HEREDOC) throw err
+          expanded.push(new Redirect({ fd: r.fd, target: err, kind: RedirectKind.UNEXPANDED }))
+          continue
+        }
       } else if (typeof body === 'string' && r.expandVars) {
         let s: string = body
         for (const [k, v] of Object.entries(visibleEnv(session))) {

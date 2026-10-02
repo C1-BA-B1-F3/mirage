@@ -20,7 +20,6 @@ export {
   firstContentLine,
   heredocOperators,
   protectedSource,
-  sameShape,
   terminatorLookalikes,
 } from './shield.ts'
 export type { HeredocOperator } from './types.ts'

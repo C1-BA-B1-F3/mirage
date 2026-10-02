@@ -1,3 +1,6 @@
+import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
+import { materialize, type ByteSource } from '../../io/types.ts'
+import type { FileDescription } from '../../shell/descriptors.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -56,4 +59,44 @@ export async function createFile(
   } catch (modeErr) {
     if (!isFsError(modeErr)) throw modeErr
   }
+}
+
+/** Write through a shared open description and advance its offset. */
+export async function writeDescription(
+  dispatch: DispatchFn,
+  session: SessionState,
+  file: FileDescription,
+  data: Uint8Array,
+): Promise<void> {
+  if (file.emit !== null) {
+    if (data.byteLength > 0) await file.emit(data)
+    return
+  }
+  if (!file.opened) {
+    await createFile(
+      dispatch,
+      session,
+      file.scope,
+      file.source === null ? data : new Uint8Array(),
+      file.append,
+    )
+    file.opened = true
+    if (file.source === null) {
+      file.offset += data.byteLength
+      return
+    }
+  }
+  if (data.byteLength === 0) return
+  if (file.append && file.source === null) {
+    await createFile(dispatch, session, file.scope, data, true)
+    return
+  }
+  const content = await materialize((await dispatch('read', file.scope))[0] as ByteSource)
+  const offset = file.offset + (file.source?.lines.position ?? 0)
+  const updated = new Uint8Array(Math.max(content.byteLength, offset + data.byteLength))
+  updated.set(content)
+  updated.set(data, offset)
+  await createFile(dispatch, session, file.scope, updated)
+  file.offset = offset + data.byteLength
+  if (file.source !== null) file.source.lines = new AsyncLineIterator(updated.subarray(file.offset))
 }

@@ -95,10 +95,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "case a in a) echo one;;& z) echo two;; esac",
+      "command": "case a in a) echo one;;& z) echo two;; esac; case b in b) echo last;;& esac; case c in c) echo end;& esac",
       "expect": {
         "exit": 0,
-        "stdout": "one\n",
+        "stdout": "one\nlast\nend\n",
         "stderr": ""
       }
     }

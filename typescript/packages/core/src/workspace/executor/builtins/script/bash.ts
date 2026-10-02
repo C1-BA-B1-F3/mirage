@@ -15,6 +15,7 @@
 import { runAsShell } from '../../../../context/session_context.ts'
 import { materialize, IOResult } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
+import type { JobConsole } from '../../../../shell/console/index.ts'
 import { IFS_DEFAULT } from '../../../../shell/constants.ts'
 import { parseOptionWord } from '../../../../shell/options.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -118,6 +119,7 @@ export async function handleBash(
   session: SessionState,
   stdin: ByteSource | null = null,
   name = 'bash',
+  sink?: JobConsole,
 ): Promise<Result> {
   const parsed = parseBashArgs(args)
   if (parsed.invalid !== null) {
@@ -165,7 +167,13 @@ export async function handleBash(
   // A nested shell is a program of its own: the builtins it runs are its
   // builtins again, whatever `find -exec` marked the outer line.
   try {
-    io = await runAsShell(() => executeFn(script, { sessionId: session.sessionId, stdin }))
+    io = await runAsShell(() =>
+      executeFn(script, {
+        sessionId: session.sessionId,
+        stdin,
+        ...(sink === undefined ? {} : { sink }),
+      }),
+    )
   } finally {
     session.restore(saved)
   }
@@ -182,5 +190,6 @@ export async function bashBuiltin(call: BuiltinCall): Promise<Result> {
     call.session,
     call.stdin,
     call.argv.name,
+    call.sink,
   )
 }

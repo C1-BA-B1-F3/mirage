@@ -26,7 +26,7 @@ import { guardDispatch, mergeSignals } from '../abort.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import { DevVFS } from '../../vfs/dev/dev.ts'
 import { encodeText } from '../../shell/bytes.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
 import {
   getCommandName,
   getParts,
@@ -58,6 +58,7 @@ import {
   type HandOff,
 } from '../../policy/index.ts'
 import { traceCommand } from '../../shell/xtrace.ts'
+import { Channel, type JobConsole } from '../../shell/console/index.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
 import {
   acceptsLine,
@@ -127,6 +128,9 @@ export async function executeCommand(
   agentId = '',
   // The line's hand-off, which its gate claims on and runs on.
   handed?: HandOff,
+  // Where a command that runs statements of its own (a function body, a
+  // nested shell) writes them as they finish.
+  sink?: JobConsole,
 ): Promise<Result> {
   const name = getCommandName(node)
   const [assignmentNodes, nonPrefixParts] = splitEnvPrefix(getParts(node))
@@ -173,11 +177,13 @@ export async function executeCommand(
       // ran on the first's nod.
       const expansion = handed === undefined ? null : evaluatedFrom(node, handed)
       try {
+        // In the caller's frame, as Python's line root has one: the
+        // alias's text is the caller's own line.
         return await recurse(
           ast,
           session,
           stdinIn,
-          callStack,
+          callStack ?? new CallStack(),
           expansion === null ? undefined : { handed: expansion },
         )
       } finally {
@@ -302,6 +308,7 @@ export async function executeCommand(
       agentId,
       handed,
       seedPrefix,
+      sink,
     )
   } finally {
     const frames = session.localFrames
@@ -341,8 +348,9 @@ async function runCommandBody(
   agentId = '',
   handed?: HandOff,
   seedPrefix?: (command: string) => void,
+  sink?: JobConsole,
 ): Promise<Result> {
-  let stdin = stdinIn
+  const stdin = stdinIn
   // A background job's kill channel rides the session; fold it in so
   // builtins (sleep) and the mount layer observe the kill.
   const signal = mergeSignals(signalIn, session.abortSignal)
@@ -353,24 +361,6 @@ async function runCommandBody(
   // the node its text came from.
   const claimant = claimantFor(node, handed)
   const executeFn: ExecuteFn = (cmd, opts) => executeFnIn(cmd, { node, ...opts })
-
-  if (node.parent?.type !== NT.REDIRECTED_STATEMENT) {
-    for (const child of node.namedChildren) {
-      if (child.type === NT.HERESTRING_REDIRECT) {
-        for (const sc of child.namedChildren) {
-          const content = await expandNode(
-            sc,
-            session,
-            executeFn,
-            callStack,
-            sessionView(session, registry.policies),
-          )
-          stdin = encodeText(`${content}\n`)
-          break
-        }
-      }
-    }
-  }
 
   // Input substitutions are buffered virtual files, not host pipes. Each
   // operand has its own lifetime; they never consume the caller's stdin.
@@ -436,8 +426,13 @@ async function runCommandBody(
         : null
     const timeout = resolved !== null ? resolved.timeoutSeconds : null
     // Capture xtrace before the body runs so `set -x` itself is not
-    // traced (bash enables tracing only for the following commands).
-    const xtrace = session.shellOptions.xtrace === true
+    // traced (bash enables tracing only for the following commands). A body
+    // that writes as it runs is traced before it starts.
+    let xtrace = session.shellOptions.xtrace === true && argv.name !== ''
+    if (xtrace && sink !== undefined) {
+      await sink.emit(Channel.STDERR, traceCommand([argv.name, ...argv.args]))
+      xtrace = false
+    }
     const [rawStdout, io, execNode] = await runWithTimeout(
       runArgv(
         recurse,
@@ -457,6 +452,7 @@ async function runCommandBody(
         agentId,
         redirectPathsFor(node),
         claimant,
+        sink,
       ),
       timeout,
       argv.name !== '' ? argv.name : '?',
@@ -490,7 +486,7 @@ async function runCommandBody(
       io.stderr = concat([...procSubStderr, stderr])
       execNode.stderr = io.stderr
     }
-    if (xtrace && argv.name !== '') {
+    if (xtrace) {
       const existing = await materialize(io.stderr)
       io.stderr = concat([traceCommand([argv.name, ...argv.args]), existing])
     }
@@ -535,6 +531,7 @@ async function runArgv(
   redirects: readonly PathSpec[] = [],
   // The line's hand-off, which its gate claims on and runs on.
   claimant: Claimant | null = null,
+  sink?: JobConsole,
 ): Promise<Result> {
   const name = argv.name
 
@@ -630,6 +627,7 @@ async function runArgv(
       row,
       agentId,
       claimant?.line ?? null,
+      sink,
     )
   const gated = admitted
   if (gated === null) return runWithOpPolicies(registry.policies, route)
@@ -677,6 +675,7 @@ async function routeArgv(
   row: number,
   agentId: string,
   handed: HandOff | null,
+  sink?: JobConsole,
 ): Promise<Result> {
   // The half of `runArgv` past the gate, split out so the gate's verdict
   // can be bound around it.
@@ -695,7 +694,17 @@ async function routeArgv(
   // claim it. After the admission gate so a policy sees the line like
   // any other.
   if (name.includes('/')) {
-    return handleExecPath(dispatch, executeFn, name, args, session, registry, namespace, stdin)
+    return handleExecPath(
+      dispatch,
+      executeFn,
+      name,
+      args,
+      session,
+      registry,
+      namespace,
+      stdin,
+      sink,
+    )
   }
 
   // Unsupported bash builtins. Constructs the parser accepts but the
@@ -732,6 +741,7 @@ async function routeArgv(
       registry,
       namespace,
       executeFn,
+      ...(sink === undefined ? {} : { sink }),
     })
   }
 
@@ -873,6 +883,7 @@ async function routeArgv(
     executeFn,
     handed ?? null,
     signal,
+    sink,
   )
 
   if (io.exitCode === 0 && namespace.nodes.size > 0) {

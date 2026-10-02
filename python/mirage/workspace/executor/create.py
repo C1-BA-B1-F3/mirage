@@ -15,7 +15,10 @@
 import logging
 
 from mirage.context import DEFAULT_UMASK
+from mirage.io.async_line_iterator import AsyncLineIterator
+from mirage.io.stream import materialize
 from mirage.runtime.types import DispatchFn
+from mirage.shell.descriptors import FileDescription
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS
 from mirage.workspace.session import SessionState
@@ -74,3 +77,52 @@ async def create_file(
         )
     except FS_ERRORS as exc:
         logger.debug("umask mode write failed for %s: %s", scope.raw_path, exc)
+
+
+async def write_description(
+    dispatch: DispatchFn,
+    session: SessionState,
+    file: FileDescription,
+    data: bytes,
+) -> None:
+    """Write through a shared open file description, preserving its offset.
+
+    Args:
+        dispatch (DispatchFn): operation dispatcher.
+        session (SessionState): file creation mode.
+        file (FileDescription): shared open description.
+        data (bytes): bytes emitted by the command.
+    """
+    if file.emit is not None:
+        if data:
+            await file.emit(data)
+        return
+    if not file.opened:
+        await create_file(
+            dispatch,
+            session,
+            file.scope,
+            b"" if file.source else data,
+            append=file.append,
+        )
+        file.opened = True
+        if file.source is None:
+            file.offset += len(data)
+            return
+    if not data:
+        return
+    if file.append and file.source is None:
+        await create_file(dispatch, session, file.scope, data, append=True)
+        return
+    content, _ = await dispatch("read", file.scope)
+    content = await materialize(content) or b""
+    offset = file.offset + (file.source.lines.position if file.source else 0)
+    content = (
+        content[:offset].ljust(offset, b"\0")
+        + data
+        + content[offset + len(data) :]
+    )
+    await create_file(dispatch, session, file.scope, content)
+    file.offset = offset + len(data)
+    if file.source is not None:
+        file.source.lines = AsyncLineIterator(content[file.offset :])

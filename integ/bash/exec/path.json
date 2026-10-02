@@ -86,10 +86,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf '#!/bin/sh -x\\necho traced\\n' > /data/t.sh && /data/t.sh",
+      "command": "printf '#!/bin/sh -x\\necho traced\\n' > /data/t.sh && /data/t.sh; /data/t.sh 2>&1 | cat",
       "expect": {
         "exit": 0,
-        "stdout": "traced\n",
+        "stdout": "traced\n+ echo traced\ntraced\n",
         "stderr": "+ echo traced\n"
       }
     },

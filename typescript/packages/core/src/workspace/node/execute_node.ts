@@ -65,6 +65,7 @@ import { expandAndClassify } from '../expand/parts.ts'
 import { assignElement } from '../session/elements.ts'
 import type { ArithResult, TSNodeLike } from '../../shell/types.ts'
 import {
+  carried,
   type CforEval,
   handleCase,
   handleCfor,
@@ -73,9 +74,11 @@ import {
   handleSelect,
   handleUntil,
   handleWhile,
+  isUnwinding,
 } from '../executor/control.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
 import { handleTest, handleUnset } from '../executor/builtins/index.ts'
+import { isValidName } from '../executor/builtins/shared.ts'
 import { handleConnection, handlePipe, handleSubshell } from '../executor/pipes.ts'
 import { handleRedirect } from '../executor/redirect.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
@@ -99,8 +102,8 @@ import {
   sessionView,
   visibleEnv,
 } from '../session/state.ts'
-import { Channel, type JobConsole } from '../../shell/console/index.ts'
-import { type ExecuteNodeOpts, pump, runStatement } from '../executor/jobs.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
+import { drained, type ExecuteNodeOpts, runStatement } from '../executor/jobs.ts'
 
 const STREAMING_KINDS: ReadonlySet<NodeKind> = new Set([
   NodeKind.PROGRAM,
@@ -257,6 +260,7 @@ async function recurseReassociated(
     [...redirects],
     signal,
     processes,
+    undefined,
     session,
     stdin,
     callStack,
@@ -349,6 +353,7 @@ async function recurseStage(
     bound,
     signal,
     processes,
+    undefined,
     session,
     stdin,
     callStack,
@@ -478,10 +483,16 @@ async function runRedirected(
   redirects: Redirect[],
   signal: AbortSignal | undefined,
   processes: ProcessSupervisor | undefined,
+  sink: JobConsole | undefined,
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
 ): Promise<Result> {
+  if (command !== null && command.type === NT.FUNCTION_DEFINITION) {
+    // The redirects belong to the function, applied at each call
+    // (getFunctionBody), not to the definition.
+    return recurse(command, session, stdin, callStack)
+  }
   if (command !== null && command.type === NT.LIST) {
     // tree-sitter hoists a trailing redirect over the whole &&/||
     // list; bash binds it to the last command:
@@ -533,6 +544,7 @@ async function runRedirected(
       redirects,
       signal,
       processes,
+      sink,
       session,
       stdin,
       callStack,
@@ -552,8 +564,10 @@ async function runRedirected(
   // command. `exec cmd > file` still has a command and falls through
   // to the ordinary path, which refuses the command form.
   if (isBareExec(command)) {
-    return await installExecRedirects(dispatch, session, expandedRedirects)
+    return await installExecRedirects(dispatch, session, expandedRedirects, stdin)
   }
+  // A heredoc's operator line reads the routed stdout, so then it is
+  // returned rather than written.
   let [stdout, io, execNode] = await handleRedirect(
     recurse,
     dispatch,
@@ -562,6 +576,8 @@ async function runRedirected(
     session,
     stdin,
     callStack,
+    false,
+    pipeNode === null ? sink : undefined,
   )
   if (pipeNode !== null && stdout !== null) {
     const [stdout2, io2, execNode2] = await recurse(pipeNode, session, stdout, callStack)
@@ -827,16 +843,13 @@ async function executeNodeBody(
   // statement lands as it finishes; everything else runs unchanged and
   // has its result drained here. Only STREAMING_KINDS inherit a sink,
   // so capture sites keep receiving their output as a value.
-  if (sink !== undefined && !STREAMING_KINDS.has(kind)) {
-    const [stdout, io, execNode] = await recurse(node, session, stdin, callStack)
-    await pump(sink, Channel.STDOUT, stdout)
-    const stderr = await io.materializeStderr()
-    if (stderr.byteLength > 0) {
-      await sink.emit(Channel.STDERR, stderr)
-      // Cleared so the job's tail does not emit it a second time.
-      io.stderr = null
-    }
-    return [null, io, execNode]
+  if (
+    sink !== undefined &&
+    !STREAMING_KINDS.has(kind) &&
+    kind !== NodeKind.COMMAND &&
+    kind !== NodeKind.REDIRECT
+  ) {
+    return drained(sink, ...(await recurse(node, session, stdin, callStack)))
   }
 
   if (kind === NodeKind.TIMED) {
@@ -868,8 +881,10 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.PROGRAM) {
+    // A root run in a caller's frame is the caller's own line (eval, an
+    // alias); one given none is a shell of its own.
     return executeProgram(
-      stream,
+      recurse,
       node,
       session,
       stdin,
@@ -879,11 +894,13 @@ async function executeNodeBody(
       dispatch,
       deps.handed ?? null,
       registry.decisions,
+      sink ?? null,
+      callStack !== null,
     )
   }
 
   if (kind === NodeKind.COMMAND) {
-    return runInCommandScope(() =>
+    const result = await runInCommandScope(() =>
       executeCommand(
         recurse,
         dispatch,
@@ -901,8 +918,10 @@ async function executeNodeBody(
         deps.reparse,
         agentId,
         deps.handed,
+        sink,
       ),
     )
+    return sink === undefined ? result : drained(sink, ...result)
   }
 
   if (kind === NodeKind.PIPELINE) {
@@ -946,9 +965,13 @@ async function executeNodeBody(
       redirects,
       deps.signal,
       jobTable.processes,
+      sink,
     )
-    if (continuation.length === 0) return runLeft(session, stdin, callStack)
-    return runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)
+    const result =
+      continuation.length === 0
+        ? await runLeft(session, stdin, callStack)
+        : await runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)
+    return sink === undefined ? result : drained(sink, ...result)
   }
 
   if (kind === NodeKind.SUBSHELL) {
@@ -958,7 +981,7 @@ async function executeNodeBody(
     const subTable = new JobTable(null, jobTable.processes)
     const abort = new AbortController()
     const subDeps: ExecuteNodeDeps = {
-      ...deps,
+      ...captureDeps,
       jobTable: subTable,
       signal:
         deps.signal === undefined ? abort.signal : AbortSignal.any([deps.signal, abort.signal]),
@@ -1003,6 +1026,7 @@ async function executeNodeBody(
               dispatch,
               deps.handed ?? null,
               registry.decisions,
+              sink ?? null,
             )
           result = await runWithSession(childSession, () =>
             asProgram ? runAsProgram(childSession, body) : body(),
@@ -1120,18 +1144,25 @@ async function executeNodeBody(
     const bound = fd0Binding(session)
     for (const child of node.namedChildren) {
       if (child.type === NT.COMMENT) continue
-      const [rawStdout, io, execNode] = await runStatement(
-        stream,
-        child,
-        session,
-        stdin,
-        bound,
-        callStack,
-        jobTable,
-        agentId,
-        deps.handed ?? null,
-        registry.decisions,
-      )
+      let result: Result
+      try {
+        result = await runStatement(
+          stream,
+          child,
+          session,
+          stdin,
+          bound,
+          callStack,
+          jobTable,
+          agentId,
+          deps.handed ?? null,
+          registry.decisions,
+        )
+      } catch (sig) {
+        if (!isUnwinding(sig)) throw sig
+        throw await carried(sig, allStdout.length > 0 ? asyncChain(allStdout) : null, mergedIo)
+      }
+      const [rawStdout, io, execNode] = result
       lastExec = execNode
       const stdout = await finishStatement(rawStdout, io, session, child)
       if (stdout !== null) allStdout.push(stdout)
@@ -1191,6 +1222,14 @@ async function executeNodeBody(
 
   if (kind === NodeKind.FOR || kind === NodeKind.SELECT) {
     const [variable, values, body] = getForParts(node)
+    if (!isValidName(variable)) {
+      const err = new TextEncoder().encode(`bash: \`${variable}': not a valid identifier\n`)
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: err }),
+        new ExecutionNode({ command: kind, exitCode: 1, stderr: err }),
+      ]
+    }
     const resolved = await runInCommandScope(async () => {
       const classified = await expandAndClassify(
         values,
@@ -1226,6 +1265,7 @@ async function executeNodeBody(
         deps.handed ?? null,
         registry.decisions,
         mergeSignals(deps.signal, session.abortSignal),
+        sink,
       )
     }
     return handleFor(

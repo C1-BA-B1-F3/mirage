@@ -232,7 +232,8 @@ def test_which_reports_a_missing_name_through_the_status_only():
 def test_a_shell_function_shadows_a_cli_and_type_a_shows_both():
     ws = _cli_ws()
     assert _out(_exec(ws, "linear() { echo shadowed; }; type -a linear")) == (
-        "linear is a function\nlinear is /usr/bin/linear\n"
+        "linear is a function\nlinear () \n{ \n    echo shadowed\n}\n"
+        "linear is /usr/bin/linear\n"
     )
 
 

@@ -13,6 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { IOResult } from '../../../../io/types.ts'
+import { functionText } from '../../../../shell/printer.ts'
+import type { TSNodeLike } from '../../../../shell/types.ts'
 import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
 import { buildAssocLiteral, buildIndexedLiteral, type ShellArray } from '../../../../shell/array.ts'
@@ -398,12 +400,10 @@ export function readonlyFunctions(session: SessionState, names: readonly string[
 /**
  * Run the function half of `declare`: `-f` / `-F` / `-rf`.
  *
- * `-F NAME` prints the name; `-f NAME` prints `declare -f NAME` where
- * GNU prints the reformatted body (mirage carries no pretty-printer, so
- * the name row is the deliberate stand-in, the same shape `-F` and
- * `readonly -f` list in). A missing name is exit 1 with no message.
- * With `-r` the named functions freeze, as `readonly -f` does. With no
- * names, `-F` lists every function and `-f` lists them the same way.
+ * `-F NAME` prints the name; `-f NAME` prints the body as bash renders it
+ * (`functionText`). A missing name is exit 1 with no message. With `-r` the
+ * named functions freeze, as `readonly -f` does. With no names, `-F` lists
+ * every function as `declare -f NAME` and `-f` prints every body.
  */
 export function handleDeclareFunctions(
   cmd: string,
@@ -421,7 +421,7 @@ export function handleDeclareFunctions(
       continue
     }
     if (flags.has('F')) lines.push(names.length > 0 ? name : `declare -f ${name}`)
-    else lines.push(`declare -f ${name}`)
+    else lines.push(functionText(name, session.functions[name] as TSNodeLike[]))
   }
   const out = new TextEncoder().encode(lines.length > 0 ? `${lines.join('\n')}\n` : '')
   const code = missing ? 1 : 0

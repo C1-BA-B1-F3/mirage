@@ -425,8 +425,9 @@ describe('a whole-file write settles with the cache', () => {
         await out(ws, "printf 'one\\ntwo\\nthree\\n' > /r/b")
         await out(ws, line)
         const held = await ws.cache.get(path)
+        const store = (ws.mount('/r/').vfs as RAMVFS).store
         expect(held).not.toBeNull()
-        expect(DEC.decode(held ?? undefined)).toBe(await out(ws, `cat ${path}`))
+        expect(held).toEqual(store.files.get(path.slice('/r'.length)))
       } finally {
         await ws.close()
       }
@@ -483,7 +484,10 @@ describe('a whole-file write settles with the cache', () => {
 
   for (const [line, paths] of [
     ['split -l 1 /r/b /r/x', ['/r/xaa', '/r/xab', '/r/xac']],
-    ['mkdir /r/out; tar -cf /r/t.tar -C /r b; tar -xf /r/t.tar -C /r/out', ['/r/t.tar', '/r/out/b']],
+    [
+      'mkdir /r/out; tar -cf /r/t.tar -C /r b; tar -xf /r/t.tar -C /r/out',
+      ['/r/t.tar', '/r/out/b'],
+    ],
   ] as const) {
     it(`a dispatched write inside a command fills nothing: ${line}`, async () => {
       // The dispatcher evicts what its write op wrote, so a manager inherited

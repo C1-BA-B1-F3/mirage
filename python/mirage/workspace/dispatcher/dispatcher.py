@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from mirage.cache.context import push_cache_manager
 from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
@@ -70,6 +71,7 @@ from mirage.workspace.dispatcher.constants import (
     DISPATCH_READ_OPS,
     DISPATCH_WRITE_OPS,
     ENTRY_CREATE_OPS,
+    EVICTED_WRITE_OPS,
     FILE_CREATE_OPS,
     HIDDEN_CREATE_OPS,
     LINK_ENTRY_OPS,
@@ -559,6 +561,12 @@ class Dispatcher:
         try:
             if op == "setattr":
                 result = await self._apply_setattr(mount, path, kwargs)
+            elif op in EVICTED_WRITE_OPS:
+                prev = push_cache_manager(None)
+                try:
+                    result = await mount.execute_op(op, path.virtual, **kwargs)
+                finally:
+                    push_cache_manager(prev)
             else:
                 result = await mount.execute_op(op, path.virtual, **kwargs)
         except (FileNotFoundError, NotADirectoryError):

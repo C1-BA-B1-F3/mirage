@@ -30,6 +30,7 @@ from mirage.commands.cli.builtin.git.util import (
     escaped,
     fatal,
     git_bool,
+    split_marked,
     start_point,
     switches,
     without_section,
@@ -155,6 +156,23 @@ def test_the_marker_escapes_every_word_after_it():
 
 def test_only_the_first_marker_counts():
     assert escaped(("rm", "--", "-a", "--", "-b")) == {"-a", "--", "-b"}
+
+
+@pytest.mark.parametrize(
+    "texts,argv,expected",
+    [
+        (("A", "B"), ("diff", "A", "B"), (("A", "B"), ())),
+        (
+            ("A", "B", "kind.txt"),
+            ("diff", "A", "B", "--", "kind.txt"),
+            (("A", "B"), ("kind.txt",)),
+        ),
+        (("x",), ("diff", "--cached", "--", "x"), ((), ("x",))),
+        (("A", "--"), ("show", "A", "--", "--"), (("A",), ("--",))),
+    ],
+)
+def test_the_marker_splits_revisions_from_pathspecs(texts, argv, expected):
+    assert split_marked(texts, argv) == expected
 
 
 def test_an_escaped_operand_is_not_a_switch():

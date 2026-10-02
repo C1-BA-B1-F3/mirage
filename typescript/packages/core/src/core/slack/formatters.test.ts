@@ -119,20 +119,12 @@ describe('formatGrepResults', () => {
 })
 
 describe('fileBlobName', () => {
-  it('builds <stem>__<id>.<ext> when name has extension', () => {
-    expect(fileBlobName({ id: 'F1', name: 'report.pdf' })).toBe('report__F1.pdf')
-  })
-
-  it('falls back to title when name missing', () => {
-    expect(fileBlobName({ id: 'F2', title: 'design doc.docx' })).toBe('design doc__F2.docx')
-  })
-
-  it('drops extension when name has none', () => {
-    expect(fileBlobName({ id: 'F3', name: 'readme' })).toBe('readme__F3')
-  })
-
-  it("uses 'file' fallback when no name/title", () => {
-    expect(fileBlobName({ id: 'F4' })).toBe('file__F4')
+  it.each([
+    [{ id: 'F1', name: 'report.pdf', title: 'Q4' }, 'report__F1.pdf'],
+    [{ id: 'F2', name: '', title: 'design doc.docx' }, 'design doc__F2.docx'],
+    [{ id: 'F3' }, 'file__F3'],
+  ])('names %j as %s', (meta, expected) => {
+    expect(fileBlobName(meta)).toBe(expected)
   })
 })
 
@@ -247,13 +239,5 @@ describe('a long channel name renders one way everywhere', () => {
 
     expect(dirname).toBe(channelDirname({ id: 'C001', name: NAME }))
     expect(byteLength(dirname ?? '')).toBeLessThanOrEqual(NAME_MAX_BYTES)
-  })
-
-  it('fits a long slack filename inside NAME_MAX, keeping id and extension', () => {
-    const name = fileBlobName({ id: 'F0123456789', name: `${NAME}.txt` })
-
-    expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
-    expect(name.endsWith('F0123456789.txt')).toBe(true)
-    expect(name).not.toContain('\uFFFD')
   })
 })

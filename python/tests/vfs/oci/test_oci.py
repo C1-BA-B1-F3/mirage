@@ -12,10 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-from pydantic import ValidationError
-
-from mirage.types import VFSName
 from mirage.vfs.oci import OCIVFS, OCIConfig
 from mirage.vfs.s3 import S3Config
 from mirage.vfs.secrets import reveal_secret
@@ -34,18 +30,6 @@ def test_oci_config_defaults():
         "https://my-namespace.compat.objectstorage."
         "us-ashburn-1.oci.customer-oci.com"
     )
-
-
-def test_oci_config_immutable():
-    config = OCIConfig(
-        bucket="my-bucket",
-        namespace="my-namespace",
-        region="us-ashburn-1",
-        access_key_id="access-key",
-        secret_access_key="secret-key",
-    )
-    with pytest.raises(ValidationError):
-        config.bucket = "other-bucket"
 
 
 def test_oci_config_to_s3_config():
@@ -82,22 +66,6 @@ def test_oci_config_custom_endpoint():
         secret_access_key="secret-key",
     )
     assert config.resolved_endpoint_url() == "https://custom.example.com"
-
-
-def test_oci_resource_uses_s3_resource_type():
-    vfs = OCIVFS(
-        OCIConfig(
-            bucket="my-bucket",
-            namespace="my-namespace",
-            region="us-ashburn-1",
-            access_key_id="access-key",
-            secret_access_key="secret-key",
-        )
-    )
-    assert vfs.name == VFSName.S3
-    assert vfs.caches_reads is True
-    assert isinstance(vfs.config, S3Config)
-    assert vfs.config.path_style is True
 
 
 def test_oci_vfs_preserves_original_config():

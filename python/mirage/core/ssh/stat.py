@@ -45,10 +45,11 @@ async def stat(
         # disk. Ownership can never be applied natively (chown over SFTP
         # needs privileges), so it lives wholly in the namespace overlay;
         # server-side uid/gid numbers would also be machine-dependent
-        # noise.
+        # noise. A directory has no rendered byte length, so its size is
+        # None whatever the remote inode reports.
         return FileStat(
             name=name,
-            size=attrs.size or 0,
+            size=None if is_dir else attrs.size,
             modified=mod_str,
             fingerprint=mod_str or None,
             type=FileType.DIRECTORY if is_dir else FileType.FILE,

@@ -210,28 +210,24 @@ def _graphed(
         graph.update(commit)
         if not step.shown:
             continue
-        bodies = (
-            [
-                body.decode("utf-8", "surrogateescape")
-                for body in commit_output(repo, commit, diff)
-            ]
-            if diff is not None
-            else []
-        )
-        for index, body in enumerate(bodies or [""]):
+        bodies = commit_output(repo, commit, diff) if diff is not None else []
+        blocks = [
+            (
+                commit.parents[index].decode() if len(bodies) > 1 else None,
+                body.decode("utf-8", "surrogateescape"),
+            )
+            for index, body in enumerate(bodies)
+            if body is not None
+        ]
+        for parent, body in blocks or [(None, "")]:
             if shown_one and not terminated:
                 if not missing_newline:
                     out += graph.padding_line()
                 out += "\n"
             shown_one = True
             out += graph.show_commit()
-            parent = (
-                commit.parents[index].decode()
-                if index < len(commit.parents)
-                else None
-            )
             source = ""
-            if len(bodies) > 1 and not user and parent is not None:
+            if not user and parent is not None:
                 cut = length if fmt.kind == "oneline" else FULL_SHA
                 source = f" (from {parent[:cut]})"
             labels = (

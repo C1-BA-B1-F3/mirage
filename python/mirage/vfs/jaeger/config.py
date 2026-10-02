@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class JaegerConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     host: str = "http://localhost:16686"
     default_trace_limit: int = 100

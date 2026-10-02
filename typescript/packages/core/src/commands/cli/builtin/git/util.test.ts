@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { BadConfigValueError } from './errors.ts'
-import { configSection, gitBool, withoutSection } from './util.ts'
+import { configSection, gitBool, splitMarked, withoutSection } from './util.ts'
 import { walk } from '../../walk.ts'
 import { GIT } from './index.ts'
 
@@ -77,6 +77,27 @@ describe('gitBool', () => {
 it('lands a later relative -C under the one before it', () => {
   const result = walk('git', GIT, ['-C', '/repo', '-C', 'docs', 'status'], '/')
   expect(result.groupFlags['-C']).toBe('/repo/docs')
+})
+
+it.each([
+  [
+    ['A', 'B'],
+    ['diff', 'A', 'B'],
+    [['A', 'B'], []],
+  ],
+  [
+    ['A', 'B', 'kind.txt'],
+    ['diff', 'A', 'B', '--', 'kind.txt'],
+    [['A', 'B'], ['kind.txt']],
+  ],
+  [['x'], ['diff', '--cached', '--', 'x'], [[], ['x']]],
+  [
+    ['A', '--'],
+    ['show', 'A', '--', '--'],
+    [['A'], ['--']],
+  ],
+])('splits %j at the marker in %j', (texts, argv, expected) => {
+  expect(splitMarked(texts, argv)).toEqual(expected)
 })
 
 describe('configSection', () => {

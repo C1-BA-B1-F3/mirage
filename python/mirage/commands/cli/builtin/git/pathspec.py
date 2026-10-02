@@ -13,9 +13,18 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import posixpath
+from collections.abc import Sequence
 
-from mirage.commands.cli.builtin.git.errors import OutsideRepositoryError
+from mirage.commands.cli.builtin.git.errors import (
+    EmptyPathspecError,
+    OutsideRepositoryError,
+    UnsupportedPathspecError,
+)
 from mirage.commands.cli.builtin.git.types import RepoLocation
+from mirage.utils.fnmatch import fnmatch
+
+MAGIC = ":"
+SLASH = "/"
 
 
 def absolute_operand(start: str, operand: str) -> str:
@@ -89,3 +98,78 @@ def matched(paths: set[str], target: str) -> set[str]:
         target (str): the operand, repository-relative.
     """
     return {path for path in paths if path == target or under(path, target)}
+
+
+def pathspec_patterns(
+    location: RepoLocation, start: str, operands: Sequence[str]
+) -> tuple[str, ...]:
+    """Pathspec operands as the repository-relative patterns they name.
+
+    A trailing slash survives, because ``docs/`` names only what lies
+    under a directory where ``docs`` also names a file of that name. An
+    empty operand is git's own refusal, and magic (``:(top)``, ``:!``)
+    is refused as unsupported rather than matched as a path.
+
+    Args:
+        location (RepoLocation): the discovered repository.
+        start (str): absolute virtual path git is running in.
+        operands (Sequence[str]): the pathspecs as typed.
+    """
+    patterns = []
+    for operand in operands:
+        if not operand:
+            raise EmptyPathspecError()
+        if operand.startswith(MAGIC):
+            raise UnsupportedPathspecError(operand)
+        pattern = repo_relative(location, start, operand)
+        if pattern and operand.endswith(SLASH):
+            pattern += SLASH
+        patterns.append(pattern)
+    return tuple(patterns)
+
+
+def pathspec_selects(
+    path: str, patterns: Sequence[str], directory: bool = False
+) -> bool:
+    """Whether a repository-relative path is one a pathspec names.
+
+    git's default pathspec: a path it spells, a directory the path lies
+    under (``docs`` and ``docs/`` both name ``docs/a.md``, only ``docs``
+    names a file ``docs``), or a wildcard pattern matching the whole
+    path. A wildcard crosses ``/``, so ``*.c`` finds ``sub/x.c``, and
+    matches bytes, so ``??.txt`` is what names ``é.txt`` (pinned
+    against git 2.54). A tree a diff does not descend into is also named
+    by a pathspec inside it, which is how ``diff-tree A -- dir/x``
+    prints ``dir``.
+
+    Args:
+        path (str): repository-relative path, surrogate-escaped.
+        patterns (Sequence[str]): patterns from ``pathspec_patterns``.
+        directory (bool): whether the path is a tree left undescended.
+    """
+    return any(_selects(path, pattern, directory) for pattern in patterns)
+
+
+def _selects(path: str, pattern: str, directory: bool) -> bool:
+    """Whether one pattern names a path; see ``pathspec_selects``.
+
+    Args:
+        path (str): repository-relative path, surrogate-escaped.
+        pattern (str): one repository-relative pattern.
+        directory (bool): whether the path is a tree left undescended.
+    """
+    stem = pattern.removesuffix(SLASH)
+    if under(path, stem) or path == pattern:
+        return True
+    if directory and (path == stem or under(stem, path)):
+        return True
+    return fnmatch(_byte_text(path), _byte_text(pattern))
+
+
+def _byte_text(text: str) -> str:
+    """A path's bytes one character each, for a byte-wise glob.
+
+    Args:
+        text (str): surrogate-escaped text.
+    """
+    return text.encode("utf-8", "surrogateescape").decode("latin-1")

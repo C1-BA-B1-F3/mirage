@@ -17,7 +17,7 @@ Name = Annotated[
 
 
 class WandbConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
     entities: list[Name] = Field(min_length=1)
     api_key: SecretStr = SecretStr("")
     base_url: str = "https://api.wandb.ai"

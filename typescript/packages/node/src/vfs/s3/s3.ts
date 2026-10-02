@@ -75,7 +75,7 @@ export class S3VFS extends BaseVFS {
   }
 
   override storageLocation(): string {
-    return s3StorageLocation(this.name, this.config)
+    return s3StorageLocation(this.config)
   }
 
   override commands(): readonly RegisteredCommand[] {

@@ -32,7 +32,7 @@ class AirtableConfig(BaseModel):
             and answers a burst with a 30-second penalty.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     token: SecretStr
     base_ids: list[str] | None = None

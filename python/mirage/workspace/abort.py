@@ -68,21 +68,7 @@ async def cancellable_sleep(
     seconds: float,
     cancel: asyncio.Event | None = None,
 ) -> None:
-    if cancel is None:
-        await asyncio.sleep(seconds)
-        return
-    if cancel.is_set():
-        raise MirageAbortError()
-    sleep_task = asyncio.create_task(asyncio.sleep(seconds))
-    cancel_task = asyncio.create_task(cancel.wait())
-    done, pending = await asyncio.wait(
-        {sleep_task, cancel_task},
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-    for p in pending:
-        p.cancel()
-    if cancel_task in done:
-        raise MirageAbortError()
+    await run_cancellable(asyncio.sleep(seconds), cancel)
 
 
 _T = TypeVar("_T")

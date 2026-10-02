@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class NextcloudConfig(BaseModel):
@@ -20,6 +20,6 @@ class NextcloudConfig(BaseModel):
 
     url: str
     username: str | None = None
-    password: str | None = None
+    password: SecretStr | None = None
     verify_ssl: bool = True
     timeout: int = 30

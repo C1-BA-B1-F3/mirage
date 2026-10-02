@@ -255,74 +255,12 @@ export async function handleConnection(
   const [leftStdout, leftIo, leftExec] = await executeNode(left, session, stdin, callStack)
   const children = [leftExec]
 
-  if (op === NT.AND) {
-    const leftBytes = await finishStatement(leftStdout, leftIo, session, left)
-    if (leftIo.exitCode !== 0) {
-      // The failing command is left of the final `&&`, which bash
-      // exempts from `set -e`. The list ran only its left side, so the
-      // list boundary reports that pipeline.
-      session.errexitImmune = true
-      carryStatus(session)
-      return [
-        leftBytes,
-        leftIo,
-        new ExecutionNode({ op: '&&', exitCode: leftIo.exitCode, children }),
-      ]
-    }
-    let rightStdout: ByteSource | null
-    let rightIo: IOResult
-    let rightExec: ExecutionNode
-    try {
-      ;[rightStdout, rightIo, rightExec] = await executeNode(
-        right,
-        session,
-        statementStdin(session, stdin, bound),
-        callStack,
-      )
-    } catch (err) {
-      if (isUnwinding(err)) throw await carried(err, leftBytes, leftIo)
-      throw err
-    }
-    children.push(rightExec)
-    const rightBytes = await materialize(rightStdout)
-    const merged = await leftIo.merge(rightIo)
-    const combined = asyncChain([leftBytes, rightBytes])
-    return [combined, merged, new ExecutionNode({ op: '&&', exitCode: merged.exitCode, children })]
-  }
-
-  if (op === NT.OR) {
-    const leftBytes = await finishStatement(leftStdout, leftIo, session, left)
-    if (leftIo.exitCode === 0) {
-      carryStatus(session)
-      return [
-        leftBytes,
-        leftIo,
-        new ExecutionNode({ op: '||', exitCode: leftIo.exitCode, children }),
-      ]
-    }
-    let rightStdout: ByteSource | null
-    let rightIo: IOResult
-    let rightExec: ExecutionNode
-    try {
-      ;[rightStdout, rightIo, rightExec] = await executeNode(
-        right,
-        session,
-        statementStdin(session, stdin, bound),
-        callStack,
-      )
-    } catch (err) {
-      if (isUnwinding(err)) throw await carried(err, leftBytes, leftIo)
-      throw err
-    }
-    children.push(rightExec)
-    const rightBytes = await materialize(rightStdout)
-    const merged = await leftIo.merge(rightIo)
-    const combined = asyncChain([leftBytes, rightBytes])
-    return [combined, merged, new ExecutionNode({ op: '||', exitCode: merged.exitCode, children })]
-  }
-
-  // ; (semicolon) or other: run both regardless
   const leftBytes = await finishStatement(leftStdout, leftIo, session, left)
+  if ((op === NT.AND && leftIo.exitCode !== 0) || (op === NT.OR && leftIo.exitCode === 0)) {
+    if (op === NT.AND) session.errexitImmune = true
+    carryStatus(session)
+    return [leftBytes, leftIo, new ExecutionNode({ op, exitCode: leftIo.exitCode, children })]
+  }
   let rightStdout: ByteSource | null
   let rightIo: IOResult
   let rightExec: ExecutionNode

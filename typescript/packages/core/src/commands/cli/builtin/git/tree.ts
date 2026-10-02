@@ -22,7 +22,7 @@ const SPACE = 0x20
 const NUL = 0x00
 const OID_BYTES = 20
 const SHORT_TREE_MODE = '40000'
-const TREE_MODE = '040000'
+export const TREE_MODE = '040000'
 const DEC = new TextDecoder()
 
 /** One tree entry, flattened to a repository-relative path. */

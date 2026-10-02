@@ -3,6 +3,7 @@ from opendal.types import EntryMode
 
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, ResourceType
+from mirage.core.nextcloud.util import raw_path_of
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
@@ -15,9 +16,7 @@ async def stat(
     index: IndexCacheStore = NULL_INDEX,
 ) -> FileStat:
     original_prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    raw = path.virtual
-    if original_prefix and raw.startswith(original_prefix):
-        raw = raw[len(original_prefix) :] or "/"
+    raw = raw_path_of(path)
     stripped = raw.strip("/")
     if not stripped:
         return FileStat(name="/", type=FileType.DIRECTORY)

@@ -745,7 +745,7 @@ class VFSWriteOp(str, Enum):
     APPEND = "append"
 
 
-class VFSName(str, Enum):
+class VFSName(StrEnum):
     DISK = "disk"
     S3 = "s3"
     RAM = "ram"
@@ -770,6 +770,19 @@ class VFSName(str, Enum):
     SSH = "ssh"
     REDIS = "redis"
     GCS = "gcs"
+    OCI = "oci"
+    R2 = "r2"
+    SUPABASE = "supabase"
+    MINIO = "minio"
+    CEPH = "ceph"
+    SEAWEEDFS = "seaweedfs"
+    WASABI = "wasabi"
+    BACKBLAZE = "backblaze"
+    DIGITALOCEAN = "digitalocean"
+    TENCENT = "tencent"
+    ALIYUN = "aliyun"
+    SCALEWAY = "scaleway"
+    QINGSTOR = "qingstor"
     EMAIL = "email"
     DIFY = "dify"
     MEM0 = "mem0"

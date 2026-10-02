@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class NotionConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     api_key: SecretStr
     base_url: str = "https://api.notion.com/v1"

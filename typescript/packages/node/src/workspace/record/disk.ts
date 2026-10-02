@@ -189,8 +189,13 @@ export class DiskRecordClient {
       if ((e as NodeJS.ErrnoException).code === 'EEXIST') return null
       throw e
     }
-    await fh.write(String(process.pid))
-    return fh
+    try {
+      await fh.write(String(process.pid))
+      return fh
+    } catch (error) {
+      await this.releaseLock(fh, lockPath)
+      throw error
+    }
   }
 
   // True when the lock is gone or was stale and removed; false when a

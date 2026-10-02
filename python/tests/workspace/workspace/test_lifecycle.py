@@ -1128,3 +1128,40 @@ async def test_restored_workspace_leaves_borrowed_mounts_open(
     finally:
         await replica.close()
         await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_close_releases_later_resources_after_multiple_errors(
+    monkeypatch,
+):
+    vfs = RAMVFS()
+    ws = Workspace(mounts={"/data": vfs}, runtimes=[])
+    closed = []
+
+    async def runtime_close():
+        closed.append("runtime")
+        raise ValueError("runtime close failed")
+
+    async def vfs_close():
+        closed.append("vfs")
+        raise RuntimeError("vfs close failed")
+
+    async def store_close():
+        closed.append("store")
+
+    def processes_stop():
+        closed.append("processes")
+        raise OSError("process cancellation failed")
+
+    monkeypatch.setattr(ws.processes, "stop", processes_stop)
+    monkeypatch.setattr(ws._runtimes, "close", runtime_close)
+    monkeypatch.setattr(vfs, "close", vfs_close)
+    monkeypatch.setattr(ws._state_store, "close", store_close)
+    with pytest.raises(BaseExceptionGroup) as error:
+        await ws.close()
+    assert closed == ["processes", "runtime", "vfs", "store"]
+    assert len(error.value.exceptions) == 3
+    with pytest.raises(BaseExceptionGroup) as repeated:
+        await ws.close()
+    assert repeated.value is error.value
+    assert closed == ["processes", "runtime", "vfs", "store"]

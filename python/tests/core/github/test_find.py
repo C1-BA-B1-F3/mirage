@@ -145,7 +145,16 @@ async def test_find_mtime_excludes_every_entry_a_git_tree_has_no_times():
 
 
 @pytest.mark.asyncio
-async def test_find_empty_matches_empty_files_and_directories():
+@pytest.mark.parametrize(
+    "start,expected",
+    [
+        ("/", ["/empty-dir", "/empty.txt"]),
+        ("/empty-dir", ["/empty-dir"]),
+        ("/src", []),
+    ],
+)
+async def test_find_empty_matches_empty_files_and_directories(start, expected):
+    # A directory holding only a submodule is one: the tree drops gitlinks.
     accessor = _accessor()
     accessor.tree["empty.txt"] = TreeEntry(
         path="empty.txt", type="blob", sha="empty-file", size=0
@@ -154,6 +163,6 @@ async def test_find_empty_matches_empty_files_and_directories():
         path="empty-dir", type="tree", sha="empty-dir", size=None
     )
 
-    results = await find(accessor, _spec("/"), empty=True)
+    results = await find(accessor, _spec(start), empty=True)
 
-    assert results == ["/empty-dir", "/empty.txt"]
+    assert results == expected

@@ -14,10 +14,11 @@
 
 import asyncio
 import concurrent.futures
-import functools
 import logging
 import secrets
+import threading
 import time
+from collections import deque
 from enum import Enum
 from typing import Any, Awaitable, Callable
 
@@ -50,7 +51,10 @@ class JobEntry:
         self.submitted_at: float = time.time()
         self.started_at: float | None = None
         self.finished_at: float | None = None
-        self._future: concurrent.futures.Future[Any] | None = None
+        self._task: asyncio.Task[Any] | None = None
+        self._lock = threading.Lock()
+        self._canceled = False
+        self._settled = False
         self._done_event: asyncio.Event = asyncio.Event()
 
 
@@ -59,21 +63,43 @@ class JobTable:
 
     Tracks both sync and background jobs so the CLI can query
     progress, wait, and cancel uniformly. Sync calls register the job
-    in pending/running and complete it before returning.
+    in pending/running and complete it before returning. Completed records
+    expire after one hour and are bounded to the latest 1024;
+    running jobs are never evicted. Pruning runs on completion and access.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, max_completed: int = 1024, retention_seconds: float = 3600
+    ) -> None:
+        if max_completed < 1 or retention_seconds <= 0:
+            raise ValueError("job retention limits must be positive")
         self._jobs: dict[str, JobEntry] = {}
+        self._completed: deque[str] = deque()
+        self._max_completed = max_completed
+        self._retention_seconds = retention_seconds
+
+    def _prune(self) -> None:
+        cutoff = time.time() - self._retention_seconds
+        while self._completed:
+            job = self._jobs[self._completed[0]]
+            if (
+                len(self._completed) <= self._max_completed
+                and job.finished_at is not None
+                and job.finished_at > cutoff
+            ):
+                break
+            del self._jobs[self._completed.popleft()]
 
     def __contains__(self, job_id: str) -> bool:
+        self._prune()
         return job_id in self._jobs
 
     def get(self, job_id: str) -> JobEntry:
-        if job_id not in self._jobs:
-            raise KeyError(job_id)
+        self._prune()
         return self._jobs[job_id]
 
     def list(self, workspace_id: str | None = None) -> list[JobEntry]:
+        self._prune()
         if workspace_id is None:
             return list(self._jobs.values())
         return [
@@ -87,70 +113,77 @@ class JobTable:
         schedule: Callable[[Awaitable[Any]], concurrent.futures.Future[Any]],
         coro_factory: Callable[[], Awaitable[Any]],
     ) -> JobEntry:
-        """Register a job and start running it on the workspace loop.
+        """Register work; completion is published only after its coroutine unwinds.
 
         Args:
-            workspace_id (str): workspace this job belongs to.
-            command (str): user-visible command string for display.
-            schedule (Callable): function that takes a coroutine and
-                returns a ``concurrent.futures.Future`` representing
-                its execution on the workspace loop. Typically
-                ``functools.partial(asyncio.run_coroutine_threadsafe,
-                loop=runner.loop)`` -- but the runner's
-                ``call``-equivalent is fine too.
-            coro_factory (Callable): zero-arg callable that builds the
-                coroutine to schedule. Called once.
-
-        Returns:
-            JobEntry: the registered entry. Inspect ``entry._future``
-                to await or cancel.
+            workspace_id (str): owning workspace.
+            command (str): display command.
+            schedule (Callable): schedules a coroutine on the workspace loop.
+            coro_factory (Callable): creates the work on that loop.
         """
-        job_id = new_job_id()
-        entry = JobEntry(job_id, workspace_id, command)
-        self._jobs[job_id] = entry
-        coro = coro_factory()
-        fut = schedule(coro)
-        entry._future = fut
+        self._prune()
+        entry = JobEntry(new_job_id(), workspace_id, command)
+        self._jobs[entry.id] = entry
         entry.status = JobStatus.RUNNING
         entry.started_at = time.time()
-        loop = asyncio.get_running_loop()
-        callback = functools.partial(self._dispatch_done, entry, loop)
-        fut.add_done_callback(callback)
+        run = self._run(entry, coro_factory, asyncio.get_running_loop())
+        try:
+            schedule(run)
+        except Exception as exc:
+            run.close()
+            self._finish(
+                entry, JobStatus.FAILED, None, f"{type(exc).__name__}: {exc}"
+            )
         return entry
 
-    def _dispatch_done(
+    async def _run(
         self,
         entry: JobEntry,
-        loop: asyncio.AbstractEventLoop,
-        fut: concurrent.futures.Future[Any],
+        factory: Callable[[], Awaitable[Any]],
+        owner: asyncio.AbstractEventLoop,
     ) -> None:
-        loop.call_soon_threadsafe(self._on_done, entry, fut)
+        with entry._lock:
+            entry._task = asyncio.current_task()
+            canceled = entry._canceled
+        status, result, error = JobStatus.DONE, None, None
+        try:
+            if canceled:
+                raise asyncio.CancelledError()
+            result = await factory()
+        except asyncio.CancelledError:
+            status = JobStatus.CANCELED
+        except Exception as exc:
+            status, error = JobStatus.FAILED, f"{type(exc).__name__}: {exc}"
+        finally:
+            with entry._lock:
+                entry._settled = True
+                if entry._canceled:
+                    status = JobStatus.CANCELED
+            owner.call_soon_threadsafe(
+                self._finish, entry, status, result, error
+            )
 
-    def _on_done(
-        self, entry: JobEntry, fut: concurrent.futures.Future[Any]
+    def _finish(
+        self,
+        entry: JobEntry,
+        status: JobStatus,
+        result: Any,
+        error: str | None,
     ) -> None:
+        entry.status = status
+        entry.result = result if status == JobStatus.DONE else None
+        entry.error = error
+        entry._task = None
         entry.finished_at = time.time()
-        if fut.cancelled():
-            entry.status = JobStatus.CANCELED
-        else:
-            exc = fut.exception()
-            if exc is not None:
-                entry.status = JobStatus.FAILED
-                entry.error = f"{type(exc).__name__}: {exc}"
-            else:
-                entry.status = JobStatus.DONE
-                entry.result = fut.result()
         entry._done_event.set()
+        self._completed.append(entry.id)
+        self._prune()
 
     async def wait(
         self, job_id: str, timeout: float | None = None
     ) -> JobEntry:
         entry = self.get(job_id)
-        if entry.status in (
-            JobStatus.DONE,
-            JobStatus.FAILED,
-            JobStatus.CANCELED,
-        ):
+        if entry.finished_at is not None:
             return entry
         try:
             await asyncio.wait_for(entry._done_event.wait(), timeout=timeout)
@@ -160,12 +193,13 @@ class JobTable:
 
     def cancel(self, job_id: str) -> bool:
         entry = self.get(job_id)
-        if entry.status in (
-            JobStatus.DONE,
-            JobStatus.FAILED,
-            JobStatus.CANCELED,
-        ):
+        if entry.finished_at is not None:
             return False
-        if entry._future is None:
-            return False
-        return entry._future.cancel()
+        with entry._lock:
+            if entry._settled or entry._canceled:
+                return False
+            entry._canceled = True
+            task = entry._task
+        if task is not None:
+            task.get_loop().call_soon_threadsafe(task.cancel)
+        return True

@@ -695,7 +695,7 @@ async def execute_line(
         # succeeded.
         scope.close()
         reset_current_session(session_token)
-        await ws._session_mgr.flush()
+        await ws._session_mgr.flush(session.session_id)
         ws._ops.records.extend(scope.records)
         # bash adds a line to history only when it is non-empty
         # (`shell_input_line[0]`): a blank line is skipped, while a

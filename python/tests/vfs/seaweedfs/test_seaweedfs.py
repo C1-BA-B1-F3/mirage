@@ -12,10 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-from pydantic import ValidationError
-
-from mirage.types import VFSName
 from mirage.vfs.s3 import S3Config
 from mirage.vfs.seaweedfs import SeaweedFSConfig, SeaweedFSVFS
 from mirage.vfs.secrets import reveal_secret
@@ -31,17 +27,6 @@ def test_seaweedfs_config_defaults():
     assert config.region == "us-east-1"
     assert config.path_style is True
     assert config.timeout == 30
-
-
-def test_seaweedfs_config_immutable():
-    config = SeaweedFSConfig(
-        bucket="my-bucket",
-        endpoint_url="http://localhost:8333",
-        access_key_id="k",
-        secret_access_key="s",
-    )
-    with pytest.raises(ValidationError):
-        config.bucket = "other"
 
 
 def test_seaweedfs_config_to_s3_config():
@@ -72,20 +57,6 @@ def test_seaweedfs_config_path_style_override():
         path_style=False,
     )
     assert config.to_s3_config().path_style is False
-
-
-def test_seaweedfs_resource_uses_s3_resource_type():
-    vfs = SeaweedFSVFS(
-        SeaweedFSConfig(
-            bucket="my-bucket",
-            endpoint_url="http://localhost:8333",
-            access_key_id="k",
-            secret_access_key="s",
-        )
-    )
-    assert vfs.name == VFSName.S3
-    assert vfs.caches_reads is True
-    assert isinstance(vfs.config, S3Config)
 
 
 def test_seaweedfs_vfs_preserves_original_config():

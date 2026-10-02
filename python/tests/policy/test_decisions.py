@@ -18,7 +18,9 @@ import dataclasses
 import pytest
 
 from mirage.policy.decisions import (
+    ABANDONED,
     Decisions,
+    answered,
     ask_rule,
     covers,
     decision_id,
@@ -891,3 +893,35 @@ async def test_a_nested_lines_claims_are_handed_to_the_line_it_ran_from():
     assert ledger.list("s") == ()
     with pytest.raises(ValueError):
         ledger.hand_up("s", HandOff())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("external", [True, False])
+async def test_answered_joins_prompt_cleanup(external):
+    entered, cleanup, release, finished = (asyncio.Event() for _ in range(4))
+    cancel = asyncio.Event()
+
+    async def prompt():
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup.set()
+            await release.wait()
+            finished.set()
+
+    task = asyncio.create_task(answered(prompt, cancel))
+    await entered.wait()
+    if external:
+        task.cancel()
+    else:
+        cancel.set()
+    await cleanup.wait()
+    assert not task.done()
+    release.set()
+    if external:
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        assert await task is ABANDONED
+    assert finished.is_set()

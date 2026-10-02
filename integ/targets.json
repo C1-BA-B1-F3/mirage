@@ -2989,7 +2989,8 @@
         "keeper": "keeper",
         "opener": "opener",
         "pruner": "pruner",
-        "speaker": "speaker"
+        "speaker": "speaker",
+        "linkwalled": "linkwalled"
       },
       "profile": "default",
       "profiles": {
@@ -3221,6 +3222,32 @@
           "commands": {
             "allow": [
               "echo"
+            ]
+          }
+        },
+        "linkwalled": {
+          "paths": {
+            "hide": [
+              "/scratch/lw/real"
+            ]
+          },
+          "commands": {
+            "allow": [
+              "sed",
+              "awk"
+            ],
+            "deny": [
+              {
+                "reason": "kept behind the link",
+                "commands": {
+                  "sed": [
+                    "/scratch/lw/flink"
+                  ],
+                  "awk": [
+                    "/scratch/lw/secret"
+                  ]
+                }
+              }
             ]
           }
         }

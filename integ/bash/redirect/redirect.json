@@ -1375,7 +1375,6 @@
         "disk",
         "databricks",
         "databricks-prefix",
-        "nextcloud",
         "gdrive",
         "gdrive-folder"
       ],
@@ -1396,7 +1395,6 @@
         "disk",
         "databricks",
         "databricks-prefix",
-        "nextcloud",
         "gdrive",
         "gdrive-folder"
       ],
@@ -1417,7 +1415,6 @@
         "disk",
         "databricks",
         "databricks-prefix",
-        "nextcloud",
         "gdrive",
         "gdrive-folder"
       ],

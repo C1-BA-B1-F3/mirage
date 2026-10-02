@@ -13,17 +13,3 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 export { createMirageMcpServer, serveMirageMcp, type MirageMcpServerOptions } from './server.ts'
-export {
-  MirageToolOperations,
-  type MirageToolOperationsOptions,
-  type ToolResult,
-} from '../tool_operations.ts'
-export { FileVersionTracker, StaleMirageFileError } from '../file_version.ts'
-export {
-  EDIT_DESCRIPTION,
-  EXECUTE_DESCRIPTION,
-  GREP_DESCRIPTION,
-  LS_DESCRIPTION,
-  READ_DESCRIPTION,
-  WRITE_DESCRIPTION,
-} from '../tool_descriptions.ts'

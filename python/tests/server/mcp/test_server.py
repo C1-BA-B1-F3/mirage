@@ -4,7 +4,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS, CallToolResult, Tool
 
 from mirage import RAMVFS, MountMode, Workspace
-from mirage.agents.mcp.server import MirageMcpServer, create_mirage_mcp_server
+from mirage.server.mcp.server import MirageMcpServer, create_mirage_mcp_server
 
 
 async def list_tools(server: MirageMcpServer) -> list[Tool]:

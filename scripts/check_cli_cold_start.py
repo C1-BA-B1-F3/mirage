@@ -47,7 +47,7 @@ PY_HEAVY = (
 
 # `.` is the barrel and is *meant* to be heavy; `./bin/daemon` is a program,
 # not a module anyone imports for a symbol.
-UNGATED_SUBPATHS = (".", "./package.json", "./bin/daemon")
+UNGATED_SUBPATHS = (".", "./package.json", "./bin/daemon", "./mcp")
 
 # One pattern for every static form, because the first version of this gate
 # used `[^;\n]*?` and so matched only single-line imports -- blind to the
@@ -133,7 +133,7 @@ def gated_entries() -> dict[str, Path]:
 
     The server's light subpaths, plus the CLI binary itself -- the CLI is
     what pays the cold start, and its own three deferrals
-    (`mirage-agents/mcp`, `mirage-node/config`, `yaml`) are ungated
+    (`mirage-server/mcp`, `mirage-node/config`, `yaml`) are ungated
     without it.
 
     Returns:

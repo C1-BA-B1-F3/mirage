@@ -48,7 +48,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@struktoai/mirage-agents": "workspace:*",
     "@struktoai/mirage-core": "workspace:*",
     "@struktoai/mirage-node": "workspace:*",
     "@struktoai/mirage-server": "workspace:*",

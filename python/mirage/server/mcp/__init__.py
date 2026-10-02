@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.mcp.server import (
+from mirage.server.mcp.server import (
     MirageMcpServer,
     create_mirage_mcp_server,
     serve_mirage_mcp,

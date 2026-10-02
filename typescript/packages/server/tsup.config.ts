@@ -27,6 +27,7 @@ export default defineConfig({
     'src/auth/storage.ts',
     'src/ssh/config.ts',
     'src/ssh/constants.ts',
+    'src/mcp/index.ts',
   ],
   format: ['esm'],
   dts: {

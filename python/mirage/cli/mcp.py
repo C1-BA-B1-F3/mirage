@@ -60,10 +60,10 @@ async def run_mcp_server(
         stale_write_protection (bool): False lets an agent overwrite a
             file that changed since it read it.
     """
-    # Imported here, as the TypeScript twin awaits mirage-agents/mcp:
+    # Imported here, as the TypeScript twin awaits mirage-server/mcp:
     # every other `mirage` verb would otherwise pay for the agents
     # package and the whole workspace on each spawn.
-    from mirage.agents.mcp.server import serve_mirage_mcp
+    from mirage.server.mcp.server import serve_mirage_mcp
 
     workspace = await build_workspace_from_config(resolve_mcp_config(config))
     try:

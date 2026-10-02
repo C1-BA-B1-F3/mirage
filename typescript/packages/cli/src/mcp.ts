@@ -48,7 +48,7 @@ async function runMcpServer(config: string | undefined, options: McpCommandOptio
   // Loaded before the workspace exists: this command always serves, so
   // deferring it past construction buys nothing and a failed import there
   // would leak a live workspace (and any FUSE mount it opened).
-  const { serveMirageMcp } = await import('@struktoai/mirage-agents/mcp')
+  const { serveMirageMcp } = await import('@struktoai/mirage-server/mcp')
   const workspace = await buildMcpWorkspace(configPath)
   try {
     await serveMirageMcp(workspace, {

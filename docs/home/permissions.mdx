@@ -139,13 +139,15 @@ reason, `find: cannot delete '<path>': <reason>`, as it does for a `paths`
 rule's refusal at the op door. A rule with `paths` and no command also
 reaches the VFS op door, so `ws.vfs` and FUSE mounts cannot go around it.
 A rule that names a command binds that command's own reads and writes,
-judged on the path the op actually reaches: every linked directory above
-the name followed, and the final link too for an op that follows one.
-For a path a command opens on its own (awk's `getline` or `print >`,
-sed's `w`), a name behind a missing directory or a link into
-hidden space answers as missing first, as GNU does. A path typed on the
-line is judged by the gate before the command runs, so the rule's reason
-answers there even where the path is unreachable. A CLI's or interpreter's
+judged on the path as the command spelled it and on the path the op
+actually reaches: every linked directory above the name followed, and the
+final link too for an op that follows one. For a path a command opens on
+its own (awk's `print >`, sed's `w`), a name behind a missing directory
+answers "No such file or directory" first, as GNU does, and a link into
+hidden space answers the same way, since a hidden path does not exist for
+the session. A path typed on the line is judged by the gate before the
+command runs, so the rule's reason answers there even where the path is
+unreachable. A CLI's or interpreter's
 own file access (`git`, `python3`), and a shell builtin's (`getfattr`,
 `setfattr`, `ln`, `readlink`), is held only to its operands and to `paths`
 rules: `getfattr -R` reads the attributes of a child a

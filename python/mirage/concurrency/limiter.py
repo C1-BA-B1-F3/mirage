@@ -50,8 +50,8 @@ async def run_blocking(
 
     Args:
         fn (Callable): synchronous operation; receives the caller's context.
-        args: positional arguments to the operation.
-        kwargs: keyword arguments to the operation.
+        args (_P.args): positional arguments to the operation.
+        kwargs (_P.kwargs): keyword arguments to the operation.
     """
     worker = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
     try:

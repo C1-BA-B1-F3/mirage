@@ -420,7 +420,7 @@ async def run_prepared_line(
     here; the other arguments are ``execute_line``'s.
 
     Args:
-        ws: the workspace the line runs in.
+        ws (Workspace): the workspace the line runs in.
         command (str): the line's text.
         session (SessionState): the session the line acquired.
     """

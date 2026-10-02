@@ -14,6 +14,8 @@
 
 import asyncio
 import os
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -49,6 +51,28 @@ async def test_a_name_that_is_not_a_filename_round_trips(tmp_path: Path):
     await client.put("/ram/a b.txt", {"target": "x"})
     assert (await client.get("/ram/a b.txt"))[0] == {"target": "x"}
     assert await client.list_names() == ["/ram/a b.txt"]
+
+
+def _finished_pid() -> int:
+    child = subprocess.Popen([sys.executable, "-c", ""])
+    child.wait()
+    return child.pid
+
+
+@pytest.mark.asyncio
+async def test_a_lock_left_by_a_writer_that_is_gone_is_taken_at_once(
+    tmp_path: Path,
+):
+    client = DiskRecordClient(str(tmp_path), "")
+    Path(client.path("k") + ".lock").write_text(str(_finished_pid()))
+    assert await client.cas_put("k", {"generation": 1}, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_lock_held_by_a_live_writer_is_kept(tmp_path: Path):
+    client = DiskRecordClient(str(tmp_path), "")
+    Path(client.path("k") + ".lock").write_text(str(os.getpid()))
+    assert not await client.cas_put("k", {"generation": 1}, 0)
 
 
 @pytest.mark.asyncio

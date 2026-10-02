@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
 from collections.abc import Iterable
 from itertools import count
@@ -56,14 +57,32 @@ def _acquire_lock(lock_path: str) -> int | None:
     return fd
 
 
+def _process_alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _reclaim_stale_lock(lock_path: str) -> bool:
     """True when the lock is gone or was stale and removed; False when a
-    live writer still holds it."""
+    live writer still holds it. A lock naming a pid that no longer runs
+    on this host is stale at once, so a crashed writer does not hold up
+    the next start; any other lock goes stale after LOCK_STALE_SECONDS."""
     try:
         age = time.time() - os.stat(lock_path).st_mtime
+        with open(lock_path, encoding="utf-8") as f:
+            holder = f.read()
     except FileNotFoundError:
         return True
-    if age <= LOCK_STALE_SECONDS:
+    if age <= LOCK_STALE_SECONDS and (
+        not holder.isdecimal() or _process_alive(int(holder))
+    ):
         return False
     logger.warning("reclaiming stale lock %s (age %.1fs)", lock_path, age)
     try:

@@ -163,7 +163,7 @@ async def test_cas_lock_held_by_live_writer_loses(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     await store.set("s", {"session_id": "s", "generation": 1})
     lock = tmp_path / "sessions" / "s.json.lock"
-    lock.write_bytes(b"9999999")
+    lock.write_text(str(os.getpid()))
     assert (
         await store.cas_set("s", {"session_id": "s", "generation": 2}, 1)
         is False

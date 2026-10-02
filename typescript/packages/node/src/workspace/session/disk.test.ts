@@ -92,7 +92,7 @@ describe('DiskSessionStore', () => {
   it('loses to a live lock and wins after release', async () => {
     await store.set('s', { session_id: 's', generation: 1 })
     const lock = join(root, 'sessions', 's.json.lock')
-    writeFileSync(lock, '9999999')
+    writeFileSync(lock, String(process.pid))
     expect(await store.casSet('s', { session_id: 's', generation: 2 }, 1)).toBe(false)
     rmSync(lock)
     expect(await store.casSet('s', { session_id: 's', generation: 2 }, 1)).toBe(true)

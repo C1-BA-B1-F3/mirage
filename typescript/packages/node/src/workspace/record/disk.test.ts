@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -35,6 +36,32 @@ it('releases the lock and handle when writing the owner fails', async () => {
     await expect(fs.stat(lock)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(handle.stat()).rejects.toMatchObject({ code: 'EBADF' })
     await client.unlock('record', await client.lock('record'))
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+function finishedPid(): number {
+  return spawnSync(process.execPath, ['-e', '']).pid
+}
+
+it('takes a lock left by a writer that is gone at once', async () => {
+  const root = await fs.mkdtemp(join(tmpdir(), 'mirage-record-'))
+  try {
+    const client = new DiskRecordClient(root, '')
+    await fs.writeFile(`${client.recordPath('k')}.lock`, String(finishedPid()))
+    expect(await client.casPut('k', { generation: 1 }, 0)).toBe(true)
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+it('keeps a fresh lock held by a live writer', async () => {
+  const root = await fs.mkdtemp(join(tmpdir(), 'mirage-record-'))
+  try {
+    const client = new DiskRecordClient(root, '')
+    await fs.writeFile(`${client.recordPath('k')}.lock`, String(process.pid))
+    expect(await client.casPut('k', { generation: 1 }, 0)).toBe(false)
   } finally {
     await fs.rm(root, { recursive: true, force: true })
   }

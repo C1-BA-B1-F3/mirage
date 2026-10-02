@@ -16,6 +16,9 @@ import asyncio
 import errno
 import os
 import stat
+import subprocess
+import sys
+from pathlib import Path
 
 import asyncssh
 import pytest
@@ -79,6 +82,20 @@ async def test_a_start_waiting_on_the_lock_reads_the_winner(tmp_path):
     path.write_bytes(winner.export_private_key())
     await records.unlock(path.name, lock)
     assert _public(await loading) == _public(winner)
+
+
+@pytest.mark.asyncio
+async def test_a_lock_left_by_a_killed_start_does_not_hold_up_the_next(
+    tmp_path,
+):
+    path = tmp_path / "host_key"
+    child = subprocess.Popen([sys.executable, "-c", ""])
+    child.wait()
+    lock = DiskRecordClient(str(tmp_path), "").path(path.name) + ".lock"
+    Path(lock).write_text(str(child.pid))
+    key = await asyncio.wait_for(load_host_key(path), 2)
+    assert _public(asyncssh.read_private_key(str(path))) == _public(key)
+    assert [p.name for p in tmp_path.iterdir()] == ["host_key"]
 
 
 @pytest.mark.asyncio

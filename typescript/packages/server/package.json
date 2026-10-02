@@ -105,8 +105,7 @@
     "fastify": "^5.12.5",
     "isomorphic-git": "^1.38.1",
     "jose": "^6.2.3",
-    "rate-limiter-flexible": "^11.2.0",
-    "zod": "^4.0.0"
+    "rate-limiter-flexible": "^11.2.0"
   },
   "peerDependencies": {
     "ssh2": "^1.16.0"

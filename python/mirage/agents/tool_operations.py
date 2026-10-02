@@ -267,7 +267,7 @@ class MirageToolOperations:
         return ToolResult(io_to_str(io), io.exit_code > 1)
 
     async def glob(self, pattern: str, path: str = "/") -> ToolResult:
-        """Find files whose name matches a pattern.
+        """Find files, not directories, whose name matches a pattern.
 
         Only the pattern's last path component is matched, as ``find
         -name`` matches it, so ``src/**/*.py`` finds every ``.py`` file
@@ -283,7 +283,7 @@ class MirageToolOperations:
         name = pattern.rsplit("/", 1)[-1]
         return _io_result(
             await self._ws.shell(
-                f"find {shlex.quote(path)} -name {shlex.quote(name)}",
+                f"find {shlex.quote(path)} -type f -name {shlex.quote(name)}",
                 session_id=self._session_id,
             )
         )

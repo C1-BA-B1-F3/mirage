@@ -87,4 +87,11 @@ describe('glob', () => {
     const result = await ops.glob('src/**/*.ts')
     expect((result.content[0]?.text ?? '').trim()).toBe('/src/deep/b.ts')
   })
+
+  it('skips directories', async () => {
+    await ops.write('/cache.ts/inner.txt', 'x')
+    await ops.write('/src/a.ts', 'a')
+    const result = await ops.glob('*.ts')
+    expect((result.content[0]?.text ?? '').trim()).toBe('/src/a.ts')
+  })
 })

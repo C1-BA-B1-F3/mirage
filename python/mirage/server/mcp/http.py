@@ -34,6 +34,7 @@ from starlette.types import Receive, Scope, Send
 from mirage import __version__
 from mirage.server.mcp.server import MirageMcpServer
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
+from mirage.workspace.session.session import SessionState
 
 MCP_PATH = "/v1/workspaces/{workspace_id}/mcp"
 
@@ -43,7 +44,7 @@ class McpDoor:
 
     The endpoint is stateless: each request runs in the workspace's
     default session, or the one ``?session_id=`` names, as ``/execute``
-    picks its session. One tool table per workspace and session outlives
+    picks its session. One tool table per workspace and live session outlives
     the requests, so the read one request stamps guards the edit the next
     one makes. The SDK's session manager starts on the first request, so
     the app serves MCP with or without ASGI lifespan events.
@@ -55,7 +56,8 @@ class McpDoor:
     def __init__(self, registry: WorkspaceRegistry) -> None:
         self._registry = registry
         self._served: dict[
-            tuple[str, str], tuple[WorkspaceEntry, MirageMcpServer]
+            tuple[str, str],
+            tuple[WorkspaceEntry, SessionState, MirageMcpServer],
         ] = {}
         self.server: Server[dict[str, Any]] = Server(
             "mirage",
@@ -114,10 +116,13 @@ class McpDoor:
         Raises:
             LookupError: the workspace or the session does not exist.
         """
-        for key, (entry, _) in list(self._served.items()):
+        for key, (entry, session, _) in list(self._served.items()):
             if (
                 key[0] not in self._registry
                 or self._registry.get(key[0]) is not entry
+                or all(
+                    s is not session for s in entry.runner.ws.list_sessions()
+                )
             ):
                 del self._served[key]
         workspace_id = request.path_params["workspace_id"]
@@ -130,17 +135,20 @@ class McpDoor:
             request.query_params.get("session_id") or ws.default_session_id
         )
         key = (workspace_id, session_id)
-        if not any(s.session_id == session_id for s in ws.list_sessions()):
+        session = next(
+            (s for s in ws.list_sessions() if s.session_id == session_id), None
+        )
+        if session is None:
             self._served.pop(key, None)
             raise LookupError("session not found")
         served = self._served.get(key)
-        if served is None:
+        if served is None or served[1] is not session:
             server = MirageMcpServer(
                 ws, session_id=session_id, runner=entry.runner
             )
-            self._served[key] = (entry, server)
+            self._served[key] = (entry, session, server)
             return server
-        return served[1]
+        return served[2]
 
     async def _context_target(
         self, ctx: ServerRequestContext[dict[str, Any]]

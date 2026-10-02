@@ -260,4 +260,16 @@ describe('the mcp subsystem', () => {
     })
     expect(run).toEqual({ stderr: 'mirage: no such workspace: nope\n', code: 1 })
   })
+
+  it('closes the session of a channel that ends at once', async () => {
+    const h = await startHarness()
+    const channel = await subsystem(await connect(h), MCP_SUBSYSTEM)
+    channel.resume()
+    const done = closed(channel)
+    channel.end()
+    await done
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const ids = h.entry.runner.ws.listSessions().map((s) => s.sessionId)
+    expect(ids.filter((id) => id.startsWith('ssh_'))).toEqual([])
+  })
 })

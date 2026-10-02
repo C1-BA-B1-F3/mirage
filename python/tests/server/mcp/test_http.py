@@ -160,3 +160,40 @@ async def test_the_endpoint_sits_behind_auth(tmp_path, monkeypatch):
                 tools = (await client.list_tools()).tools
     assert refused.status_code == 401
     assert len(tools) == 7
+
+
+@pytest.mark.asyncio
+async def test_a_recreated_session_starts_a_fresh_tool_table(tmp_path):
+    async with daemon(tmp_path) as (base, app):
+        workspace_id = await create_workspace(base)
+        sessions = f"/v1/workspaces/{workspace_id}/sessions"
+        url = f"{base}/v1/workspaces/{workspace_id}/mcp?session_id=agent"
+        async with httpx.AsyncClient(base_url=base) as http:
+            await http.post(sessions, json={"session_id": "agent"})
+            await call(url, "write", {"path": "/a.txt", "content": "first"})
+            await call(url, "read", {"path": "/a.txt"})
+            runner = app.state.registry.get(workspace_id).runner
+            await runner.call(runner.ws.vfs.write("/a.txt", b"external"))
+            await http.delete(f"{sessions}/agent")
+            await http.post(sessions, json={"session_id": "agent"})
+        edited = await call(
+            url,
+            "edit",
+            {"path": "/a.txt", "old_string": "external", "new_string": "x"},
+        )
+    assert edited.is_error is False
+
+
+@pytest.mark.asyncio
+async def test_a_write_larger_than_a_mebibyte_goes_through(tmp_path):
+    async with daemon(tmp_path) as (base, app):
+        workspace_id = await create_workspace(base)
+        url = f"{base}/v1/workspaces/{workspace_id}/mcp"
+        content = "x" * (2 * 1024 * 1024)
+        written = await call(
+            url, "write", {"path": "/big.txt", "content": content}
+        )
+        runner = app.state.registry.get(workspace_id).runner
+        stored = await runner.call(runner.ws.vfs.read("/big.txt"))
+    assert written.is_error is False
+    assert len(stored) == len(content)

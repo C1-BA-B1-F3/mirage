@@ -84,9 +84,7 @@ async def serve_mcp(
             open_session(runner.ws, session_id, login_env(process), profile)
         )
     except Exception as exc:
-        logger.warning(
-            "mcp: cannot open a session on %s: %r", workspace_id, exc
-        )
+        logger.debug("mcp: cannot open a session on %s: %r", workspace_id, exc)
         process.stderr.write(f"mirage: cannot open a session: {exc}\n")
         process.exit(1)
         return

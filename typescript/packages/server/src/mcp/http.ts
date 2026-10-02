@@ -12,25 +12,33 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { createMcpHandler, type McpHttpHandler } from '@modelcontextprotocol/server'
+import {
+  createMcpHandler,
+  DEFAULT_MAX_REQUEST_BODY_SIZE,
+  type McpHttpHandler,
+} from '@modelcontextprotocol/server'
 import { MirageToolOperations } from '@struktoai/mirage-agents/tool_operations'
+import type { SessionState } from '@struktoai/mirage-core/workspace/session/session'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { WorkspaceEntry, WorkspaceRegistry } from '../registry.ts'
 import { createMirageMcpServer } from './server.ts'
 
-export const MCP_PATH = '/v1/workspaces/:workspaceId/mcp'
+const MCP_PATH = '/v1/workspaces/:workspaceId/mcp'
 
 /**
  * Serves every workspace's tools over MCP's streamable HTTP.
  *
  * The endpoint is stateless: each request runs in the workspace's default
  * session, or the one `?sessionId=` names, as `/execute` picks its
- * session. One tool table per workspace and session outlives the requests,
+ * session. One tool table per workspace and live session outlives the requests,
  * so the read one request stamps guards the edit the next one makes; the
  * SDK builds a server per request around it.
  */
 export class McpDoor {
-  private readonly served = new Map<string, { entry: WorkspaceEntry; handler: McpHttpHandler }>()
+  private readonly served = new Map<
+    string,
+    { entry: WorkspaceEntry; session: SessionState; handler: McpHttpHandler }
+  >()
 
   constructor(private readonly registry: WorkspaceRegistry) {}
 
@@ -48,15 +56,18 @@ export class McpDoor {
     await ws.ensureSessionsLoaded()
     const sessionId = req.query.sessionId ?? ws.defaultSessionId
     const key = `${workspaceId}\u0000${sessionId}`
-    if (!ws.listSessions().some((s) => s.sessionId === sessionId)) {
+    const session = ws.listSessions().find((s) => s.sessionId === sessionId)
+    if (session === undefined) {
       await this.forget(key)
       return reply.status(404).send({ detail: 'session not found' })
     }
     let served = this.served.get(key)
-    if (served === undefined) {
+    if (served?.session !== session) {
+      await this.forget(key)
       const operations = new MirageToolOperations(ws, { sessionId })
       served = {
         entry,
+        session,
         handler: createMcpHandler(() => createMirageMcpServer(ws, { operations })),
       }
       this.served.set(key, served)
@@ -87,9 +98,11 @@ export class McpDoor {
   private async dropStale(): Promise<void> {
     for (const [key, served] of [...this.served]) {
       const id = served.entry.id
-      if (!this.registry.has(id) || this.registry.get(id) !== served.entry) {
-        await this.forget(key)
-      }
+      const live =
+        this.registry.has(id) &&
+        this.registry.get(id) === served.entry &&
+        served.entry.runner.ws.listSessions().includes(served.session)
+      if (!live) await this.forget(key)
     }
   }
 
@@ -110,6 +123,7 @@ export function registerMcpRoutes(app: FastifyInstance, registry: WorkspaceRegis
   app.route<{ Params: { workspaceId: string }; Querystring: { sessionId?: string } }>({
     method: ['GET', 'POST', 'DELETE'],
     url: MCP_PATH,
+    bodyLimit: DEFAULT_MAX_REQUEST_BODY_SIZE,
     handler: (req, reply) => door.handle(req, reply),
   })
   return door

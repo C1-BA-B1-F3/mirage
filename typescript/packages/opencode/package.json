@@ -52,7 +52,7 @@
     "@struktoai/mirage-server": "workspace:*"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.18.34"
+    "@opencode-ai/plugin": "^1.18.3"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.34",

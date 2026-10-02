@@ -178,14 +178,17 @@ export class MirageToolOperations {
   }
 
   /**
-   * Find files whose name matches a pattern. Only the pattern's last path
+   * Find files, not directories, whose name matches a pattern. Only the pattern's last path
    * component is matched, as `find -name` matches it, so a pattern with
    * directories in it finds every file of that name under `path`.
    */
   async glob(pattern: string, path = '/'): Promise<ToolResult> {
     const name = pattern.split('/').pop() ?? pattern
     return ioResult(
-      await this.ws.shell(`find ${shQuote(path)} -name ${shQuote(name)}`, this.shellOptions),
+      await this.ws.shell(
+        `find ${shQuote(path)} -type f -name ${shQuote(name)}`,
+        this.shellOptions,
+      ),
     )
   }
 }

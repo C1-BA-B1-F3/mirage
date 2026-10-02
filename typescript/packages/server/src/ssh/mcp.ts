@@ -38,6 +38,10 @@ export async function serveMcp(
   }
   const entry = registry.get(request.username)
   const sessionId = newSessionId()
+  const ended = new Promise<void>((resolve) => {
+    channel.once('end', resolve)
+    channel.once('close', resolve)
+  })
   try {
     await openSession(entry.runner.ws, sessionId, loginEnv(request), keyProfile(request.profile))
   } catch (err) {
@@ -48,10 +52,6 @@ export async function serveMcp(
     channel.end()
     return
   }
-  const ended = new Promise<void>((resolve) => {
-    channel.once('end', resolve)
-    channel.once('close', resolve)
-  })
   const server = createMirageMcpServer(entry.runner.ws, { sessionId })
   await server.connect(new StdioServerTransport(channel, channel))
   await ended

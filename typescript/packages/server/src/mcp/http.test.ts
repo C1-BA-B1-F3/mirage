@@ -163,4 +163,46 @@ describe('the MCP door over HTTP', () => {
     expect(refused.status).toBe(401)
     expect((await client.listTools()).tools).toHaveLength(7)
   })
+
+  it('starts a fresh tool table for a recreated session', async () => {
+    const { base, app } = await daemon()
+    const id = await createWorkspace(base)
+    const sessions = `${base}/v1/workspaces/${id}/sessions`
+    const json = { 'content-type': 'application/json' }
+    const url = `${base}/v1/workspaces/${id}/mcp?sessionId=agent`
+    await fetch(sessions, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ sessionId: 'agent' }),
+    })
+    await call(url, 'write', { path: '/a.txt', content: 'first' })
+    await call(url, 'read', { path: '/a.txt' })
+    await app.registry.get(id).runner.ws.vfs.writeFile('/a.txt', 'external')
+    await fetch(`${sessions}/agent`, { method: 'DELETE' })
+    await fetch(sessions, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ sessionId: 'agent' }),
+    })
+    const edited = await call(url, 'edit', {
+      path: '/a.txt',
+      old_string: 'external',
+      new_string: 'x',
+    })
+    expect(edited).toBe('Edited: /a.txt (1 occurrence(s))')
+  })
+
+  it('takes a write larger than a mebibyte', async () => {
+    const { base, app } = await daemon()
+    const id = await createWorkspace(base)
+    const content = 'x'.repeat(2 * 1024 * 1024)
+    const written = await call(`${base}/v1/workspaces/${id}/mcp`, 'write', {
+      path: '/big.txt',
+      content,
+    })
+    expect(written).toBe('Written: /big.txt')
+    expect((await app.registry.get(id).runner.ws.vfs.readFileText('/big.txt')).length).toBe(
+      content.length,
+    )
+  })
 })

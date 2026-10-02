@@ -192,3 +192,11 @@ async def test_glob_matches_the_last_component(ops):
     await ops.write("/src/deep/b.py", "b")
     result = await ops.glob("src/**/*.py")
     assert result.text.split() == ["/src/deep/b.py"]
+
+
+@pytest.mark.asyncio
+async def test_glob_skips_directories(ops):
+    await ops.write("/cache.py/inner.txt", "x")
+    await ops.write("/src/a.py", "a")
+    result = await ops.glob("*.py")
+    assert result.text.split() == ["/src/a.py"]

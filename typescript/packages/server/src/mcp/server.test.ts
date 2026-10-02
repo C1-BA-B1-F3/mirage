@@ -87,11 +87,7 @@ describe('createMirageMcpServer', () => {
       replace_all: { type: 'boolean' },
     })
     expect(['read', 'ls', 'grep', 'glob'].map(readOnly)).toEqual([true, true, true, true])
-    expect(['shell', 'write', 'edit'].map(readOnly)).toEqual([
-      undefined,
-      undefined,
-      undefined,
-    ])
+    expect(['shell', 'write', 'edit'].map(readOnly)).toEqual([undefined, undefined, undefined])
     await client.close()
     await server.close()
     await workspace.close()

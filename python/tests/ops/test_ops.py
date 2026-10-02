@@ -94,6 +94,15 @@ class TestStat:
         with pytest.raises(FileNotFoundError):
             run(ops.stat("/data/nope"))
 
+    def test_stat_reports_a_dangling_link_itself_under_nofollow(self):
+        ops, _ = make_ops()
+        run(ops.mkdir("/data/dir"))
+        run(ops.symlink("/data/dir/ghost", "missing.txt"))
+        with pytest.raises(FileNotFoundError):
+            run(ops.stat("/data/dir/ghost"))
+        row = run(ops.stat("/data/dir/ghost", nofollow=True))
+        assert row.type == FileType.SYMLINK
+
 
 class TestReaddir:
     def test_readdir(self):

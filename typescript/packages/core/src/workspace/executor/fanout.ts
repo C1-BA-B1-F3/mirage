@@ -35,23 +35,18 @@ import { parseFindExpression, type FindExpr } from '../../commands/builtin/find_
 import { CommandTimeoutError, FindParseError, UsageError } from '../../commands/errors.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
 import type { Cmd, DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
-import {
-  crossOpts,
-  flatten,
-  readdirOp,
-  statOp,
-  streamOp,
-  runSeparator,
-} from '../../commands/builtin/generic/crossmount/utils.ts'
+import { runSeparator } from '../../commands/builtin/generic/crossmount/utils.ts'
+import { DISPATCH_BUILDERS } from '../../commands/builtin/generic/crossmount/relay/relay.ts'
+import { runDispatch } from '../../commands/builtin/generic_bind/dispatch.ts'
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
 import { combinedExit } from '../../commands/builtin/generic/crossmount/fanout/exit.ts'
-import { runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
+import { joinRuns, runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
 import { mergeDuBlocks } from '../../commands/builtin/generic/crossmount/fanout/du.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { filenameMode } from '../../commands/builtin/generic/grep.ts'
-import { labelFlags, rgGeneric, walksDescendantMounts } from '../../commands/builtin/generic/rg.ts'
+import { labelFlags, walksDescendantMounts } from '../../commands/builtin/generic/rg.ts'
 import { FlagView, flagOccurrences } from '../../commands/spec/flag_view.ts'
 import { specOf } from '../../commands/spec/builtins.ts'
 
@@ -457,35 +452,22 @@ export async function fanOutTraversal(
   dispatch?: DispatchFn,
 ): Promise<Result> {
   signal?.throwIfAborted()
-  if (
-    cmdName === 'rg' &&
-    dispatch !== undefined &&
-    ['max_depth', 'sort', 'sortr', 'sort_files'].some(
-      (name) => new FlagView(flagKwargs, specOf('rg')).raw(name) !== undefined,
-    )
-  ) {
+  const dispatchBuilder = DISPATCH_BUILDERS.get(cmdName as Cmd)
+  if (dispatchBuilder !== undefined && dispatch !== undefined) {
     let stdout: ByteSource | null = null
     let io = new IOResult()
     try {
-      const result = await rgGeneric(
-        flatten([...paths]),
-        [...texts],
-        {
-          ...crossOpts(flagKwargs),
-          cwd,
-          stdin,
-          ...(signal !== undefined ? { signal } : {}),
-          ...(ns === undefined ? {} : { ns }),
-          dispatch,
-        },
-        statOp(dispatch),
-        readdirOp(dispatch),
-        streamOp(dispatch),
+      ;[stdout, io] = await runDispatch(
+        dispatchBuilder,
+        paths,
+        texts,
+        flagKwargs,
+        dispatch,
+        cwd,
+        ns,
+        stdin,
+        signal,
       )
-      if (result !== null) {
-        io = result[1]
-        stdout = await materialize(result[0])
-      }
     } catch (err) {
       if (!(err instanceof UsageError)) throw err
       io = new IOResult({
@@ -495,9 +477,14 @@ export async function fanOutTraversal(
     }
     io.producer = {
       command: cmdName,
-      prefixes: [primaryMount, ...allowedDescendants(registry, paths[0]?.virtual ?? cwd)].map(
-        (m) => m.prefix,
-      ),
+      prefixes: [
+        ...new Set([
+          primaryMount.prefix,
+          ...paths
+            .filter((p) => p.walkError === null)
+            .flatMap((p) => allowedDescendants(registry, p.virtual).map((m) => m.prefix)),
+        ]),
+      ],
       declared: null,
     }
     return [
@@ -734,7 +721,15 @@ export async function fanOutTraversal(
         else first.push(...rows)
       }
       stdout = null
-    } else if (mount === primaryMount && descendantPrefixes.length > 0 && stdout !== null) {
+    } else if (
+      mount === primaryMount &&
+      descendantPrefixes.length > 0 &&
+      stdout !== null &&
+      cmdName !== 'grep' &&
+      cmdName !== 'rg'
+    ) {
+      // grep and rg never walk into a mount below their own
+      // (mountParentReaddir), so there is nothing of theirs to drop.
       stdout = await filterUnderPrefixes(stdout, descendantPrefixes, cmdName)
     }
     if (stdout !== null) {
@@ -801,16 +796,12 @@ export async function fanOutTraversal(
     }
     combined = new TextEncoder().encode(rows.map((p) => p.rawPath || p.virtual).join('\n') + '\n')
   } else if (allStdout.length > 0) {
-    const parts = allStdout.map((d) => {
-      const s = new TextDecoder().decode(d).replace(/\n+$/, '')
-      return s
-    })
     // `ls -R` separates directory groups with a blank line, and a
     // per-mount block is one more group; grep and rg put `--` between one
     // file's context and the next file's; every other format is a plain
     // line stream.
-    const sep = cmdName === 'ls' ? '\n\n' : '\n' + runSeparator(cmdName, flagKwargs)
-    combined = new TextEncoder().encode(parts.filter((s) => s !== '').join(sep) + '\n')
+    const sep = cmdName === 'ls' ? '\n' : runSeparator(cmdName, flagKwargs)
+    combined = joinRuns(allStdout, sep)
   }
   const quiet =
     (cmdName === 'grep' && new FlagView(flagKwargs, specOf('grep')).asBool('q')) ||

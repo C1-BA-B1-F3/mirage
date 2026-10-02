@@ -771,7 +771,7 @@ describe('fanOutTraversal context across a nested mount', () => {
 
   it.each([['rg -A1 hit /base'], ['grep -r -A1 hit /base']])('separates %s', async (line) => {
     expect(await runLine(line)).toBe(
-      '/base/top.txt:hit\n/base/top.txt-y\n--\n/base/inner/real.txt:hit\n/base/inner/real.txt-z\n',
+      '/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n',
     )
   })
   it.each([
@@ -787,7 +787,7 @@ describe('fanOutTraversal context across a nested mount', () => {
     ],
     ["--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l", ''],
     ['-t txt -T txt -t txt --sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
-    ['-t txt -T txt -t txt -l', '/base/top.txt\n/base/inner/real.txt\n'],
+    ['-t txt -T txt -t txt -l', '/base/inner/real.txt\n/base/top.txt\n'],
   ])('applies rg %s across the whole tree', async (options, expected) => {
     expect(await runLine(`rg ${options} hit /base`)).toBe(expected)
   })

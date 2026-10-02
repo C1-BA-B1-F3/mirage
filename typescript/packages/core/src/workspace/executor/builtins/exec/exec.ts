@@ -389,8 +389,7 @@ export function stdoutToStderr(node: TSNodeLike): boolean {
  * the statement's recorded line; its first word names the writer in a
  * write error. `written` is the statement's output in order; what went to
  * the terminal through a copy keeps its place. Returns what is left for the
- * terminal: the bytes a copy took there first, then what the bindings send
- * there. Mirrors Python's divert_statement.
+ * terminal, in the order it was written. Mirrors Python's divert_statement.
  */
 export async function divertStatement(
   dispatch: DispatchFn,
@@ -400,57 +399,67 @@ export async function divertStatement(
   command: string,
   stdoutDiverted = false,
 ): Promise<Written[]> {
-  const plain = (channel: Channel): Uint8Array =>
-    concat(written.filter(([c, , kept]) => c === channel && !kept).map(([, d]) => d))
-  const stdout = plain(Channel.STDOUT)
-  const outParts: Uint8Array[] = []
-  const errParts: Uint8Array[] = []
+  const rest: Written[] = []
   let failed = false
-  if (stdout.byteLength > 0) {
-    const [out, err, unwritable] = await route(
-      dispatch,
-      session,
-      session.execStdout,
-      stdout,
-      TO_STDOUT,
-    )
-    if (out !== null) outParts.push(out)
-    if (err !== null) errParts.push(err)
-    failed = unwritable
+  let unwritable = false
+  for (const [channel, data, kept] of runs(written)) {
+    if (kept) rest.push([channel, data, true])
+    else if (await routed(dispatch, session, channel, data, rest)) {
+      failed ||= channel === Channel.STDOUT
+      unwritable ||= channel === Channel.STDERR
+    }
   }
-  let stderr = plain(Channel.STDERR)
   if (failed) {
     const first = command.trim().split(/\s+/)[0]
     const name = first === undefined || first === '' ? 'bash' : first
-    stderr = concat([
-      stderr,
-      new TextEncoder().encode(`${name}: write error: Bad file descriptor\n`),
-    ])
+    io.exitCode = 1
+    const line = new TextEncoder().encode(`${name}: write error: Bad file descriptor\n`)
+    await routed(dispatch, session, Channel.STDERR, line, rest)
+  } else if (unwritable && stdoutDiverted && io.exitCode === 0) {
+    // The statement's own output was what could not be written, so the write
+    // error is its failure (bash's `echo hi >&2` under `exec 2>&0` reports
+    // 1). A diagnostic that could not be delivered leaves the status alone:
+    // GNU find still exits 0 after `-exec nosuch`, ls keeps its 2 and cat its
+    // 1, since the failed write is of a message, not of the work.
     io.exitCode = 1
   }
-  if (stderr.byteLength > 0) {
-    const [out, err, unwritable] = await route(
-      dispatch,
-      session,
-      session.execStderr,
-      stderr,
-      TO_STDERR,
-    )
-    if (out !== null) outParts.push(out)
-    if (err !== null) errParts.push(err)
-    // The statement's own output was what could not be written, so the
-    // write error is its failure (bash's `echo hi >&2` under `exec 2>&0`
-    // reports 1). A diagnostic that could not be delivered leaves the
-    // status alone: GNU find still exits 0 after `-exec nosuch`, ls keeps
-    // its 2 and cat its 1, since the failed write is of a message, not of
-    // the work.
-    if (unwritable && stdoutDiverted && io.exitCode === 0) io.exitCode = 1
+  return rest
+}
+
+/** Adjacent chunks of one stream and one kind joined, in order. */
+function runs(written: readonly Written[]): Written[] {
+  const out: Written[] = []
+  for (const [channel, data, kept] of written) {
+    const last = out[out.length - 1]
+    if (last?.[0] === channel && last[2] === kept)
+      out[out.length - 1] = [channel, concat([last[1], data]), kept]
+    else out.push([channel, data, kept])
   }
-  return [
-    ...written.filter(([, , kept]) => kept),
-    ...outParts.map((data): Written => [Channel.STDOUT, data, false]),
-    ...errParts.map((data): Written => [Channel.STDERR, data, false]),
-  ]
+  return out
+}
+
+/** Route one run of output through its stream's binding, adding what
+ * reaches the terminal to `rest`; true when the write failed. Mirrors
+ * Python's _routed. */
+async function routed(
+  dispatch: DispatchFn,
+  session: SessionState,
+  channel: Channel,
+  data: Uint8Array,
+  rest: Written[],
+): Promise<boolean> {
+  const stdout = channel === Channel.STDOUT
+  const binding = stdout ? session.execStdout : session.execStderr
+  const [out, err, failed] = await route(
+    dispatch,
+    session,
+    binding,
+    data,
+    stdout ? TO_STDOUT : TO_STDERR,
+  )
+  if (out !== null) rest.push([Channel.STDOUT, out, false])
+  if (err !== null) rest.push([Channel.STDERR, err, false])
+  return failed
 }
 
 async function appendTo(

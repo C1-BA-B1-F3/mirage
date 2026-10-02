@@ -131,7 +131,8 @@ export function mountParentReaddir(
 ): (p: string) => Promise<string[]> {
   if (mounts === undefined || mounts === null) return readdir
   return async (p: string) => {
-    if (rstripSlash(mounts.rootOf(p)).startsWith(rstripSlash(home) + '/')) return []
+    const below = mounts.descendants(home === '' ? '/' : home)
+    if (below.some((root) => p === root || p.startsWith(rstripSlash(root) + '/'))) return []
     try {
       return await readdir(p)
     } catch (e) {

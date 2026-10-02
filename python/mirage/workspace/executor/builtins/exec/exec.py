@@ -13,6 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import logging
+from itertools import groupby
+from operator import itemgetter
 from typing import Any
 
 from mirage.io import IOResult
@@ -535,8 +537,8 @@ async def divert_statement(
     stderr through stderr's own binding and makes the statement's
     status 1. An unwritable stderr fails only a statement whose own
     output went there; a lost diagnostic leaves the status the command
-    earned. Returns what is left for the terminal: the bytes a copy
-    took there first, then what the bindings send there.
+    earned. Returns what is left for the terminal, in the order it was
+    written.
 
     Args:
         dispatch (DispatchFn): op dispatcher.
@@ -551,50 +553,65 @@ async def divert_statement(
             stderr (``>&2``), so an unwritable stderr is the writer's
             failure.
     """
-    stdout = b"".join(
-        data
-        for channel, data, kept in written
-        if channel == Channel.STDOUT and not kept
-    )
-    out_parts: list[bytes] = []
-    err_parts: list[bytes] = []
-    failed = False
-    if stdout:
-        out, err, failed = await _route(
-            dispatch, session, session.exec_stdout, stdout, TO_STDOUT
-        )
-        out_parts.extend(x for x in (out,) if x)
-        err_parts.extend(x for x in (err,) if x)
-    stderr = b"".join(
-        data
-        for channel, data, kept in written
-        if channel == Channel.STDERR and not kept
-    )
+    rest: list[Written] = []
+    failed = unwritable = False
+    for (channel, kept), run in groupby(written, key=itemgetter(0, 2)):
+        data = b"".join(chunk[1] for chunk in run)
+        if kept:
+            rest.append((channel, data, True))
+        elif await _routed(dispatch, session, channel, data, rest):
+            failed = failed or channel == Channel.STDOUT
+            unwritable = unwritable or channel == Channel.STDERR
     if failed:
         words = command.split()
-        stderr += (
+        line = (
             f"{words[0] if words else 'bash'}: write error: "
             "Bad file descriptor\n"
         ).encode()
         io.exit_code = 1
-    if stderr:
-        out, err, unwritable = await _route(
-            dispatch, session, session.exec_stderr, stderr, TO_STDERR
-        )
-        out_parts.extend(x for x in (out,) if x)
-        err_parts.extend(x for x in (err,) if x)
-        if unwritable and stdout_diverted and io.exit_code == 0:
-            # The statement's own output was what could not be written,
-            # so the write error is its failure (bash's `echo hi >&2`
-            # under `exec 2>&0` reports 1). A diagnostic that could not
-            # be delivered leaves the status alone: GNU find still exits
-            # 0 after `-exec nosuch`, ls keeps its 2 and cat its 1, since
-            # the failed write is of a message, not of the work.
-            io.exit_code = 1
-    rest = [chunk for chunk in written if chunk[2]]
-    rest += [(Channel.STDOUT, data, False) for data in out_parts]
-    rest += [(Channel.STDERR, data, False) for data in err_parts]
+        await _routed(dispatch, session, Channel.STDERR, line, rest)
+    elif unwritable and stdout_diverted and io.exit_code == 0:
+        # The statement's own output was what could not be written, so
+        # the write error is its failure (bash's `echo hi >&2` under
+        # `exec 2>&0` reports 1). A diagnostic that could not be
+        # delivered leaves the status alone: GNU find still exits 0
+        # after `-exec nosuch`, ls keeps its 2 and cat its 1, since the
+        # failed write is of a message, not of the work.
+        io.exit_code = 1
     return rest
+
+
+async def _routed(
+    dispatch: DispatchFn,
+    session: SessionState,
+    channel: Channel,
+    data: bytes,
+    rest: list[Written],
+) -> bool:
+    """Route one run of output through its stream's binding, adding what
+    reaches the terminal to ``rest``; True when the write failed.
+
+    Args:
+        dispatch (DispatchFn): op dispatcher.
+        session (SessionState): shell session state.
+        channel (Channel): the stream the statement wrote on.
+        data (bytes): the bytes, in the order they were written.
+        rest (list[Written]): what is left for the terminal so far.
+    """
+    stdout = channel == Channel.STDOUT
+    out, err, failed = await _route(
+        dispatch,
+        session,
+        session.exec_stdout if stdout else session.exec_stderr,
+        data,
+        TO_STDOUT if stdout else TO_STDERR,
+    )
+    rest.extend(
+        (stream, part, False)
+        for stream, part in ((Channel.STDOUT, out), (Channel.STDERR, err))
+        if part
+    )
+    return failed
 
 
 async def _append(

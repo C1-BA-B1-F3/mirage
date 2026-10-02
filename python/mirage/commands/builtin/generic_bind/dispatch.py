@@ -33,6 +33,10 @@ def _mounted(accessor: Accessor) -> bool:
     return True
 
 
+def _none_below(path: str) -> list[str]:
+    return []
+
+
 def dispatch_io(dispatch: DispatchFn) -> CommandIO:
     """Bind generic read operations to the workspace's virtual namespace.
 
@@ -97,15 +101,22 @@ async def run_dispatch(
         flag_kwargs (dict[str, FlagValue]): the parsed flags.
         dispatch (DispatchFn): policy-checked operation dispatcher.
         cwd (str): the shell's working directory.
-        ns (NamespaceView | None): name-plane facts; the mount table is
-            dropped, since the dispatcher crosses mounts itself.
+        ns (NamespaceView | None): name-plane facts. The dispatcher lists
+            the mounts below a directory itself, so no descendant is left
+            to avoid; where each mount begins stays for
+            ``--one-file-system``.
         stdin (ByteSource | None): the command's input.
     """
+    if ns is not None and ns.mounts is not None:
+        mounts = replace(
+            ns.mounts, descendants=_none_below, visible_descendants=_none_below
+        )
+        ns = replace(ns, mounts=mounts)
     opts = CommandOpts(
         flags=flag_kwargs,
         stdin=stdin,
         cwd=PathSpec(virtual=cwd, directory=cwd, vfs_path=cwd.strip("/")),
-        ns=replace(ns, mounts=None) if ns is not None else None,
+        ns=ns,
         dispatch=dispatch,
     )
     result = await builder.fn(

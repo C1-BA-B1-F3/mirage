@@ -134,6 +134,17 @@ describe('a reserved word where a command starts', () => {
     const parse = (source: string) => parser.parse(source)
     expect(findSyntaxError(parser.parse(cmd), parse, new Set([alias]))).toBe(word)
   })
+
+  // `echo F; fi` is all alias text for `alias fi='echo F; fi'` (end 10); for
+  // `alias fi='echo F;'` used as `fi fi`, the last `fi` is the command's own
+  // word (end 7), which bash 5.2.37 expands again.
+  it.each([
+    [10, 'fi'],
+    [7, null],
+  ])('reads fi in alias text ending at %i as %j', (end, word) => {
+    const fi = new Set(['fi'])
+    expect(findSyntaxError(parser.parse('echo F; fi'), undefined, fi, [fi, end])).toBe(word)
+  })
 })
 
 describe('findUnterminatedBacktick', () => {

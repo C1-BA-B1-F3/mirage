@@ -146,14 +146,16 @@ export function aliasValue(session: SessionState, name: string, mark: AliasMark)
  * The command line an aliased head word rewrites to, or null. The value
  * replaces the word; a value ending in a blank asks for the next word
  * to be checked too (bash's `alias sudo='sudo '` rule); the result is a
- * fresh line the parser reads again.
+ * fresh line the parser reads again. Returned with the length of the alias
+ * text it opens with and the aliases that text came from; the rest of the
+ * line is the command's own.
  */
 export function aliasCommandText(
   session: SessionState,
   name: string,
   rest: string,
   mark: AliasMark,
-): string | null {
+): [string, number, ReadonlySet<string>] | null {
   const value = aliasValue(session, name, mark)
   if (value === null) return null
   const seen = new Set([name])
@@ -170,7 +172,7 @@ export function aliasCommandText(
     tailSource = stripped.slice(match[0].length)
   }
   const tail = tailSource.trim()
-  return tail !== '' ? `${out} ${tail}` : out
+  return [tail !== '' ? `${out} ${tail}` : out, out.length, seen]
 }
 
 /** The `alias` arm; the row marks where the definition was made. */

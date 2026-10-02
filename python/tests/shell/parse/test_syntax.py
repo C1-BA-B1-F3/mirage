@@ -298,3 +298,12 @@ def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command(
     # Pinned against bash 5.2.37, which takes the reserved word first
     # inside `$(...)` and a process substitution.
     assert find_syntax_error(parse(command), frozenset({alias})) == word
+
+
+@pytest.mark.parametrize("end, word", [(10, "fi"), (7, None)])
+def test_an_alias_name_is_reserved_inside_its_own_text(end, word):
+    # `echo F; fi` is all alias text for `alias fi='echo F; fi'` (end 10);
+    # for `alias fi='echo F;'` used as `fi fi`, the last `fi` is the
+    # command's own word (end 7), which bash 5.2.37 expands again.
+    fi = frozenset({"fi"})
+    assert find_syntax_error(parse("echo F; fi"), fi, (fi, end)) == word

@@ -167,12 +167,14 @@ async def execute_command(
         source = get_text(node)
         base = node.start_byte
         rest = source[head_node.end_byte - base :]
-        rewritten = alias_command_text(session, head, rest, mark)
-        if rewritten is not None:
-            line = source[: head_node.start_byte - base] + rewritten
+        rewrite = alias_command_text(session, head, rest, mark)
+        if rewrite is not None:
+            rewritten, own, names = rewrite
+            start = head_node.start_byte - base
+            line = source[:start] + rewritten
             ast = parse(line)
             offending = find_syntax_error(
-                ast, expanding_aliases(session) - {head}
+                ast, expanding_aliases(session), (names, start + own)
             )
             if offending is not None:
                 io = syntax_error_result(offending, ast)

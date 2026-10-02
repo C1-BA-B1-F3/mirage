@@ -187,7 +187,7 @@ def expanding_aliases(session: SessionState) -> frozenset[str]:
 
 def alias_command_text(
     session: SessionState, name: str, rest: str, mark: AliasMark
-) -> str | None:
+) -> tuple[str, int, frozenset[str]] | None:
     """The command line an aliased head word rewrites to, or None.
 
     The alias text replaces the word; a value ending in a blank asks for
@@ -201,6 +201,11 @@ def alias_command_text(
         name (str): the head word.
         rest (str): the source text after the head word, as typed.
         mark (AliasMark): the parse and row of the use.
+
+    Returns:
+        tuple[str, int, frozenset[str]] | None: the line, the length of
+        the alias text it opens with, and the aliases that text came
+        from; the rest of the line is the command's own.
     """
     value = alias_value(session, name, mark)
     if value is None:
@@ -219,7 +224,7 @@ def alias_command_text(
         out += nxt
         rest = stripped[match.end() :]
     tail = rest.strip()
-    return f"{out} {tail}" if tail else out
+    return (f"{out} {tail}" if tail else out), len(out), frozenset(seen)
 
 
 async def alias_builtin(call: BuiltinCall) -> Result:

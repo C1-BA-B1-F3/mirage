@@ -181,12 +181,17 @@ const RESERVED_CLOSERS = new Set([
  * bash 5.2 refuses the line at `fi`, as it does `done`, `then` and the rest
  * when they stand where a command starts. Inside `$(...)` and a process
  * substitution, bash 5.2 takes such a word as reserved even when an alias
- * spells it. Mirrors Python's _stray_reserved_words.
+ * spells it. `own` names the aliases whose own text the line opens with and
+ * the offset where that text ends; inside it a word spelled like one of them
+ * is reserved, since an alias never expands within its own text. Mirrors
+ * Python's _stray_reserved_words.
  */
 function* strayReservedWords(
   node: TSNodeLike,
   aliases: ReadonlySet<string>,
+  own: readonly [ReadonlySet<string>, number],
 ): Generator<[number, string]> {
+  const [held, end] = own
   const stack: [TSNodeLike, ReadonlySet<string>][] = [[node, aliases]]
   for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
     const [current, inherited] = top
@@ -199,7 +204,10 @@ function* strayReservedWords(
     if (current.type !== 'command') continue
     const name = current.children[0]
     if (name?.type !== 'command_name') continue
-    if (RESERVED_CLOSERS.has(name.text) && !names.has(name.text)) {
+    if (
+      RESERVED_CLOSERS.has(name.text) &&
+      (!names.has(name.text) || (held.has(name.text) && (name.startIndex ?? 0) < end))
+    ) {
       yield [name.startIndex ?? 0, name.text]
     }
   }
@@ -248,9 +256,10 @@ function missingQuote(node: TSNodeLike): string | null {
  * Locate structural errors and missing tokens throughout a parsed AST.
  * The grammar recovers an empty for-list with an ERROR containing `in`;
  * Bash accepts that one recovery. A reserved word among `aliases`, the names
- * the shell would expand where a command starts, is a command there. Of the
- * tokens the grammar accepts and bash refuses, the first on the line is the
- * one reported, as bash stops there.
+ * the shell would expand where a command starts, is a command there, except
+ * inside the own text of an alias in `own`. Of the tokens the grammar
+ * accepts and bash refuses, the first on the line is the one reported, as
+ * bash stops there.
  *
  * Returns the offending region's text, or `null` if the AST is clean.
  */
@@ -258,6 +267,7 @@ export function findSyntaxError(
   node: TSNodeLike,
   parse?: (command: string) => TSNodeLike,
   aliases: ReadonlySet<string> = new Set(),
+  own: readonly [ReadonlySet<string>, number] = [new Set(), 0],
 ): string | null {
   // Expansion and the `[` builtin own their argument grammar.
   if (node.type === 'expansion') {
@@ -280,7 +290,7 @@ export function findSyntaxError(
   for (const hit of [
     ...strayCaseTerminators(node),
     ...emptyCompounds(node),
-    ...strayReservedWords(node, aliases),
+    ...strayReservedWords(node, aliases, own),
   ]) {
     if (stray === null || hit[0] < stray[0]) stray = hit
   }
@@ -310,7 +320,7 @@ export function findSyntaxError(
       return child.text
     }
     if (child.type !== 'ERROR') {
-      const nested = findSyntaxError(child, parse, aliases)
+      const nested = findSyntaxError(child, parse, aliases, own)
       if (nested !== null) return nested
     }
     if (child.isNamed) previous = child

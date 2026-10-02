@@ -114,6 +114,9 @@ export function registerExecuteRoutes(app: FastifyInstance, deps: ExecuteRoutesD
       }
       await deps.jobs.wait(job.id)
       reply.header('X-Mirage-Job-Id', job.id)
+      if (job.status === JobStatus.CANCELED) {
+        return reply.status(499).send({ detail: 'job canceled' })
+      }
       if (job.status === JobStatus.FAILED) {
         return reply.status(500).send({ detail: job.error ?? 'execute failed' })
       }

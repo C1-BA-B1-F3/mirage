@@ -38,10 +38,12 @@ class _StalledSessionStore(RAMSessionStore):
 class _StallableSessionStore(RAMSessionStore):
     def __init__(self) -> None:
         super().__init__()
-        self.stall = False
+        self.stall: str | None = None
+        self.stalled = asyncio.Event()
 
     async def cas_set(self, session_id, fields, expected_generation):
-        if self.stall:
+        if session_id == self.stall:
+            self.stalled.set()
             await asyncio.Event().wait()
         return await super().cas_set(session_id, fields, expected_generation)
 
@@ -368,7 +370,7 @@ async def test_abort_on_the_flush_restores_status():
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE, session_store=store)
     await ws.shell("false")
     session = ws._session_mgr.get(ws._session_mgr.default_id)
-    store.stall = True
+    store.stall = session.session_id
     cancel = asyncio.Event()
     timer = asyncio.get_running_loop().call_later(0.05, cancel.set)
     try:
@@ -377,7 +379,7 @@ async def test_abort_on_the_flush_restores_status():
     finally:
         timer.cancel()
     assert session.last_exit_code == 1
-    store.stall = False
+    store.stall = None
     r = await ws.shell("echo next")
     assert r.exit_code == 0
 
@@ -446,7 +448,7 @@ async def test_abort_of_a_running_line_is_not_held_by_a_dead_session_store():
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE, session_store=store)
     await ws.shell("false")
     session = ws._session_mgr.get(ws._session_mgr.default_id)
-    store.stall = True
+    store.stall = session.session_id
     cancel = asyncio.Event()
     timer = asyncio.get_running_loop().call_later(0.05, cancel.set)
     try:
@@ -490,6 +492,25 @@ async def test_two_sessions_each_keep_their_own_loop_values():
         assert a.stdout == b"A:A1\nA:A2\nA:A3\n"
         assert b.stdout == b"B:B1\nB:B2\nB:B3\n"
     finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_line_waits_only_for_its_own_session_to_persist():
+    store = _StallableSessionStore()
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE, session_store=store)
+    ws.create_session("slow")
+    ws.create_session("fast")
+    store.stall = "slow"
+    slow = asyncio.create_task(ws.shell("X=1", session_id="slow"))
+    try:
+        await asyncio.wait_for(store.stalled.wait(), 5)
+        fast = ws.shell("echo fast", session_id="fast")
+        assert (await asyncio.wait_for(fast, 5)).stdout == b"fast\n"
+    finally:
+        store.stall = None
+        slow.cancel()
+        await asyncio.gather(slow, return_exceptions=True)
         await ws.close()
 
 

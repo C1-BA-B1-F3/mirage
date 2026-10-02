@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from mirage.concurrency.limiter import settle
 from mirage.runtime.wasm.host import WasiFs, install_wasi_fs
 from mirage.runtime.wasm.vfs import WasmVFS
 
@@ -45,6 +46,14 @@ def epoch_engine() -> "wasmtime.Engine":
     # is a no-op off macOS.
     config.macos_use_mach_ports = False
     return wasmtime.Engine(config)
+
+
+async def _join_cancelled(task: asyncio.Task[Any]) -> None:
+    """Join owned work while preserving the caller's original cancellation."""
+    try:
+        await settle(task)
+    except Exception:
+        logger.debug("WASM cleanup failed", exc_info=True)
 
 
 class WasmRuntime:
@@ -129,17 +138,41 @@ class WasmRuntime:
             env (list[tuple[str, str]]): environment as (name, value) pairs.
             fs (WasmVFS): path router serving the run's filesystem.
         """
-        serialized = await asyncio.to_thread(self._ensure_serialized)
-        engine = epoch_engine()
+        compilation = asyncio.create_task(
+            asyncio.to_thread(self._ensure_serialized)
+        )
         try:
-            return await asyncio.to_thread(
-                self._run_sync, engine, serialized, argv, stdin, env, fs
-            )
+            serialized = await asyncio.shield(compilation)
         except asyncio.CancelledError:
-            # The worker thread is still inside the run; bumping the
-            # epoch trips the store's deadline, traps it, and lets the
-            # thread exit.
+            await _join_cancelled(compilation)
+            raise
+        engine = epoch_engine()
+        canceled = threading.Event()
+        worker = asyncio.create_task(
+            asyncio.to_thread(
+                self._run_sync,
+                engine,
+                serialized,
+                argv,
+                stdin,
+                env,
+                fs,
+                canceled,
+            )
+        )
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            canceled.set()
             engine.increment_epoch()
+
+            async def stop() -> None:
+                try:
+                    await fs.abort()
+                finally:
+                    await worker
+
+            await _join_cancelled(asyncio.create_task(stop()))
             raise
 
     def _run_sync(
@@ -150,12 +183,15 @@ class WasmRuntime:
         stdin: bytes | None,
         env: list[tuple[str, str]],
         fs: WasmVFS,
+        canceled: threading.Event,
     ) -> tuple[bytes, bytes | None, int]:
         module = wasmtime.Module.deserialize(engine, serialized)
         linker = wasmtime.Linker(engine)
         linker.define_wasi()
         store = wasmtime.Store(engine)
         store.set_epoch_deadline(1)
+        if canceled.is_set():
+            return b"", None, 130
         wasi_fs = WasiFs(fs, stdin or b"")
         install_wasi_fs(linker, store, wasi_fs)
         wasi = wasmtime.WasiConfig()

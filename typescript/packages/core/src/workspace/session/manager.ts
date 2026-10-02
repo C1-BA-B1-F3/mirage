@@ -325,10 +325,15 @@ export class SessionManager {
     this.loaded = true
   }
 
-  /** Write dirty sessions through the store's generation gate. */
-  async flush(): Promise<void> {
-    for (const session of [...this.sessions.values()]) {
-      await this.persistLock.withLock(session.sessionId, () => this.flushOne(session))
+  /** Persist one session, or all sessions at a workspace boundary. */
+  async flush(sessionId?: string): Promise<void> {
+    const sessions =
+      sessionId === undefined ? [...this.sessions.values()] : [this.sessions.get(sessionId)]
+    for (const session of sessions) {
+      if (session === undefined) continue
+      await this.persistLock.withLock(session.sessionId, async () => {
+        if (this.sessions.get(session.sessionId) === session) await this.flushOne(session)
+      })
     }
   }
 

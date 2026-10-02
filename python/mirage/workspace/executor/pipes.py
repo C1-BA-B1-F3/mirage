@@ -239,80 +239,21 @@ async def handle_connection(
     )
     children = [left_exec]
 
-    if op == NT.AND:
-        left_bytes = await finish_statement(
-            left_stdout, left_io, session, left
-        )
-        if left_io.exit_code != 0:
-            # The failing command is left of the final `&&`, which bash
-            # exempts from `set -e`. The list ran only its left side, so
-            # the list boundary reports that pipeline.
-            session.errexit_immune = True
-            carry_status(session)
-            return (
-                left_bytes,
-                left_io,
-                ExecutionNode(
-                    op="&&", exit_code=left_io.exit_code, children=children
-                ),
-            )
-        try:
-            right_stdout, right_io, right_exec = await execute_node(
-                right,
-                session,
-                statement_stdin(session, stdin, bound),
-                call_stack,
-            )
-        except ExitSignal as sig:
-            raise await _merge_left_into_exit(sig, left_bytes, left_io)
-        children.append(right_exec)
-        right_bytes = await materialize(right_stdout)
-        merged = await left_io.merge(right_io)
-        combined = async_chain([left_bytes, right_bytes])
-        return (
-            combined,
-            merged,
-            ExecutionNode(
-                op="&&", exit_code=merged.exit_code, children=children
-            ),
-        )
-
-    if op == NT.OR:
-        left_bytes = await finish_statement(
-            left_stdout, left_io, session, left
-        )
-        if left_io.exit_code == 0:
-            carry_status(session)
-            return (
-                left_bytes,
-                left_io,
-                ExecutionNode(
-                    op="||", exit_code=left_io.exit_code, children=children
-                ),
-            )
-        try:
-            right_stdout, right_io, right_exec = await execute_node(
-                right,
-                session,
-                statement_stdin(session, stdin, bound),
-                call_stack,
-            )
-        except ExitSignal as sig:
-            raise await _merge_left_into_exit(sig, left_bytes, left_io)
-        children.append(right_exec)
-        right_bytes = await materialize(right_stdout)
-        merged = await left_io.merge(right_io)
-        combined = async_chain([left_bytes, right_bytes])
-        return (
-            combined,
-            merged,
-            ExecutionNode(
-                op="||", exit_code=merged.exit_code, children=children
-            ),
-        )
-
-    # semicolon or other
     left_bytes = await finish_statement(left_stdout, left_io, session, left)
+    if (op == NT.AND and left_io.exit_code != 0) or (
+        op == NT.OR and left_io.exit_code == 0
+    ):
+        if op == NT.AND:
+            session.errexit_immune = True
+        carry_status(session)
+        return (
+            left_bytes,
+            left_io,
+            ExecutionNode(
+                op=str(op), exit_code=left_io.exit_code, children=children
+            ),
+        )
+
     try:
         right_stdout, right_io, right_exec = await execute_node(
             right, session, statement_stdin(session, stdin, bound), call_stack

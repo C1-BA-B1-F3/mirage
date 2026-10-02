@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import asyncssh
 
 from mirage.accessor.base import Accessor
+from mirage.concurrency.limiter import settle
 from mirage.vfs.secrets import reveal_secret
 from mirage.vfs.ssh.config import SSHConfig
 
@@ -44,6 +46,7 @@ def _connect_kwargs(config: SSHConfig) -> dict[str, Any]:
 class SSHAccessor(Accessor):
     def __init__(self, config: SSHConfig) -> None:
         self.config = config
+        self._lock = asyncio.Lock()
         self._conn: asyncssh.SSHClientConnection | None = None
         self._sftp: asyncssh.SFTPClient | None = None
 
@@ -52,14 +55,22 @@ class SSHAccessor(Accessor):
         return self.config.root
 
     async def sftp(self) -> asyncssh.SFTPClient:
-        if self._sftp is not None:
+        async with self._lock:
+            if self._sftp is None:
+                conn = await asyncssh.connect(**_connect_kwargs(self.config))
+                try:
+                    self._sftp = await conn.start_sftp_client()
+                except BaseException:
+                    conn.close()
+                    await settle(asyncio.ensure_future(conn.wait_closed()))
+                    raise
+                self._conn = conn
             return self._sftp
-        self._conn = await asyncssh.connect(**_connect_kwargs(self.config))
-        self._sftp = await self._conn.start_sftp_client()
-        return self._sftp
 
     async def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-            self._sftp = None
+        async with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                await self._conn.wait_closed()
+                self._conn = None
+                self._sftp = None

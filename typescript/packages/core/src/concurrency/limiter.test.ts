@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { ConcurrencyLimiter } from './limiter.ts'
+import { ConcurrencyLimiter, boundedMap } from './limiter.ts'
 
 interface ConcurrencyState {
   active: number
@@ -119,4 +119,31 @@ describe('ConcurrencyLimiter', () => {
     ])
     expect(state.peak).toBe(1)
   })
+})
+
+it('boundedMap keeps order, and a failure stops admission and joins active work', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const admitted: number[] = []
+  let settled = false
+  const run = boundedMap(
+    [0, 1, 2, 3],
+    async (value) => {
+      admitted.push(value)
+      if (value === 0) throw new Error('download failed')
+      await gate
+      return value
+    },
+    2,
+  ).finally(() => {
+    settled = true
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(settled).toBe(false)
+  release()
+  await expect(run).rejects.toThrow('download failed')
+  expect(admitted).toEqual([0, 1])
+  expect(await boundedMap([3, 1, 2], (x) => Promise.resolve(x * 2), 2)).toEqual([6, 2, 4])
 })

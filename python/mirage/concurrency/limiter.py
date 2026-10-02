@@ -13,7 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import logging
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
+from typing import TypeVar, cast
+
+logger = logging.getLogger(__name__)
 
 
 class ConcurrencyLimiter:
@@ -31,3 +36,60 @@ class ConcurrencyLimiter:
     def acquire(self) -> AbstractAsyncContextManager[None]:
         """Return a context manager that holds one concurrency permit."""
         return self._semaphore
+
+
+_T = TypeVar("_T")
+_R = TypeVar("_R")
+
+
+async def bounded_map(
+    items: Sequence[_T], fn: Callable[[_T], Awaitable[_R]], workers: int
+) -> list[_R]:
+    """Map in order with bounded tasks, settling every worker on failure.
+
+    Args:
+        items (Sequence): inputs in result order.
+        fn (Callable): async operation for one input.
+        workers (int): maximum concurrent operations, at least one.
+    """
+    remaining = iter(enumerate(items))
+    failed = False
+    results: list[_R | None] = [None] * len(items)
+
+    async def worker() -> None:
+        nonlocal failed
+        try:
+            for index, item in remaining:
+                if failed:
+                    return
+                results[index] = await fn(item)
+        except BaseException:
+            failed = True
+            raise
+
+    tasks = [
+        asyncio.create_task(worker())
+        for _ in range(min(max(1, workers), len(items)))
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    return cast(list[_R], results)
+
+
+async def settle(task: asyncio.Future[_R]) -> _R:
+    """Wait for owned work to finish, deferring the caller's cancellation.
+
+    Args:
+        task (asyncio.Future): work that must not outlive its caller.
+    """
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            logger.debug("deferring cancellation until owned work settles")
+    return task.result()

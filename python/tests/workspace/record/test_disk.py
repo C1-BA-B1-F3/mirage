@@ -13,10 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import os
+import threading
 from pathlib import Path
 
 import pytest
 
+import mirage.workspace.record.disk as disk
 from mirage.workspace.record.disk import DiskRecordClient
 
 
@@ -79,3 +82,42 @@ async def test_concurrent_writers_lose_nothing(tmp_path: Path):
     stored, _ = await client.get("k")
     assert stored["generation"] == 10
     assert sorted(stored["hits"]) == ["a"] * 5 + ["b"] * 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cas", [False, True])
+async def test_cancel_during_acquisition_releases_lock(
+    tmp_path, monkeypatch, cas
+):
+    entered = threading.Event()
+    release = threading.Event()
+    fds = []
+    original = disk._acquire_lock
+
+    def acquire(path):
+        fd = original(path)
+        fds.append(fd)
+        entered.set()
+        assert release.wait(5)
+        return fd
+
+    monkeypatch.setattr(disk, "_acquire_lock", acquire)
+    client = DiskRecordClient(str(tmp_path), "")
+    work = (
+        client.cas_put("k", {"generation": 1}, 0) if cas else client.lock("k")
+    )
+    task = asyncio.create_task(work)
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not Path(client.path("k") + ".lock").exists()
+    with pytest.raises(OSError):
+        os.fstat(fds[0])
+    monkeypatch.setattr(disk, "_acquire_lock", original)
+    assert await client.cas_put("k", {"generation": 1}, 0)

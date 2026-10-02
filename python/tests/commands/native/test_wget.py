@@ -40,7 +40,7 @@ def _ok(
 def _stub(monkeypatch, resp=None, exc=None) -> list[str]:
     calls: list[str] = []
 
-    def fake(url, headers=None, timeout=30, follow_redirects=True):
+    async def fake(url, headers=None, timeout=30, follow_redirects=True):
         calls.append(url)
         if exc is not None:
             raise exc

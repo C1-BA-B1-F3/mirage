@@ -7,7 +7,7 @@ name: Prune caches
 # the repository's 10 GB and push out the uv and pnpm entries the test jobs
 # restore. The two newest per language stay, so a prune that lands while
 # CodeQL is saving a new one still leaves a complete one behind.
-on:
+"on":
   push:
     branches: [main]
   workflow_dispatch:

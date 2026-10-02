@@ -262,6 +262,12 @@ run_case() {
   return $ok
 }
 
+# The line naming a CLI's error: a python traceback prints it last and a
+# node stack first, each with frames around it.
+error_line() {
+  grep -m1 -E '^[A-Za-z.]*(Error|Exception|Unreachable)\b' "$1" || tail -n 1 "$1"
+}
+
 run_host() {
   local cli="$1" host="$2" port="$3" lane="$4"
   local home work
@@ -277,15 +283,29 @@ run_host() {
   # On a busy runner the python daemon takes longer, and the lane's first
   # case failed on that alone. One throwaway create starts it; a create that
   # gave up still left the daemon starting, so wait for it to answer instead
-  # of spawning another.
+  # of spawning another. A create that failed is printed either way, and a
+  # daemon that never answers fails the lane.
   write_world_yaml '{}' "$work"
-  $cli workspace create "$work/ws.yaml" --id rt-warm >/dev/null 2>&1 </dev/null || true
-  local tries
+  local warm_created=1 ready=0 tries
+  $cli workspace create "$work/ws.yaml" --id rt-warm >"$work/warm.out" 2>&1 </dev/null \
+    || warm_created=0
   for tries in $(seq 1 60); do
-    $cli workspace list >/dev/null 2>&1 </dev/null && break
+    if $cli workspace list >/dev/null 2>"$work/warm_list.err" </dev/null; then
+      ready=1
+      break
+    fi
     sleep 1
   done
-  $cli workspace delete rt-warm >/dev/null 2>&1 </dev/null || true
+  if [ "$warm_created" = 0 ]; then
+    echo "note $host lane $lane: warm-up create failed: $(error_line "$work/warm.out")"
+  fi
+  if [ "$ready" = 0 ]; then
+    failures+=("$host lane $lane: daemon never answered after 60 s: $(error_line "$work/warm_list.err")")
+    fail=$((fail + 1))
+  elif [ "$warm_created" = 1 ] && \
+      ! $cli workspace delete rt-warm >"$work/warm.out" 2>&1 </dev/null; then
+    echo "note $host lane $lane: warm-up delete failed: $(error_line "$work/warm.out")"
+  fi
 
   local file suite suite_json requires unmet
   for file in "$SUITE_DIR"/*.json; do

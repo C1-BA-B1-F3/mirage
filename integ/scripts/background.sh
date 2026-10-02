@@ -5,14 +5,14 @@ dir="${RUNNER_TEMP:-/tmp}/integ-background"
 
 # Prints whatever the worker logged since the last call, so a wait that a
 # step timeout cuts short has already shown everything up to that moment.
+# The new bytes go through a file rather than a pipe: the worker may still
+# be writing, and the offset advances by exactly what was printed.
 shown=0
 show_new() {
-  local log="$1" size
-  size=$(wc -c < "$log")
-  if [ "$size" -gt "$shown" ]; then
-    tail -c "+$((shown + 1))" "$log" | head -c "$((size - shown))"
-    shown=$size
-  fi
+  local log="$1" chunk="$1.chunk"
+  tail -c "+$((shown + 1))" "$log" > "$chunk"
+  cat "$chunk"
+  shown=$((shown + $(wc -c < "$chunk")))
 }
 
 case "${1:-}" in

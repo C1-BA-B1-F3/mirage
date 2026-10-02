@@ -344,21 +344,8 @@ def _tally_core() -> MountCore:
 
 
 @pytest.mark.asyncio
-async def test_partial_write_merges_against_stored_bytes():
-    # Read-modify-write hands its merged buffer to `write`, which
-    # stores, so the read that feeds it has to be the stored bytes. A
-    # mount that renders this extension would otherwise have the
-    # rendering written over the file on any partial write.
-    core = _tally_core()
-    core.write("/data/books.tally", b"0123456789", 0, None)
-    core.write("/data/books.tally", b"XY", 4, None)
-    stored = core._run(core._ops.read("/data/books.tally", raw=True))
-    assert stored == b"0123XY6789"
-
-
-@pytest.mark.asyncio
 async def test_read_still_renders_after_a_partial_write():
-    # The other half of the same rule: only the write path reads raw.
+    # A partial write lands in the stored bytes; a read still renders.
     core = _tally_core()
     core.write("/data/books.tally", b"0123456789", 0, None)
     core.write("/data/books.tally", b"XY", 4, None)
@@ -390,7 +377,9 @@ async def test_a_write_lands_on_a_file_the_session_may_not_read():
 
 
 @pytest.mark.asyncio
-async def test_buffered_write_flush_merges_against_stored_bytes():
+async def test_buffered_write_flush_lands_in_the_stored_bytes():
+    # A mount that renders this extension must not get the rendering
+    # written over the file on a partial write.
     core = _tally_core()
     core.write("/data/books.tally", b"0123456789", 0, None)
     fh = core.open("/data/books.tally")

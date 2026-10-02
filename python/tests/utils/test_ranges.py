@@ -83,6 +83,7 @@ def test_splicing_keeps_both_sides_of_the_window():
 def test_splicing_past_the_end_fills_zeros():
     assert splice_window(b"ab", 4, b"z") == b"ab\0\0z"
     assert splice_window(b"", 0, b"new") == b"new"
+    assert splice_window(b"ab", 4, b"") == b"ab"
 
 
 def test_slicing_the_whole_thing():

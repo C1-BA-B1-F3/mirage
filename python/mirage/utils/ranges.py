@@ -88,12 +88,15 @@ def splice_window(data: bytes, offset: int, payload: bytes) -> bytes:
 
     The answer when nothing remote can write a range: what lies before
     and after the window stays, and a gap past the end reads as zeros.
+    Writing nothing changes nothing, even past the end.
 
     Args:
         data (bytes): the whole content.
         offset (int): first byte the payload replaces.
         payload (bytes): the bytes written there.
     """
+    if not payload:
+        return data
     head = data[:offset].ljust(offset, b"\0")
     return head + payload + data[offset + len(payload) :]
 

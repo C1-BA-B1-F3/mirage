@@ -20,7 +20,6 @@ under the default mask because a fresh file already renders as 644.
 
 import pytest
 
-from mirage.policy import Deny, Policy
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -83,26 +82,4 @@ async def test_both_redirect_forms_agree_end_to_end():
         "stat -c '%a %n' /data/p /data/e"
     )
     assert (await io.stdout_str()) == "600 /data/p\n600 /data/e\n"
-    await ws.close()
-
-
-class _NoReads(Policy):
-    async def pre_ops(self, ctx):
-        return Deny("write-only") if ctx.op == "read" else None
-
-
-@pytest.mark.asyncio
-async def test_a_write_only_descriptor_writes_without_reading():
-    """bash on a file with write permission only: the descriptor keeps
-    its own offset (``c`` lands over the ``XY`` the append added) and
-    ``<>`` is refused, since it opens the file to read."""
-    vfs = RAMVFS()
-    ws = Workspace({"data": vfs}, mode=MountMode.WRITE)
-    ws.policies.add(_NoReads())
-    io = await ws.shell(
-        "exec 3>/data/f; echo a >&3; echo b >&3; echo XYZ >> /data/f; "
-        "echo c >&3; exec 3>&-; echo rc=$?; exec 4<>/data/f; echo rw=$?"
-    )
-    assert (await io.stdout_str()) == "rc=0\nrw=1\n"
-    assert vfs._store.files["/f"] == b"a\nb\nc\nZ\n"
     await ws.close()

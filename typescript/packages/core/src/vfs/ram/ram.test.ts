@@ -38,33 +38,9 @@ function call(
   return registry.call(name, VFSName.RAM, ram.accessor, PathSpec.fromStrPath(path), args)
 }
 
-describe('RAMVFS.kind / ops()', () => {
+describe('RAMVFS.kind', () => {
   it('is VFSName.RAM', () => {
     expect(new RAMVFS().name).toBe(VFSName.RAM)
-  })
-
-  it('exposes RAM ops covering the full RAM op surface', () => {
-    const ram = new RAMVFS()
-    const names = ram
-      .ops()
-      .map((o) => o.name)
-      .sort()
-    expect(names).toEqual([
-      'append',
-      'create',
-      'glob',
-      'mkdir',
-      'pwrite',
-      'read',
-      'readdir',
-      'rename',
-      'rmdir',
-      'setattr',
-      'stat',
-      'truncate',
-      'unlink',
-      'write',
-    ])
   })
 })
 

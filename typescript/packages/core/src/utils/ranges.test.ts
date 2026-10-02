@@ -71,6 +71,7 @@ describe('spliceWindow', () => {
   it('fills a gap past the end with zeros', () => {
     expect([...spliceWindow(ENC.encode('ab'), 4, ENC.encode('z'))]).toEqual([97, 98, 0, 0, 122])
     expect(DEC.decode(spliceWindow(new Uint8Array(), 0, ENC.encode('new')))).toBe('new')
+    expect(DEC.decode(spliceWindow(ENC.encode('ab'), 4, new Uint8Array()))).toBe('ab')
   })
 })
 

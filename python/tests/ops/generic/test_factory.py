@@ -209,21 +209,14 @@ async def test_emulated_pwrite_splices_pads_and_creates_missing():
 
 
 @pytest.mark.asyncio
-async def test_emulated_pwrite_forwards_index():
-    table = make_table(write=AsyncMock())
-    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
-    acc = NOOPAccessor()
-    await op.fn(acc, PATH, b"new", 0, index=NULL_INDEX)
-    table.read_bytes.assert_awaited_once_with(acc, PATH, NULL_INDEX)
-
-
-@pytest.mark.asyncio
-async def test_emulated_pwrite_does_not_overwrite_after_read_failure():
+async def test_emulated_pwrite_forwards_index_and_keeps_a_failed_read():
     table = make_table(write=AsyncMock())
     table.read_bytes.side_effect = PermissionError(PATH.virtual)
     op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    acc = NOOPAccessor()
     with pytest.raises(PermissionError):
-        await op.fn(NOOPAccessor(), PATH, b"new", 0)
+        await op.fn(acc, PATH, b"new", 0, index=NULL_INDEX)
+    table.read_bytes.assert_awaited_once_with(acc, PATH, NULL_INDEX)
     table.write.assert_not_awaited()
 
 

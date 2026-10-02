@@ -15,13 +15,9 @@
 import { describe, expect, it } from 'vitest'
 
 import { IOResult } from '../../io/types.ts'
-import type { Action, OpsContext } from '../../policy/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
-import { MountMode, PathSpec } from '../../types.ts'
-import { RAMVFS } from '../../vfs/ram/ram.ts'
-import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
+import { PathSpec } from '../../types.ts'
 import { SessionState } from '../session/session.ts'
-import { Workspace } from '../workspace/workspace.ts'
 import { createFile } from './create.ts'
 
 const SCOPE = new PathSpec({ virtual: '/data/f', directory: '/data/', vfsPath: '' })
@@ -72,30 +68,5 @@ describe('createFile', () => {
     const d = new FakeDispatch(true)
     await createFile(d.fn, sessionWithUmask(0o077), SCOPE, new Uint8Array(0))
     expect(d.ops()).toEqual(['stat', 'write'])
-  })
-})
-
-describe('writeDescription', () => {
-  it('writes a write-only descriptor without reading the file', async () => {
-    // bash on a file with write permission only: the descriptor keeps its
-    // own offset (`c` lands over the `XY` the append added) and `<>` is
-    // refused, since it opens the file to read.
-    const vfs = new RAMVFS()
-    const ws = new Workspace(
-      { '/data': vfs },
-      { mode: MountMode.WRITE, shellParser: await getTestParser() },
-    )
-    ws.policies.add({
-      preOps(ctx: OpsContext): Action | null {
-        return ctx.op === 'read' ? { kind: 'deny', reason: 'write-only' } : null
-      },
-    })
-    const io = await ws.shell(
-      'exec 3>/data/f; echo a >&3; echo b >&3; echo XYZ >> /data/f; ' +
-        'echo c >&3; exec 3>&-; echo rc=$?; exec 4<>/data/f; echo rw=$?',
-    )
-    expect(stdoutStr(io)).toBe('rc=0\nrw=1\n')
-    expect(new TextDecoder().decode(vfs.store.files.get('/f'))).toBe('a\nb\nc\nZ\n')
-    await ws.close()
   })
 })

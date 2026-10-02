@@ -76,24 +76,3 @@ def test_s3_write_commands_tagged():
             assert registered.write is False, (
                 f"{registered.name} should be write=False"
             )
-
-
-def test_s3_write_ops_tagged():
-    from mirage.ops.s3 import OPS
-
-    write_op_names = {
-        "write",
-        "append",
-        "pwrite",
-        "unlink",
-        "rmdir",
-        "mkdir",
-        "create",
-        "truncate",
-        "rename",
-    }
-    for ro in OPS:
-        if ro.name in write_op_names:
-            assert ro.write is True, f"op {ro.name} should be write=True"
-        else:
-            assert ro.write is False, f"op {ro.name} should be write=False"

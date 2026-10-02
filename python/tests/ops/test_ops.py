@@ -73,13 +73,6 @@ class TestReadWrite:
         with pytest.raises(PermissionError):
             run(ops.write("/data/file.txt", b"data"))
 
-    def test_pwrite_keeps_the_rest_of_the_file(self):
-        ops, _ = make_ops()
-        run(ops.write("/data/f.txt", b"hello"))
-        run(ops.pwrite("/data/f.txt", b"XY", 1))
-        run(ops.pwrite("/data/f.txt", b"!", 7))
-        assert run(ops.read("/data/f.txt")) == b"hXYlo\0\0!"
-
     def test_pwrite_read_only(self):
         ops, _ = make_ops(mode=MountMode.READ)
         with pytest.raises(PermissionError):

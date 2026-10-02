@@ -90,4 +90,17 @@ describe('DiskWorkspaceStateStore', () => {
     expect((await reader.sessions('ws1').load()).get('s')?.cwd).toBe('/x')
     await reader.close()
   })
+
+  it('drops a workspace by removing its directory', async () => {
+    await store.namespace('ws1').set('/a', { mode: 0o600 })
+    await store.observer('ws1').append('d/s1.jsonl', new TextEncoder().encode('{}\n'))
+    await store.sessions('ws1').set('s1', { session_id: 's1' })
+    await store.setMeta('ws1', { workspace_id: 'ws1' })
+    await store.setMeta('ws2', { workspace_id: 'ws2' })
+    await store.drop('ws1')
+    expect(existsSync(join(root, 'workspaces', 'ws1'))).toBe(false)
+    expect(await store.loadMeta('ws1')).toBeNull()
+    expect((await store.namespace('ws1').load()).size).toBe(0)
+    expect(await store.loadMeta('ws2')).not.toBeNull()
+  })
 })

@@ -1675,11 +1675,23 @@ export class Workspace {
     // Awaiting the memoized attempt rather than short-circuiting on `closed`
     // keeps every caller told: teardown runs once, and if it raised, each
     // caller sees why instead of the second one reading success.
-    this.closing ??= this.runClose()
+    this.closing ??= this.runClose(false)
     await this.closing
   }
 
-  private async runClose(): Promise<void> {
+  /**
+   * Close the workspace and delete its state from the store.
+   *
+   * Links, history, sessions and the metadata record all go, so a
+   * workspace created later under this id starts empty. `close` keeps
+   * them, which is how a daemon's workspace survives a restart.
+   */
+  async delete(): Promise<void> {
+    this.closing ??= this.runClose(true)
+    await this.closing
+  }
+
+  private async runClose(dropState: boolean): Promise<void> {
     await this.sessionManager.settle()
     await this.scriptPolicy.close()
     try {
@@ -1692,6 +1704,8 @@ export class Workspace {
         jobTable: this.jobTable,
         registry: this.registry,
         sharedMounts: this.sharedMounts,
+        dropState,
+        workspaceId: this.workspaceId,
       })
     } finally {
       // Teardown has run either way, and `closing` is memoized, so it will

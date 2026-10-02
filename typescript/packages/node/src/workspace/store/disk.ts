@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { ObserverStore } from '@struktoai/mirage-core/observe/store'
@@ -134,6 +135,14 @@ export class DiskWorkspaceStateStore extends WorkspaceStateStore {
     expectedGeneration: number,
   ): Promise<boolean> {
     return await this.metaClient(workspaceId).casPut('workspace', fields, expectedGeneration)
+  }
+
+  protected async forgetSelf(workspaceId: string): Promise<void> {
+    for (const handles of [this.namespaces, this.observers, this.sessionTables, this.meta]) {
+      await handles.get(workspaceId)?.close()
+      handles.delete(workspaceId)
+    }
+    await rm(this.wsRoot(workspaceId), { recursive: true, force: true })
   }
 
   protected async closeSelf(): Promise<void> {

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import shutil
 from pathlib import Path
 from typing import Protocol
 
@@ -23,16 +24,31 @@ from mirage.server.paths import resolve_within_root, validate_path_segment
 class VersionBackend(Protocol):
     def open_repo(self, workspace_id: str) -> Repo: ...
 
+    def drop_repo(self, workspace_id: str) -> None: ...
+
 
 class LocalBackend:
     def __init__(self, root: str | Path) -> None:
         self._root = Path(root)
 
-    def open_repo(self, workspace_id: str) -> Repo:
-        path = resolve_within_root(
+    def _path(self, workspace_id: str) -> Path:
+        return resolve_within_root(
             self._root, validate_path_segment(workspace_id)
         )
+
+    def open_repo(self, workspace_id: str) -> Repo:
+        path = self._path(workspace_id)
         if (path / "objects").is_dir():
             return Repo(str(path))
         path.mkdir(parents=True, exist_ok=True)
         return Repo.init_bare(str(path))
+
+    def drop_repo(self, workspace_id: str) -> None:
+        """Delete one workspace's version repo, when it has one.
+
+        Args:
+            workspace_id (str): the workspace being deleted.
+        """
+        path = self._path(workspace_id)
+        if path.is_dir():
+            shutil.rmtree(path)

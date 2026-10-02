@@ -32,6 +32,11 @@ def _minimal_config() -> dict:
     }
 
 
+async def _shell(ws, line: str) -> tuple[int, str]:
+    result = await ws.shell(line)
+    return result.exit_code, await result.stdout_str()
+
+
 def _make_app_with_short_grace(grace: float = 0.2, snapshot_root=None):
     exit_event = asyncio.Event()
     app = build_app(
@@ -74,6 +79,54 @@ async def test_create_list_get_delete_round_trip():
 
         r = await client.get(f"/v1/workspaces/{wid}")
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_drops_the_workspace_state(tmp_path):
+    # Deleting a workspace deletes everything it kept, so one created
+    # again under the same id finds no link, no history, no version and
+    # no state on disk from the first.
+    state, versions = tmp_path / "state", tmp_path / "versions"
+    app = build_app(
+        idle_grace_seconds=10.0,
+        exit_event=asyncio.Event(),
+        state_root=state,
+        version_root=versions,
+    )
+    body = {**_minimal_config(), "id": "again"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        assert (
+            await client.post("/v1/workspaces", json=body)
+        ).status_code == 201
+        runner = app.state.registry.get("again").runner
+        code, _ = await runner.call(
+            _shell(runner.ws, "ln -s /data /alias && echo secret-token")
+        )
+        assert code == 0
+        r = await client.post(
+            "/v1/workspaces/again/commit", json={"message": "first"}
+        )
+        assert r.status_code == 200, r.text
+        assert (state / "workspaces" / "again").is_dir()
+        assert (versions / "again").is_dir()
+        assert (await client.delete("/v1/workspaces/again")).status_code == 200
+        assert not (state / "workspaces" / "again").exists()
+        assert not (versions / "again").exists()
+        assert (
+            await client.post("/v1/workspaces", json=body)
+        ).status_code == 201
+        runner = app.state.registry.get("again").runner
+        code, out = await runner.call(
+            _shell(
+                runner.ws,
+                "readlink /alias || echo no-link; cat /.bash_history",
+            )
+        )
+        assert "no-link" in out
+        assert "secret-token" not in out
+        await client.delete("/v1/workspaces/again")
 
 
 @pytest.mark.asyncio

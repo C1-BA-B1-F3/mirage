@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -124,6 +125,9 @@ async def delete_workspace(
     if workspace_id not in registry:
         raise HTTPException(status_code=404, detail="workspace not found")
     await registry.remove(workspace_id)
+    await asyncio.to_thread(
+        request.app.state.version_backend.drop_repo, workspace_id
+    )
     return DeleteWorkspaceResponse(id=workspace_id, closed_at=time.time())
 
 

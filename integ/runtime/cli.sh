@@ -116,9 +116,7 @@ run_case() {
   local case_id wsid world_json session_id
   case_id="$suite/$(jq -r '.id' <<<"$case_json")"
   # The suite is part of the id: suites share case ids by design (each
-  # runtime's open, view and structure cases), and a daemon keeps a
-  # deleted workspace's namespace under its id, so a reused id would
-  # inherit the previous suite's links.
+  # runtime's open, view and structure cases).
   wsid="rt-$(tr '_' '-' <<<"$suite")-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
   world_json=$(jq -c '.world // {}' <<<"$case_json")
   write_world_yaml "$world_json" "$work"

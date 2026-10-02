@@ -73,7 +73,7 @@ cat report.json | mirage execute -w <workspace-id> -c 'cat > /report.json'
 | `mirage workspace create <config.yaml>` | Create; auto-spawns daemon if needed. |
 | `mirage workspace list` | List active workspaces. |
 | `mirage workspace get <id> [--verbose]` | Show one workspace's detail. |
-| `mirage workspace delete <id>` | Stop and remove. |
+| `mirage workspace delete <id>` | Stop it and delete its state (links, history, sessions, versions). |
 | `mirage workspace clone <src> [--id NEW] [--at REF]` | New workspace from the source; `--at REF` clones a past version, else the live state. |
 | `mirage workspace snapshot <id> <out.tar>` | Snapshot to tar. |
 

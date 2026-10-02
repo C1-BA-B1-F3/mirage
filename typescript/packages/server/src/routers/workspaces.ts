@@ -21,6 +21,7 @@ import type { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { DiskWorkspaceStateStore, Workspace } from '@struktoai/mirage-node'
 import { newWorkspaceId } from '@struktoai/mirage-core/utils/ids'
 import { type WorkspaceRegistry } from '../registry.ts'
+import type { VersionBackend } from '../version/backend.ts'
 import { z } from '@struktoai/mirage-core/vfs/secrets'
 import { SecretsError } from '@struktoai/mirage-core/secrets/errors'
 import { buildOverrideMounts, cloneWorkspaceWithOverride, type OverrideShape } from '../clone.ts'
@@ -36,6 +37,7 @@ export interface WorkspaceRoutesDeps {
   registry: WorkspaceRegistry
   snapshotRoot: string
   stateRoot: string
+  versionBackend: VersionBackend
 }
 
 const WRITE_RATE_LIMIT = {
@@ -222,6 +224,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
     const { id } = req.params
     if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
     await deps.registry.remove(id)
+    await deps.versionBackend.dropRepo(id)
     return { id, closedAt: Date.now() / 1000 }
   })
 

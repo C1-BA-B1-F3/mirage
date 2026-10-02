@@ -213,6 +213,52 @@ describe('workspaces router', () => {
     await app.close()
   })
 
+  it('DELETE drops the workspace state, so a recreated id starts empty', async () => {
+    // Deleting a workspace deletes everything it kept: one created again
+    // under the same id finds no link, no history, no version and no
+    // state on disk.
+    const root = mkdtempSync(join(tmpdir(), 'mirage-delete-state-'))
+    const stateRoot = join(root, 'state')
+    const versionRoot = join(root, 'versions')
+    const app = buildApp({ stateRoot, versionRoot })
+    const create = (): Promise<unknown> =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/workspaces',
+        payload: { id: 'again', config: { mounts: { '/': { vfs: 'ram', mode: 'write' } } } },
+      })
+    const run = async (command: string): Promise<string> => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces/again/execute',
+        payload: { command },
+      })
+      return res.json<{ stdout: string }>().stdout
+    }
+    try {
+      await create()
+      await run('ln -s /data /alias && echo secret-token')
+      const commit = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces/again/commit',
+        payload: { message: 'first' },
+      })
+      expect(commit.statusCode).toBe(200)
+      expect(existsSync(join(stateRoot, 'workspaces', 'again'))).toBe(true)
+      expect(existsSync(join(versionRoot, 'again'))).toBe(true)
+      await app.inject({ method: 'DELETE', url: '/v1/workspaces/again' })
+      expect(existsSync(join(stateRoot, 'workspaces', 'again'))).toBe(false)
+      expect(existsSync(join(versionRoot, 'again'))).toBe(false)
+      await create()
+      const out = await run('readlink /alias || echo no-link; cat /.bash_history')
+      expect(out).toContain('no-link')
+      expect(out).not.toContain('secret-token')
+    } finally {
+      await app.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('POST /v1/workspaces/:id/clone produces a new id', async () => {
     const app = buildApp()
     await app.inject({

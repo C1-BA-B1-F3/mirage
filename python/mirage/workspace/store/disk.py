@@ -12,7 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import os
+import shutil
 from urllib.parse import quote
 
 from mirage.observe.disk_store import DiskObserverStore
@@ -114,6 +116,20 @@ class DiskWorkspaceStateStore(WorkspaceStateStore):
         return await self._meta_client(workspace_id).cas_put(
             "workspace", fields, expected_generation
         )
+
+    async def _forget(self, workspace_id: str) -> None:
+        for handles in (
+            self._namespaces,
+            self._observers,
+            self._sessions,
+            self._meta,
+        ):
+            handle = handles.pop(workspace_id, None)
+            if handle is not None:
+                await handle.close()
+        root = self._ws_root(workspace_id)
+        if os.path.isdir(root):
+            await asyncio.to_thread(shutil.rmtree, root)
 
     async def _close(self) -> None:
         for ns in self._namespaces.values():

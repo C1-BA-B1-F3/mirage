@@ -94,6 +94,12 @@ export class S3WorkspaceStateStore extends WorkspaceStateStore {
     return this.meta.casPut(workspaceId, fields, expectedGeneration)
   }
 
+  protected async forgetSelf(workspaceId: string): Promise<void> {
+    await this.sessionTables.get(workspaceId)?.close()
+    this.sessionTables.delete(workspaceId)
+    await this.meta.delete([workspaceId])
+  }
+
   protected async closeSelf(): Promise<void> {
     for (const table of this.sessionTables.values()) await table.close()
     await this.meta.close()

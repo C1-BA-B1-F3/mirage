@@ -105,7 +105,11 @@ class WorkspaceRegistry:
         return entry
 
     async def remove(self, workspace_id: str) -> WorkspaceEntry:
-        """Stop the runner for ``workspace_id`` and drop it.
+        """Delete ``workspace_id``: stop its runner and drop its state.
+
+        The workspace's links, history, sessions and metadata leave its
+        state store with it, so a workspace created later under the same
+        id starts empty. ``close_all`` (daemon shutdown) keeps them.
 
         Args:
             workspace_id (str): id to remove.
@@ -120,7 +124,7 @@ class WorkspaceRegistry:
         if workspace_id not in self._entries:
             raise KeyError(workspace_id)
         entry = self._entries.pop(workspace_id)
-        await entry.runner.stop()
+        await entry.runner.stop(delete=True)
         if not self._entries:
             self._start_idle_timer()
         return entry

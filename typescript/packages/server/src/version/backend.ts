@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { existsSync, mkdirSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import * as nodeFs from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import git from 'isomorphic-git'
@@ -27,23 +28,33 @@ export interface GitRepo {
 
 export interface VersionBackend {
   openRepo(workspaceId: string): Promise<GitRepo>
+  dropRepo(workspaceId: string): Promise<void>
 }
 
 export class LocalBackend implements VersionBackend {
   constructor(private readonly root: string) {}
 
-  async openRepo(workspaceId: string): Promise<GitRepo> {
+  private gitdirOf(workspaceId: string): string {
     validatePathSegment(workspaceId)
     const root = resolve(this.root)
     const gitdir = resolve(root, workspaceId)
     if (!gitdir.startsWith(root + sep)) {
       throw new PathOutsideRootError(`path escapes the configured root: ${workspaceId}`)
     }
+    return gitdir
+  }
+
+  async openRepo(workspaceId: string): Promise<GitRepo> {
+    const gitdir = this.gitdirOf(workspaceId)
     const fs = nodeFs as unknown as FsClient
     if (!existsSync(join(gitdir, 'objects'))) {
       mkdirSync(gitdir, { recursive: true })
       await git.init({ fs, dir: gitdir, bare: true, defaultBranch: 'main' })
     }
     return { fs, gitdir }
+  }
+  /** Delete one workspace's version repo, when it has one. */
+  async dropRepo(workspaceId: string): Promise<void> {
+    await rm(this.gitdirOf(workspaceId), { recursive: true, force: true })
   }
 }

@@ -29,6 +29,9 @@ export interface CloseDeps {
   jobTable: JobTable
   registry: MountRegistry
   sharedMounts: Set<BaseVFS>
+  /** Delete the workspace's state from its store before the store closes. */
+  dropState: boolean
+  workspaceId: string
 }
 
 /**
@@ -98,6 +101,7 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
     // Per-plane stores from the provider close through it below; a
     // caller-passed provider (or direct store override) may be shared
     // with sibling workspaces, so only its owner closes it.
+    if (deps.dropState) await deps.stateStore.drop(deps.workspaceId)
     if (deps.ownsStateStore) {
       await deps.stateStore.close()
     }

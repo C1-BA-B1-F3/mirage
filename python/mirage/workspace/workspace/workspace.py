@@ -1115,6 +1115,15 @@ class Workspace:
     async def close(self) -> None:
         await close_async(self)
 
+    async def delete(self) -> None:
+        """Close the workspace and delete its state from the store.
+
+        Links, history, sessions and the metadata record all go, so a
+        workspace created later under this id starts empty. ``close``
+        keeps them, which is how a daemon's workspace survives a restart.
+        """
+        await close_async(self, drop_state=True)
+
     # ── snapshot / load / copy ─────────────────────────────────────────────
 
     async def snapshot(self, target, *, compress: str | None = None) -> None:

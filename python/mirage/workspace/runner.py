@@ -107,16 +107,20 @@ class WorkspaceRunner:
         fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
         return fut.result(timeout=timeout)
 
-    async def stop(self) -> None:
+    async def stop(self, *, delete: bool = False) -> None:
         """Close the workspace and shut down the runner cleanly.
 
-        Calls ``self.ws.close()`` on the workspace loop, then stops
-        the loop and joins the thread. Idempotent.
+        Calls ``self.ws.close()`` on the workspace loop (``delete()``
+        when ``delete`` is set), then stops the loop and joins the
+        thread. Idempotent.
+
+        Args:
+            delete (bool): delete the workspace's state as it closes.
         """
         if not self._thread.is_alive():
             return
         try:
-            await self.call(self.ws.close())
+            await self.call(self.ws.delete() if delete else self.ws.close())
         except Exception:
             logger.exception("workspace close raised during runner shutdown")
         self.loop.call_soon_threadsafe(self.loop.stop)

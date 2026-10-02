@@ -124,6 +124,8 @@ def close_sync_parts(
 
 async def close_async(
     ws: "Workspace",
+    *,
+    drop_state: bool = False,
 ) -> None:
     """Release everything the workspace owns, exactly once.
 
@@ -144,6 +146,8 @@ async def close_async(
 
     Args:
         ws: the workspace being closed.
+        drop_state (bool): delete the workspace's state from its store
+            once nothing writes it any more, before the store closes.
     """
     # Stop lifecycle mutations before teardown yields or captures its close
     # lists. Keep _closed separate so runtime journals can still dispatch.
@@ -181,6 +185,8 @@ async def close_async(
             for mount in ws._registry.mounts()
         }
         await asyncio.gather(*(store.close() for store in stores.values()))
+        if drop_state:
+            await ws._state_store.drop(ws.workspace_id)
         if ws._owns_state_store:
             await ws._state_store.close()
         close_sync_parts(ws)

@@ -239,7 +239,7 @@ mirage workspace clone demo --at <version> --id demo_at_v1
 | `mirage workspace create FILE [--id NAME]` | Build mounts from YAML, register a workspace, return its id. |
 | `mirage workspace list` | Brief one-line summary per active workspace. |
 | `mirage workspace get ID [--verbose]` | Full detail (mounts, sessions, optionally cache / dirty / history internals). |
-| `mirage workspace delete ID` | Stop the workspace; daemon may exit on the idle timer. |
+| `mirage workspace delete ID` | Stop the workspace and delete its state (links, history, sessions, versions), so a workspace created later under the same id starts empty; daemon may exit on the idle timer. |
 | `mirage workspace clone SRC_ID [--id NAME] [--at REF]` | New workspace from the source; `--at REF` clones a past version, otherwise the live state. |
 | `mirage workspace commit ID [-m MSG] [-b BRANCH]` | Commit the live state as a version; returns the version id. |
 | `mirage workspace log ID [-b BRANCH]` | List versions on a branch, newest first. |

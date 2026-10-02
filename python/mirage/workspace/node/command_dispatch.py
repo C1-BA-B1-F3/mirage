@@ -171,7 +171,9 @@ async def execute_command(
         if rewritten is not None:
             line = source[: head_node.start_byte - base] + rewritten
             ast = parse(line)
-            offending = find_syntax_error(ast, expanding_aliases(session))
+            offending = find_syntax_error(
+                ast, expanding_aliases(session) - {head}
+            )
             if offending is not None:
                 io = syntax_error_result(offending, ast)
                 bad = io.stderr if isinstance(io.stderr, bytes) else b""

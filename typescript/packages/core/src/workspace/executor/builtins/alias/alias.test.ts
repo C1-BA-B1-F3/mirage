@@ -22,15 +22,19 @@ import { getTestParser, stdoutStr } from '../../../fixtures/workspace_fixture.ts
 import { Workspace } from '../../../workspace/workspace.ts'
 
 describe('alias', () => {
-  it('runs an alias spelled as a reserved word', async () => {
-    // bash tries an alias before a reserved word where a command starts, so
-    // with expand_aliases on, an alias named `fi` is a command.
+  // bash tries an alias before a reserved word where a command starts, so
+  // with expand_aliases on, an alias named `fi` is a command; in its own
+  // text, which it never expands again, `fi` is the reserved word.
+  it.each([
+    ['echo F', 'F\n', 0],
+    ['echo F; fi', '', 2],
+  ])('runs an alias fi=%j spelled as a reserved word', async (value, out, code) => {
     const ws = new Workspace(
       { '/data': new RAMVFS() },
       { mode: MountMode.WRITE, shellParser: await getTestParser() },
     )
-    await ws.shell("shopt -s expand_aliases; alias fi='echo F'")
+    await ws.shell(`shopt -s expand_aliases; alias fi='${value}'`)
     const io = await ws.shell('fi')
-    expect([stdoutStr(io), io.exitCode]).toEqual(['F\n', 0])
+    expect([stdoutStr(io), io.exitCode]).toEqual([out, code])
   })
 })

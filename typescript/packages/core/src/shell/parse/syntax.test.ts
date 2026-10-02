@@ -99,6 +99,9 @@ describe('a reserved word where a command starts', () => {
     ['fi >/dev/null', 'fi'],
     ['echo a | fi', 'fi'],
     ['echo a && fi', 'fi'],
+    ['fi; done', 'fi'],
+    ['fi; for a in b; do done', 'fi'],
+    ['if x; then fi; for a in b; do done', 'fi'],
   ])('names %j a syntax error at %j', (cmd, word) => {
     expect(findSyntaxError(parser.parse(cmd))).toBe(word)
   })
@@ -117,9 +120,19 @@ describe('a reserved word where a command starts', () => {
     expect(findSyntaxError(parser.parse(cmd))).toBeNull()
   })
 
-  it('reads a reserved word the shell expands as an alias as a command', () => {
-    expect(findSyntaxError(parser.parse('fi'), undefined, new Set(['fi']))).toBeNull()
-    expect(findSyntaxError(parser.parse('fi'), undefined, new Set(['done']))).toBe('fi')
+  // Pinned against bash 5.2.37, which takes the reserved word first inside
+  // `$(...)` and a process substitution.
+  it.each([
+    ['fi', 'fi', null],
+    ['fi', 'done', 'fi'],
+    ['( fi )', 'fi', null],
+    ['echo `fi`', 'fi', null],
+    ['echo "$(fi)"', 'fi', 'fi'],
+    ['echo $( (fi) )', 'fi', 'fi'],
+    ['echo <(fi)', 'fi', 'fi'],
+  ])('reads %j with an alias %j as %j', (cmd, alias, word) => {
+    const parse = (source: string) => parser.parse(source)
+    expect(findSyntaxError(parser.parse(cmd), parse, new Set([alias]))).toBe(word)
   })
 })
 

@@ -250,6 +250,9 @@ async def test_literal_quotes_are_not_reported_as_unclosed(command, expected):
         ("fi >/dev/null", "fi"),
         ("echo a | fi", "fi"),
         ("echo a && fi", "fi"),
+        ("fi; done", "fi"),
+        ("fi; for a in b; do done", "fi"),
+        ("if x; then fi; for a in b; do done", "fi"),
     ],
 )
 def test_a_reserved_word_where_a_command_starts_is_a_syntax_error(
@@ -277,6 +280,21 @@ def test_a_reserved_word_bash_reads_as_a_word_is_no_syntax_error(command):
     assert find_syntax_error(parse(command)) is None
 
 
-def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command():
-    assert find_syntax_error(parse("fi"), frozenset({"fi"})) is None
-    assert find_syntax_error(parse("fi"), frozenset({"done"})) == "fi"
+@pytest.mark.parametrize(
+    "command, alias, word",
+    [
+        ("fi", "fi", None),
+        ("fi", "done", "fi"),
+        ("( fi )", "fi", None),
+        ("echo `fi`", "fi", None),
+        ('echo "$(fi)"', "fi", "fi"),
+        ("echo $( (fi) )", "fi", "fi"),
+        ("echo <(fi)", "fi", "fi"),
+    ],
+)
+def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command(
+    command, alias, word
+):
+    # Pinned against bash 5.2.37, which takes the reserved word first
+    # inside `$(...)` and a process substitution.
+    assert find_syntax_error(parse(command), frozenset({alias})) == word

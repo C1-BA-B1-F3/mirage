@@ -715,6 +715,108 @@
       }
     },
     {
+      "id": "reserved_first_on_the_line_is_reported",
+      "seq": 503181,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "fi; done",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "mirage: syntax error near 'fi'\n"
+      }
+    },
+    {
+      "id": "reserved_reported_before_a_later_empty_body",
+      "seq": 503182,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "fi; for a in b; do done",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "mirage: syntax error near 'fi'\n"
+      }
+    },
+    {
+      "id": "empty_bodies_report_the_first",
+      "seq": 503183,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "if x; then fi; for a in b; do done",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "mirage: syntax error near 'fi'\n"
+      }
+    },
+    {
       "id": "reserved_quoted_is_a_word",
       "seq": 503176,
       "targets": [

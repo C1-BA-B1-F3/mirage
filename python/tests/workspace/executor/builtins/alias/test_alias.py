@@ -119,10 +119,14 @@ async def test_a_value_holding_a_quote_prints_re_readably():
 
 
 @pytest.mark.asyncio
-async def test_an_alias_spelled_as_a_reserved_word_runs():
+@pytest.mark.parametrize(
+    "value, result", [("echo F", ("F\n", 0)), ("echo F; fi", ("", 2))]
+)
+async def test_an_alias_spelled_as_a_reserved_word_runs(value, result):
     # bash tries an alias before a reserved word where a command starts,
-    # so with expand_aliases on, an alias named `fi` is a command.
+    # so with expand_aliases on, an alias named `fi` is a command; in its
+    # own text, which it never expands again, `fi` is the reserved word.
     ws = _ws()
-    await _run(ws, "shopt -s expand_aliases; alias fi='echo F'")
-    assert await _run(ws, "fi") == ("F\n", 0)
+    await _run(ws, f"shopt -s expand_aliases; alias fi='{value}'")
+    assert await _run(ws, "fi") == result
     await ws.close()

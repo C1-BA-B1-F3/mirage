@@ -177,7 +177,8 @@ export async function executeCommand(
     if (rewritten !== null) {
       const line = source.slice(0, (headNode.startIndex ?? 0) - base) + rewritten
       const ast = reparse(line)
-      const offending = findSyntaxError(ast, reparse, expandingAliases(session))
+      const expanding = new Set([...expandingAliases(session)].filter((name) => name !== head))
+      const offending = findSyntaxError(ast, reparse, expanding)
       if (offending !== null) {
         const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))
         return [

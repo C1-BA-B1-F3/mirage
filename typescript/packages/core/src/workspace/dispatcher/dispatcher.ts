@@ -159,7 +159,7 @@ function takeRuleGate(
   kwargs: Record<string, unknown> | undefined,
 ): [EntryGate | undefined, Record<string, unknown> | undefined] {
   const gate = kwargs?.ruleGate
-  if (gate === undefined) return [undefined, kwargs]
+  if (gate === undefined || gate === null) return [undefined, kwargs]
   const rest = { ...kwargs }
   delete rest.ruleGate
   return [gate as EntryGate, rest]

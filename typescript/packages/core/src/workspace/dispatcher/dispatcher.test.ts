@@ -918,6 +918,39 @@ describe('a marked op is judged on the path the door reaches', () => {
     }
   })
 
+  // unlink of a link is answered from the namespace's link table, not a
+  // mount; the command's rule on the link name holds before that answer.
+  it('judges a link entry before the table answers', async () => {
+    const ws = await linkedWs()
+    try {
+      const { gate } = refusing('/data/flink')
+      await expect(ws.dispatch('unlink', '/data/flink', [], { ruleGate: gate })).rejects.toThrow(
+        'sealed',
+      )
+      expect(await ws.dispatch('readlink', '/data/flink')).toBe('/data/real/secret')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // The door lifts the mark at entry: the mount's op sees only its own
+  // arguments, whatever the command's dispatcher carried.
+  it('never forwards the mark to the op', async () => {
+    const ws = await linkedWs()
+    const spy = vi.spyOn(OpsRegistry.prototype, 'call')
+    try {
+      const { gate, asked } = refusing('/nothing')
+      await ws.dispatch('read', '/data/real/secret', [], { ruleGate: gate })
+      const seen = spy.mock.calls.map((call) => call[5])
+      expect(seen.length).toBeGreaterThan(0)
+      expect(seen.every((kw) => kw === undefined || !('ruleGate' in kw))).toBe(true)
+      expect(asked).toEqual(['/data/real/secret'])
+    } finally {
+      spy.mockRestore()
+      await ws.close()
+    }
+  })
+
   // A link into hidden space is missing for the session; the door says so
   // before the command's rule on the visible link is asked.
   it('answers hidden space before the rule', async () => {

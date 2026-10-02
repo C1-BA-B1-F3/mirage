@@ -1188,3 +1188,40 @@ async def test_a_marked_op_answers_hidden_space_before_the_rule():
     finally:
         reset_current_session(token)
         await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_marked_op_on_a_link_entry_is_judged_before_the_table_answers():
+    # unlink of a link is answered from the namespace's link table, not a
+    # mount; the command's rule on the link name holds before that answer.
+    ws = await _linked_ws()
+    try:
+        gate = _RefusingGate("/data/flink")
+        with pytest.raises(PermissionError):
+            await ws.dispatch("unlink", _path("/data/flink"), rule_gate=gate)
+        target, _ = await ws.dispatch("readlink", _path("/data/flink"))
+        assert target == "/data/real/secret"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_the_mark_never_reaches_the_op(monkeypatch):
+    # The door lifts the mark at entry: the mount's op sees only its own
+    # arguments, whatever the command's dispatcher carried.
+    ws = await _linked_ws()
+    seen: list[dict] = []
+    real = MountEntry.execute_op
+
+    async def spy(self, op, *args, **kwargs):
+        seen.append(dict(kwargs))
+        return await real(self, op, *args, **kwargs)
+
+    monkeypatch.setattr(MountEntry, "execute_op", spy)
+    try:
+        gate = _RefusingGate("/nothing")
+        await ws.dispatch("read", _path("/data/real/secret"), rule_gate=gate)
+        assert seen and all("rule_gate" not in kw for kw in seen)
+        assert gate.asked == ["/data/real/secret"]
+    finally:
+        await ws.close()

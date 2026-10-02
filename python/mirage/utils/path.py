@@ -160,9 +160,11 @@ def dotted_spelling(word: str, base: str = "/") -> str | None:
     in, so every component in front of one has to be a directory, while
     the textual simplification a virtual path gets lets ``nope/../f``
     reach ``f`` past a missing ``nope``. This keeps the spelling a walk
-    needs. None when no dot follows a named component: a leading climb
-    (``../x``) only walks up from ``base``, a directory already, so the
-    common ``cd ..`` and ``cat ../f`` cost nothing.
+    needs. A trailing slash is kept too, since ``x/`` resolves as ``x/.``
+    and so names a directory. None when neither follows a named
+    component: a leading climb (``../x``) only walks up from ``base``, a
+    directory already, so the common ``cd ..`` and ``cat ../f`` cost
+    nothing.
 
     Args:
         word (str): the path as typed, absolute or relative.
@@ -174,12 +176,13 @@ def dotted_spelling(word: str, base: str = "/") -> str | None:
     while lead < len(parts) and parts[lead] in _DOTS:
         lead += 1
     rest = parts[lead:]
-    if not any(part in _DOTS for part in rest):
+    slashed = bool(rest) and word.endswith("/") and rest[-1] not in _DOTS
+    if not slashed and not any(part in _DOTS for part in rest):
         return None
     start = resolve_path(
         "/".join(parts[:lead]) or ".", "/" if word.startswith("/") else base
     )
-    return start.rstrip("/") + "/" + "/".join(rest)
+    return start.rstrip("/") + "/" + "/".join(rest) + "/" * slashed
 
 
 def dot_prefixes(dotted: str) -> list[str]:

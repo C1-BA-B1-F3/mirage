@@ -36,7 +36,7 @@ async def test_dify_vfs_is_registered_and_redacts_api_key():
     state = vfs.get_state()
     assert state["type"] == VFSName.DIFY
     assert state["needs_override"] is True
-    assert state["redacted_fields"] == ["api_key"]
+    assert "redacted_fields" not in state
     assert state["config"]["api_key"] == "<REDACTED>"
     assert state["config"]["dataset_id"] == "dataset-1"
     assert state["config"]["slug_metadata_name"] == "slug"

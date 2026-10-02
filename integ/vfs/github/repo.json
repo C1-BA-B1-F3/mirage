@@ -288,6 +288,20 @@
         "stderr": ""
       },
       "note": "data-v1's SUBMODULES puts the gitlink mods/lib in a directory that holds nothing else. The tree drops a gitlink, so mods is an empty directory: du keeps its 0 row with and without -a (bytes, as GNU coreutils 9.7 du -b counts it), find names it and calls it -empty as GNU findutils 4.10.0 does, and ls lists only . and .. under the total ls -la cannot know."
+    },
+    {
+      "id": "github_find_mtime_matches_nothing",
+      "seq": 530033,
+      "targets": [
+        "github"
+      ],
+      "command": "find /repo/docs -mtime -100000; echo rc=$?; find /repo/docs -newermt 2000-01-01 | wc -l",
+      "note": "A git tree carries no timestamp, so every entry's mtime is unknown and a time test keeps none of them, on both hosts. GNU find on a checkout would list every file, each with its checkout time.",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n0\n",
+        "stderr": ""
+      }
     }
   ]
 }

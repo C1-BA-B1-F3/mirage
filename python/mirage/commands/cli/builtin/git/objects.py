@@ -181,6 +181,14 @@ class LooseObjects:
         )
         self._cache[oid] = obj
 
+    def hold(self, obj: ShaFile) -> None:
+        """Cache an object as if it were loose, without writing it.
+
+        Args:
+            obj (ShaFile): the object to hold.
+        """
+        self._cache[obj.id] = obj
+
 
 def _packed_under(pack: Pack, prefix: bytes) -> Iterator[ObjectID]:
     """The ids one pack holds under a hex prefix, found through its
@@ -229,6 +237,17 @@ class VfsObjectStore(PackCapableObjectStore):
         self._loose = loose
         self._packs = packs
         self.object_format = SHA1
+
+    def hold(self, obj: ShaFile) -> None:
+        """Make an object readable for this invocation without writing it.
+
+        What ``git diff`` hashes from the working tree is compared and
+        rendered like any blob, but git writes none of it.
+
+        Args:
+            obj (ShaFile): the object to hold.
+        """
+        self._loose.hold(obj)
 
     @property
     def packed_count(self) -> int:

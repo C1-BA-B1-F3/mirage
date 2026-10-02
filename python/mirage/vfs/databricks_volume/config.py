@@ -14,7 +14,7 @@
 
 import posixpath
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 class DatabricksVolumeConfig(BaseModel):
@@ -32,7 +32,7 @@ class DatabricksVolumeConfig(BaseModel):
     volume: str
     root_path: str = "/"
     host: str | None = None
-    token: str | None = None
+    token: SecretStr | None = None
     profile: str | None = None
     timeout: int = 30
 

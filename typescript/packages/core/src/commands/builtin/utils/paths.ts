@@ -16,7 +16,7 @@ import type { LinkView, StatPath } from '../../../ops/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import type { FileStat } from '../../../types.ts'
 import { FileType, PathSpec, type StatFn } from '../../../types.ts'
-import { dotWalkError, enoent, isMissingPath, type DotWalkError } from '../../../utils/errors.ts'
+import { dotWalkError, eexist, enoent, isMissingPath, type FsError } from '../../../utils/errors.ts'
 import { rekey } from '../../../utils/key_prefix.ts'
 import {
   CycleError,
@@ -171,7 +171,10 @@ function spells(
  * `..` itself stays textual: `link/..` is the link's parent, the logical
  * reading bash's `cd` gives it, where GNU's file commands would reach the
  * target's (a documented divergence: resolved physically, an operand would
- * part from every path a walker derives from it).
+ * part from every path a walker derives from it). A trailing slash is a final
+ * `.`: an existing name in front of it has to be a directory too (`cat reg/`);
+ * a call that creates that name (`creates`: mkdir, symlink) answers EEXIST
+ * instead (`mkdir reg/`), however the store keeps the name.
  *
  * Only the path the spelling names is walked: a path derived from it (a
  * child a walker builds, a respelled match) carries the field along but no
@@ -184,9 +187,10 @@ export async function dotRefusal(
   stat: StatFn,
   path: PathSpec,
   follow: ((path: string) => string) | null = null,
-): Promise<DotWalkError | null> {
+  creates = false,
+): Promise<FsError | null> {
   const dotted = path.dotted
-  if (dotted === null || !spells(dotted, path.virtual, follow)) return null
+  if (dotted === null || !spells(dotted, resolvePath(path.virtual, '/'), follow)) return null
   const proved: string[] = []
   for (const prefix of dotPrefixes(dotted)) {
     if (proved.some((done) => done.startsWith(`${prefix}/`))) continue
@@ -198,6 +202,10 @@ export async function dotRefusal(
     }
     if (!exists && (await nearestAncestor(stat, spec))[1]) return dotWalkError(path, 'ENOENT')
     return dotWalkError(path, 'ENOTDIR')
+  }
+  if (dotted.endsWith('/')) {
+    const { exists, isDir } = await entryKind(stat, PathSpec.fromStrPath(path.virtual))
+    if (exists && !isDir) return creates ? eexist(path) : dotWalkError(path, 'ENOTDIR')
   }
   return null
 }

@@ -108,7 +108,6 @@ export async function gzipGeneric(
         suffix,
         decompress: false,
         follow: stdoutMode || force,
-        ...(stat !== undefined ? { stat } : {}),
         door,
       })
       if (found === null) continue

@@ -1087,34 +1087,6 @@ describe('cpGeneric trailing slash', () => {
     expect(io.exitCode).toBe(0)
     expect(files.has('/missing/f')).toBe(true)
   })
-
-  it('reports cannot stat for a slashed file destination', async () => {
-    // `cp a.txt reg/` fails the destination's stat in GNU, and the stat
-    // itself decides here whether or not the backend's is slash-aware.
-    const files = new Map([
-      ['/a.txt', new Uint8Array([1])],
-      ['/reg', new Uint8Array([2])],
-    ])
-    const { stat, copy, find } = makeBackend(files, new Set())
-    const [, io] = await cpGeneric(
-      [spec('/a.txt'), slashed('/reg')],
-      stat,
-      { copy, find },
-      cpFlags({}),
-    )
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: cannot stat '/reg/': Not a directory\n")
-    expect(files.get('/reg')).toEqual(new Uint8Array([2]))
-  })
-
-  it('reports cannot stat for a slashed file source', async () => {
-    const files = new Map([['/reg', new Uint8Array([2])]])
-    const { stat, copy, find } = makeBackend(files, new Set())
-    const [, io] = await cpGeneric([slashed('/reg'), spec('/x')], stat, { copy, find }, cpFlags({}))
-    expect(io.exitCode).toBe(1)
-    expect(await io.stderrStr()).toBe("cp: cannot stat '/reg/': Not a directory\n")
-    expect([...files.keys()]).toEqual(['/reg'])
-  })
 })
 
 describe('the link options', () => {

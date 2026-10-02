@@ -12,12 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import git from 'isomorphic-git'
 import { getOpcodes, groupOpcodes } from '../../../builtin/diff_format.ts'
 import { DiffOpTag } from '../../../builtin/diff_types.ts'
 import { FUNCNAME_START, GIT_SPACE } from './constants.ts'
 import { quotePath } from './render.ts'
-import { repoArgs, type Repo } from './repo.ts'
+import { readBlobBytes, type Repo } from './repo.ts'
 import type { TreeEntry } from './tree.ts'
 
 const HUNK_CONTEXT = 3
@@ -33,7 +32,7 @@ const DEC = new TextDecoder()
 export async function blobData(repo: Repo, entry: TreeEntry | null): Promise<Uint8Array> {
   if (!entry) return new Uint8Array()
   if (entry.mode === '160000') return ENC.encode(`Subproject commit ${entry.oid}\n`)
-  return (await git.readBlob({ ...repoArgs(repo), oid: entry.oid })).blob
+  return readBlobBytes(repo, entry.oid)
 }
 
 function lines(data: Uint8Array): string[] {

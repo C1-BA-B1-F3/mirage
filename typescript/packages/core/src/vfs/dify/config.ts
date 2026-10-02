@@ -82,8 +82,7 @@ export function resolveDifyConfig(config: DifyConfig): DifyConfigResolved {
 // `apiKey` is the credential. Masking it is what makes
 // `vfsStateRequiresOverride` demand a fresh one at load instead of
 // quietly rebuilding the mount as an empty RAMVFS. Python masks the
-// same field, though it spells it inside `DifyVFS.get_state` rather
-// than as a SecretStr on the model — its generic redactor would miss it.
+// same field, a SecretStr on the model.
 export type DifyConfigRedacted = RedactedConfig<DifyConfigResolved, 'apiKey'>
 
 export function redactDifyConfig(config: DifyConfigResolved): DifyConfigRedacted {

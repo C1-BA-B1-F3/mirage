@@ -55,6 +55,8 @@ export interface Repo {
   readonly cache: Record<symbol, unknown>
   /** How many hex digits this repository abbreviates an id to. */
   readonly abbrev: number
+  /** Blobs this invocation hashed from the working tree and never wrote. */
+  readonly held: Map<string, Uint8Array>
 }
 
 /** The argument bag every isomorphic-git call in this package shares. */
@@ -195,7 +197,17 @@ export async function openRepo(dispatch: Dispatch, location: RepoLocation): Prom
     location,
     cache: {},
     abbrev: abbrevLength(await packedCount(dispatch, location.commondir)),
+    held: new Map(),
   }
+}
+
+/**
+ * A blob's bytes, a held one first: what `git diff` hashes from the working
+ * tree is rendered like any blob, but git writes none of it. Mirrors
+ * Python's VfsObjectStore.hold.
+ */
+export async function readBlobBytes(repo: Repo, oid: string): Promise<Uint8Array> {
+  return repo.held.get(oid) ?? (await git.readBlob({ ...repoArgs(repo), oid })).blob
 }
 
 /**

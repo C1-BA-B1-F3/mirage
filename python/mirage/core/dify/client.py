@@ -4,6 +4,7 @@ from typing import Any
 from mirage.accessor.dify import DifyAccessor
 from mirage.core.api.client import RetryPolicy, api_request, status_error
 from mirage.vfs.dify.config import DifyConfig
+from mirage.vfs.secrets import reveal_secret
 
 
 def _policy(config: DifyConfig) -> RetryPolicy:
@@ -24,7 +25,9 @@ async def dify_request(
     json_body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     url = accessor.config.base_url + endpoint
-    headers = {"Authorization": f"Bearer {accessor.config.api_key}"}
+    headers = {
+        "Authorization": f"Bearer {reveal_secret(accessor.config.api_key)}"
+    }
     async with accessor._request_limiter.acquire():
         payload = await api_request(
             method,

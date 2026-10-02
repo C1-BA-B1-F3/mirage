@@ -16,7 +16,7 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { DELETED, headEntries, MODIFIED, workChanges } from './changes.ts'
+import { DELETED, headEntries, MODIFIED, TYPE_CHANGED, workChanges } from './changes.ts'
 import {
   GitError,
   NoPathspecRemoveError,
@@ -170,7 +170,8 @@ export async function refuseLostWork(
     const recorded = tree.get(path)
     const stagedChanges =
       recorded?.oid !== entry.oid || Number.parseInt(recorded.mode, 8) !== entry.mode
-    const localChanges = unstaged.get(path) === MODIFIED || hidden.has(path)
+    const code = unstaged.get(path)
+    const localChanges = code === MODIFIED || code === TYPE_CHANGED || hidden.has(path)
     if (localChanges && stagedChanges) both.push(path)
     else if (!cached) {
       if (stagedChanges) staged.push(path)

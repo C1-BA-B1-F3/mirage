@@ -68,22 +68,24 @@ const DOTS = new Set(['.', '..'])
  * The kernel resolves `.` and `..` against the directory they sit in, so
  * every component in front of one has to be a directory, while the textual
  * simplification a virtual path gets lets `nope/../f` reach `f` past a
- * missing `nope`. This keeps the spelling a walk needs. Null when no dot
- * follows a named component: a leading climb (`../x`) only walks up from
- * `base`, a directory already, so the common `cd ..` and `cat ../f` cost
- * nothing. Mirrors Python's dotted_spelling.
+ * missing `nope`. This keeps the spelling a walk needs. A trailing slash is
+ * kept too, since `x/` resolves as `x/.` and so names a directory. Null when
+ * neither follows a named component: a leading climb (`../x`) only walks up
+ * from `base`, a directory already, so the common `cd ..` and `cat ../f`
+ * cost nothing. Mirrors Python's dotted_spelling.
  */
 export function dottedSpelling(word: string, base = '/'): string | null {
   const parts = word.split('/').filter((part) => part !== '')
   let lead = 0
   while (lead < parts.length && DOTS.has(parts[lead] ?? '')) lead += 1
   const rest = parts.slice(lead)
-  if (!rest.some((part) => DOTS.has(part))) return null
+  const slashed = rest.length > 0 && word.endsWith('/') && !DOTS.has(rest[rest.length - 1] ?? '')
+  if (!slashed && !rest.some((part) => DOTS.has(part))) return null
   const start = resolvePath(
     parts.slice(0, lead).join('/') || '.',
     word.startsWith('/') ? '/' : base,
   )
-  return `${rstripSlash(start)}/${rest.join('/')}`
+  return `${rstripSlash(start)}/${rest.join('/')}${slashed ? '/' : ''}`
 }
 
 /**

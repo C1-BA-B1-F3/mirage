@@ -137,6 +137,19 @@ describe('object_store write', () => {
     expect((err as { code?: string }).code).toBeUndefined()
   })
 
+  it('mkdir refuses a name that exists', async () => {
+    // mkdir(2) answers EEXIST for a directory or a file already there.
+    // Rewriting the marker answered success to every caller that skips
+    // the command builder's own check: a guest, FUSE, ws.vfs.
+    const store = new FakeStore({ 'a/b/': '', 'f.txt': 'x' })
+    for (const path of ['/a/b', '/f.txt']) {
+      await expect(
+        managed(() => makeMkdir(makeDriver(store))(accessor, spec(path))),
+      ).rejects.toMatchObject({ code: 'EEXIST' })
+    }
+    expect(store.puts).toEqual([])
+  })
+
   it('mkdir without marker support is a no-op', async () => {
     const store = new FakeStore()
     const driver = { ...makeDriver(store), markersSupported: false }

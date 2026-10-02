@@ -15,6 +15,8 @@
 import asyncio
 from dataclasses import replace
 
+import pytest
+
 from mirage.cache.context import push_cache_manager
 from mirage.core.object_store.write import (
     make_create,
@@ -97,6 +99,17 @@ def test_mkdir_writes_a_marker_and_parents_gate_ancestors(accessor):
     )
     assert deep.writes == ["/x/y"]
     assert deep.ancestors == ["/mnt/x/y"]
+
+
+def test_mkdir_refuses_a_name_that_exists(accessor):
+    # mkdir(2) answers EEXIST for a directory or a file already there.
+    # Rewriting the marker answered success to every caller that skips
+    # the command builder's own check: a guest, FUSE, ws.vfs.
+    store = FakeStore({"a/b/": b"", "f.txt": b"x"})
+    for path in ("/a/b", "/f.txt"):
+        with pytest.raises(FileExistsError):
+            _managed(make_mkdir(make_driver(store))(accessor, spec(path)))
+    assert store.puts == []
 
 
 def test_mkdir_without_marker_support_is_a_no_op(accessor):

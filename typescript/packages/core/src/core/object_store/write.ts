@@ -17,16 +17,18 @@ import type { Accessor } from '../../accessor/base.ts'
 import { invalidateAfterWrite, invalidateAncestors } from '../../cache/context.ts'
 import { record, startOp } from '../../observe/context.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import { eexist, enoent, isEnotdir, isMissingPath } from '../../utils/errors.ts'
 import * as kp from '../../utils/key_prefix.ts'
 import type {
   MkdirFn,
   ObjectMeta,
   ObjectStoreDriver,
   PathFn,
+  StatFn,
   TruncateFn,
   WriteFn,
 } from './driver.ts'
+import { makeStat } from './stat.ts'
 
 // Put one object, translating a missing container to ENOENT. The driver
 // primitives speak keys, so a store error for a missing repository or
@@ -126,8 +128,31 @@ export function makeTruncate<A extends Accessor, C>(
 }
 
 /** Build the marker-object mkdir over one driver. */
+/** Whether the store holds `path`, as a key or a prefix. */
+async function found<A extends Accessor>(
+  stat: StatFn<A>,
+  accessor: A,
+  path: PathSpec,
+): Promise<boolean> {
+  try {
+    await stat(accessor, path)
+    return true
+  } catch (err) {
+    if (isMissingPath(err) || isEnotdir(err)) return false
+    throw err
+  }
+}
+
 export function makeMkdir<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>): MkdirFn<A> {
+  const stat = makeStat(driver)
   return async function mkdir(accessor, path, parents = false) {
+    if (!parents && (await found(stat, accessor, path))) {
+      // mkdir(2) refuses a name that exists, file or directory.
+      // Rewriting the marker answered success instead, and only the
+      // command builders check first: a guest, FUSE and ws.vfs reach the
+      // op directly, the same callers `makeRmdir` protects.
+      throw eexist(path)
+    }
     if (driver.markersSupported === false) {
       // The store refuses the marker client-side (hf: create_dir is
       // unsupported and a slash-terminated write is IsADirectory), so a

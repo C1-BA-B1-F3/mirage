@@ -520,7 +520,7 @@ export class Dispatcher {
               runWithTimeout(
                 Promise.resolve(
                   opName === 'setattr'
-                    ? this.applySetattr(vfs, scope, p, fullKwargs)
+                    ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
                     : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
@@ -1294,12 +1294,16 @@ export class Dispatcher {
    * gates as the native half. Mirrors Python's Dispatcher._apply_setattr.
    */
   private async applySetattr(
+    mount: MountEntry,
     vfs: BaseVFS,
     scope: PathSpec,
     p: PathSpec,
     kwargs: OpKwargs,
   ): Promise<Record<string, number | string>> {
     if (this.namespace.isLink(p.virtual) || this.opsRegistry.find('setattr', vfs) === null) {
+      // No backend inode answers for the path here, so nothing would
+      // refuse a missing one: the overlay would stamp it.
+      await this.xattrTarget(mount, p)
       return this.overlaySetattr(p, kwargs)
     }
     const raw = await this.opsRegistry.call('setattr', vfs, vfs.accessor, scope, [], kwargs)

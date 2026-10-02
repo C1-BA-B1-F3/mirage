@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.cache.context import invalidate_after_write, invalidate_ancestors
+from mirage.cache.index import NULL_INDEX
 from mirage.core.object_store.driver import (
     A,
     C,
@@ -20,13 +21,15 @@ from mirage.core.object_store.driver import (
     ObjectMeta,
     ObjectStoreDriver,
     PathFn,
+    StatFn,
     TruncateFn,
     WriteFn,
 )
+from mirage.core.object_store.stat import make_stat
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
-from mirage.utils.errors import enoent, enotsup
+from mirage.utils.errors import eexist, enoent, enotsup
 
 
 async def _put(
@@ -163,6 +166,21 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
     return truncate
 
 
+async def _found(stat: StatFn[A], accessor: A, path_spec: PathSpec) -> bool:
+    """Whether the store holds `path_spec`, as a key or a prefix.
+
+    Args:
+        stat (StatFn): the store's stat.
+        accessor (A): the store's accessor.
+        path_spec (PathSpec): the path asked about.
+    """
+    try:
+        await stat(accessor, path_spec, index=NULL_INDEX)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
+
+
 def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
     """Build the marker-object mkdir over one driver.
 
@@ -170,9 +188,17 @@ def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
+    stat = make_stat(driver)
+
     async def mkdir(
         accessor: A, path_spec: PathSpec, parents: bool = False
     ) -> None:
+        if not parents and await _found(stat, accessor, path_spec):
+            # mkdir(2) refuses a name that exists, file or directory.
+            # Rewriting the marker answered success instead, and only the
+            # command builders check first: a guest, FUSE and ws.vfs reach
+            # the op directly, the same callers `make_rmdir` protects.
+            raise eexist(path_spec)
         if not driver.markers_supported:
             # The store refuses the marker client-side (hf: create_dir is
             # unsupported and a slash-terminated write is IsADirectory),

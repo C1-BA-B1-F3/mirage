@@ -944,9 +944,9 @@ def test_context_across_a_nested_mount_is_separated(line):
     file's context from the next file's."""
     io = asyncio.run(_context_workspace().shell(line))
     assert _stdout(io) == (
-        "/base/top.txt:hit\n/base/top.txt-y\n--\n"
         "/base/inner/real.txt:hit\n"
-        "/base/inner/real.txt-z\n"
+        "/base/inner/real.txt-z\n--\n"
+        "/base/top.txt:hit\n/base/top.txt-y\n"
     )
 
 
@@ -964,7 +964,8 @@ def test_context_across_a_nested_mount_is_separated(line):
         ),
         (
             "--sort path -A1",
-            "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n",
+            "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n"
+            "/base/top.txt:hit\n/base/top.txt-y\n",
         ),
         (
             "--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l",
@@ -974,7 +975,7 @@ def test_context_across_a_nested_mount_is_separated(line):
             "-t txt -T txt -t txt --sort path -l",
             "/base/inner/real.txt\n/base/top.txt\n",
         ),
-        ("-t txt -T txt -t txt -l", "/base/top.txt\n/base/inner/real.txt\n"),
+        ("-t txt -T txt -t txt -l", "/base/inner/real.txt\n/base/top.txt\n"),
     ],
 )
 def test_rg_options_across_nested_mounts(options, expected):
@@ -1025,8 +1026,8 @@ def test_the_empty_name_does_not_fan_out():
             1,
         ),
         ("du -s", "18\t/base\n", 1),
-        ("grep -rl hit", "/base/top.txt\n/base/inner/real.txt\n", 2),
-        ("rg -l hit", "/base/top.txt\n/base/inner/real.txt\n", 2),
+        ("grep -rl hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
+        ("rg -l hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
     ],
 )
 def test_refused_operand_does_not_hide_nested_mounts(

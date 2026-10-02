@@ -4,8 +4,7 @@ from mirage.commands.builtin.generic.basename import basename
 from mirage.commands.builtin.generic.dirname import dirname
 from mirage.commands.builtin.generic.mktemp import mktemp
 from mirage.commands.builtin.generic.readlink import readlink
-from mirage.commands.builtin.generic.realpath import realpath
-from mirage.types import FileStat, FileType, PathSpec
+from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
@@ -52,54 +51,6 @@ async def test_dirname_no_slash():
 async def test_dirname_multiple():
     out, _ = await dirname("/a/b", "/x/y/z")
     assert out == b"/a\n/x/y\n"
-
-
-@pytest.mark.asyncio
-async def test_realpath_normalizes():
-
-    async def stat_fn(path):
-        return FileStat(type=FileType.FILE, name="x")
-
-    out, _ = await realpath([_spec("/a/./b/../c")], stat_fn=stat_fn)
-    assert out == b"/a/c\n"
-
-
-@pytest.mark.asyncio
-async def test_realpath_exists_check_passes():
-
-    async def stat_fn(path):
-        return FileStat(type=FileType.FILE, name="x")
-
-    out, _ = await realpath([_spec("/a/b")], stat_fn=stat_fn, e=True)
-    assert out == b"/a/b\n"
-
-
-@pytest.mark.asyncio
-async def test_realpath_exists_check_fails():
-
-    async def stat_fn(path):
-        if path.virtual == "/missing":
-            raise FileNotFoundError
-        return FileStat(type=FileType.FILE, name="a")
-
-    # One unresolved operand is reported and the rest still print, exit 1
-    # (coreutils 9.7), rather than aborting the command.
-    out, io = await realpath(
-        [_spec("/missing"), _spec("/a")], stat_fn=stat_fn, e=True
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"realpath: /missing: No such file or directory\n"
-    assert out == b"/a\n"
-
-
-@pytest.mark.asyncio
-async def test_realpath_multiple():
-
-    async def stat_fn(path):
-        return FileStat(type=FileType.FILE, name="x")
-
-    out, _ = await realpath([_spec("/a"), _spec("/b/../c")], stat_fn=stat_fn)
-    assert out == b"/a\n/c\n"
 
 
 @pytest.mark.asyncio

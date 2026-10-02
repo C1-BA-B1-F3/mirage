@@ -17,7 +17,7 @@ import { applyIo } from '../../cache/file/io.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
 import { CacheManager } from '../../cache/manager.ts'
 import { applyOpLimit, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
-import { dispatchStat, dotRefusal } from '../../commands/builtin/utils/paths.ts'
+import { dispatchStat, dotRefusal, walkSpelling } from '../../commands/builtin/utils/paths.ts'
 import { getExtension } from '../../commands/resolve.ts'
 import { IOResult, type OpReport } from '../../io/types.ts'
 import {
@@ -42,7 +42,7 @@ import { Policies, PolicyDenied, postOpsGate, preOpsGate } from '../../policy/in
 import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
-import { CycleError, norm, parent } from '../../utils/path.ts'
+import { CycleError, norm, parent, posixNormpath } from '../../utils/path.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
 import type { OpRecord } from '../../observe/record.ts'
@@ -175,9 +175,14 @@ function memoryAnswered(report: OpReport | undefined, moved: number | null = nul
 /** The door's link follow of one path, the final name too (`last`) or
  * only the names above it, with a loop thrown as ELOOP rather than the
  * namespace's CycleError. */
-function followOrLoop(namespace: Namespace, path: PathSpec, last: boolean): string {
+function followOrLoop(
+  namespace: Namespace,
+  path: PathSpec,
+  last: boolean,
+  spelled: string = path.virtual,
+): string {
   try {
-    return last ? namespace.follow(path.virtual) : namespace.followParent(path.virtual)
+    return last ? namespace.follow(spelled) : namespace.followParent(spelled)
   } catch (err) {
     if (err instanceof CycleError) throw eloop(path.virtual)
     throw err
@@ -856,7 +861,9 @@ export class Dispatcher {
    * words. Mirrors Python's Dispatcher._walked.
    */
   private walked(path: PathSpec, create: boolean): PathSpec {
-    const walked = followOrLoop(this.namespace, path, false)
+    const spelled = walkSpelling(path, (p) => this.namespace.follow(p))
+    let walked = followOrLoop(this.namespace, path, false, spelled)
+    if (spelled !== path.virtual) walked = posixNormpath(walked)
     if (walked === path.virtual) return path
     if (!pathAllowed(walked)) throw hiddenRefusal(walked, create)
     return PathSpec.fromStrPath(walked)

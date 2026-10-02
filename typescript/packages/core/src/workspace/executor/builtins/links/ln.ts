@@ -43,7 +43,13 @@ import {
   isEnotdir,
   isErofs,
 } from '../../../../utils/errors.ts'
-import { CycleError, gnuBasename, gnuDirname } from '../../../../utils/path.ts'
+import {
+  CycleError,
+  dottedSpelling,
+  gnuBasename,
+  gnuDirname,
+  posixNormpath,
+} from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import { PolicyDenied } from '../../../../policy/index.ts'
 import { pathAllowed } from '../../../../context/session_context.ts'
@@ -235,15 +241,15 @@ function followVisible(namespace: Namespace, virtual: string): string {
 
 // An operand as the path the kernel reaches, its final name kept. Command
 // dispatch walks the links above the name of every operand it classifies;
-// ln's relative words arrive unclassified, so they are walked here, and
-// every namespace read in this module sees the name the door will. A hidden
+// the relative words of ln, readlink and `[` arrive unclassified, so they are
+// walked here, and every namespace read sees the name the door will. A hidden
 // path stays as typed, and a loop is left for the door to report when the
-// link is made. Mirrors Python's _operand_abs.
-function operandAbs(namespace: Namespace, arg: string | PathSpec, cwd: string): string {
+// link is made. Mirrors Python's operand_abs.
+export function operandAbs(namespace: Namespace, arg: string | PathSpec, cwd: string): string {
   const virtual = absPath(arg, cwd)
   if (arg instanceof PathSpec || !pathAllowed(virtual)) return virtual
   try {
-    return namespace.followParent(virtual)
+    return posixNormpath(namespace.followParent(dottedSpelling(arg, cwd) ?? virtual))
   } catch (err) {
     if (err instanceof CycleError) return virtual
     throw err
@@ -350,7 +356,9 @@ export async function planLinks(
     const typed = targetTyped ?? targetDir
     const why = walkVerdict(namespace, typed, cwd, true)
     if (why !== null) return [[], `ln: failed to access '${typed}': ${why}\n`]
-    const unwalked = await dotRefusal(dispatchStat(dispatch), typedSpec(typed, cwd))
+    const unwalked = await dotRefusal(dispatchStat(dispatch), typedSpec(typed, cwd), (v) =>
+      namespace.follow(v),
+    )
     if (unwalked !== null) {
       return [[], `ln: failed to access '${typed}': ${fsStrerror(unwalked) ?? ENOENT_TEXT}\n`]
     }
@@ -502,7 +510,9 @@ export async function makeLink(
     return
   }
   if (!flags.symbolic) {
-    const unwalked = await dotRefusal(walker, typedSpec(plan.source, cwd))
+    const unwalked = await dotRefusal(walker, typedSpec(plan.source, cwd), (v) =>
+      namespace.follow(v),
+    )
     if (unwalked !== null) {
       errors.push(`ln: failed to access '${targetTyped}': ${fsStrerror(unwalked) ?? ENOENT_TEXT}\n`)
       return
@@ -511,7 +521,12 @@ export async function makeLink(
   // -f and -b look at the name before making it, so a plain file behind its
   // slash is ENOTDIR there and EEXIST only to symlink(2).
   const replaces = flags.force || (flags.backup !== null && flags.backup !== 'none')
-  const unwalked = await dotRefusal(walker, typedSpec(typed, cwd), null, !replaces)
+  const unwalked = await dotRefusal(
+    walker,
+    typedSpec(typed, cwd),
+    (v) => namespace.follow(v),
+    !replaces,
+  )
   if (unwalked !== null) {
     errors.push(refused(flags, typed, targetTyped, fsStrerror(unwalked) ?? ENOENT_TEXT))
     return

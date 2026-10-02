@@ -1146,11 +1146,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir /data/slashr/a.txt/ 2>&1; ln -s x /data/slashr/a.txt/ 2>&1; touch /data/slashr/a.txt/ 2>&1; touch -c /data/slashr/a.txt/ 2>&1; cat /data/slashr/a.txt",
+      "command": "mkdir /data/slashr/a.txt/ 2>&1; ln -s x /data/slashr/a.txt/ 2>&1; touch /data/slashr/a.txt/ 2>&1; touch -c /data/slashr/a.txt/ 2>&1; ln -s a.txt /data/slashr/flink && touch /data/slashr/flink/ 2>&1; rm /data/slashr/flink; cat /data/slashr/a.txt",
       "note": "GNU on debian:stable-slim: mkdir and symlink answer an existing name EEXIST before the slash is judged; touch words the slashed refusal as `setting times of`; the file is left as it was.",
       "expect": {
         "exit": 0,
-        "stdout": "mkdir: cannot create directory '/data/slashr/a.txt/': File exists\nln: failed to create symbolic link '/data/slashr/a.txt/': File exists\ntouch: setting times of '/data/slashr/a.txt/': Not a directory\ntouch: setting times of '/data/slashr/a.txt/': Not a directory\nhi\n",
+        "stdout": "mkdir: cannot create directory '/data/slashr/a.txt/': File exists\nln: failed to create symbolic link '/data/slashr/a.txt/': File exists\ntouch: setting times of '/data/slashr/a.txt/': Not a directory\ntouch: setting times of '/data/slashr/a.txt/': Not a directory\ntouch: setting times of '/data/slashr/flink/': Not a directory\nhi\n",
         "stderr": ""
       }
     },

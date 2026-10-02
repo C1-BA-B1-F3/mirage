@@ -56,16 +56,4 @@ describe('slack realpath', () => {
     ])
     expect(out).toBe('/mnt/slack/channels/general__C1\n')
   })
-
-  it('collapses .. segments', async () => {
-    const out = await runRealpath([
-      new PathSpec({
-        virtual: '/mnt/slack/channels/general__C1/../foo',
-        directory: '/mnt/slack/channels/general__C1/../foo',
-        resolved: false,
-        vfsPath: mountKey('/mnt/slack/channels/general__C1/../foo', '/mnt/slack'),
-      }),
-    ])
-    expect(out).toBe('/mnt/slack/channels/foo\n')
-  })
 })

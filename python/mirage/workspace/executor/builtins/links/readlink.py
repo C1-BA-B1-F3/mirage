@@ -12,9 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import posixpath
 from functools import partial
 
+from mirage.commands.builtin.generic.realpath import canonicalize
 from mirage.commands.builtin.utils.paths import (
     dispatch_stat,
     dot_refusal,
@@ -23,15 +23,14 @@ from mirage.commands.builtin.utils.paths import (
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
-from mirage.utils.path import CycleError
+from mirage.workspace.executor.builtins.links.ln import operand_abs
 from mirage.workspace.executor.builtins.shared import (
-    abs_path,
     fail,
+    operand_text,
     split_flags,
 )
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
-from mirage.workspace.mount.namespace.probe import path_exists
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
@@ -58,64 +57,44 @@ async def handle_readlink(
     flags, operands = split_flags(args, "fenm")
     if not operands:
         return fail("readlink", "readlink: missing operand\n")
-    canonical = any(f in flags for f in "fem")
+    # The last of -e, -f and -m wins, as in GNU readlink.
+    typed = "".join(map(operand_text, args[: len(args) - len(operands)]))
+    last = next((c for c in reversed(typed) if c in "efm"), None)
+    mode = None if last is None else "" if last == "f" else last
     lines: list[str] = []
     exit_code = 0
-    # -m alone canonicalizes without asking for anything to be there, so
-    # it is the one mode whose path is never walked.
-    walks = not canonical or "e" in flags or "f" in flags
-    walker = partial(dispatch_stat, dispatch)
     for op in operands:
-        abs_op = abs_path(op, session.cwd)
+        abs_op = operand_abs(namespace, op, session.cwd)
         spec = typed_spec(op, session.cwd)
-        # The walk refused the operand before readlink ran: the empty
-        # name answers ENOENT in every mode, a link loop in every mode
-        # but -m, which leaves it unresolved as spelled (coreutils 9.7).
-        if spec.walk_error == "ENOENT" or (
-            spec.walk_error is not None and walks
-        ):
-            exit_code = 1
-            continue
-        if walks and await dot_refusal(walker, spec) is not None:
-            exit_code = 1
-            continue
-        if canonical:
-            # -f/-e/-m canonicalize: resolve every symlink (including a
-            # trailing one) and normalize the path, GNU realpath-style.
-            # A link operand still clears the op door first: -m probes
-            # nothing, so without this a scoped session read an
-            # ungranted link's target out of the resolved path.
-            if namespace.is_link(abs_op):
-                try:
-                    await dispatch("readlink", PathSpec.from_str_path(abs_op))
-                except OSError:
-                    exit_code = 1
-                    continue
-            try:
-                resolved = posixpath.normpath(namespace.follow(abs_op))
-            except CycleError:
-                if walks:
-                    exit_code = 1
-                    continue
-                resolved = posixpath.normpath(abs_op)
-            probe = (
-                resolved
-                if "e" in flags
-                else posixpath.dirname(resolved)
-                if "f" in flags
-                else None
-            )
-            if probe is not None and not await path_exists(dispatch, probe):
-                exit_code = 1
-                continue
-            lines.append(resolved)
-            continue
         # The link entry is namespace state behind the op door: session
         # grants and admission policies decide whether this session may
-        # read the target at all. EINVAL (not a link), a refusal and a
-        # loop above the name (the door's walk) all land on GNU
-        # readlink's silent exit 1.
+        # read the target at all, so a link operand clears it even under
+        # -f, -e and -m. EINVAL (not a link), a refusal and a failed walk
+        # all land on GNU readlink's silent exit 1.
         try:
+            if mode is not None:
+                if namespace.is_link(abs_op):
+                    await dispatch("readlink", PathSpec.from_str_path(abs_op))
+                lines.append(
+                    await canonicalize(
+                        spec.raw_path,
+                        session.cwd,
+                        mode,
+                        False,
+                        namespace.readlink,
+                        partial(dispatch_stat, dispatch),
+                    )
+                )
+                continue
+            if (
+                spec.walk_error is not None
+                or await dot_refusal(
+                    partial(dispatch_stat, dispatch), spec, namespace.follow
+                )
+                is not None
+            ):
+                exit_code = 1
+                continue
             target, _ = await dispatch(
                 "readlink", PathSpec.from_str_path(abs_op)
             )

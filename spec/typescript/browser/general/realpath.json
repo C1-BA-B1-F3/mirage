@@ -214,11 +214,50 @@
   },
   "options": [
     {
+      "long": "--canonicalize-existing",
       "short": "-e",
       "type": "bool"
     },
     {
+      "long": "--canonicalize-missing",
       "short": "-m",
+      "type": "bool"
+    },
+    {
+      "long": "--logical",
+      "short": "-L",
+      "type": "bool"
+    },
+    {
+      "long": "--physical",
+      "short": "-P",
+      "type": "bool"
+    },
+    {
+      "long": "--quiet",
+      "short": "-q",
+      "type": "bool"
+    },
+    {
+      "long": "--relative-to",
+      "type": "str"
+    },
+    {
+      "long": "--relative-base",
+      "type": "str"
+    },
+    {
+      "long": "--strip",
+      "short": "-s",
+      "type": "bool"
+    },
+    {
+      "long": "--no-symlinks",
+      "type": "bool"
+    },
+    {
+      "long": "--zero",
+      "short": "-z",
       "type": "bool"
     }
   ],

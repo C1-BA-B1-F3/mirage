@@ -459,7 +459,7 @@ describe('MountRegistry read gate', () => {
       if (this.rejects !== undefined) return Promise.reject(this.rejects)
       return Promise.resolve(this.answer)
     }
-    mayServeListing(_mount: MountEntry, folder: string): Promise<boolean> {
+    mayServeListing(_mount: MountEntry, folder: string, _version: string | null): Promise<boolean> {
       this.asked.push(folder)
       if (this.rejects !== undefined) return Promise.reject(this.rejects)
       return Promise.resolve(this.answer)
@@ -480,7 +480,7 @@ describe('MountRegistry read gate', () => {
   const gateOf = (registry: MountRegistry) =>
     registry as unknown as {
       mayServeCached(m: MountEntry, k: string): Promise<boolean>
-      mayServeListing(m: MountEntry, folder: string): Promise<boolean>
+      mayServeListing(m: MountEntry, folder: string, version: string | null): Promise<boolean>
     }
 
   // A warm entry the running command may not read is not served: the read
@@ -544,13 +544,13 @@ describe('MountRegistry read gate', () => {
 
   it('trusts a listing with no reconciler wired', async () => {
     const { registry, mount } = gated()
-    expect(await gateOf(registry).mayServeListing(mount, '/data/d')).toBe(true)
+    expect(await gateOf(registry).mayServeListing(mount, '/data/d', null)).toBe(true)
   })
 
   it('consults the reconciler about a listing', async () => {
     const rec = new StubReconciler(false)
     const { registry, mount } = gated(rec)
-    expect(await gateOf(registry).mayServeListing(mount, '/data/d')).toBe(false)
+    expect(await gateOf(registry).mayServeListing(mount, '/data/d', null)).toBe(false)
     expect(rec.asked).toEqual(['/data/d'])
   })
 
@@ -558,7 +558,7 @@ describe('MountRegistry read gate', () => {
     const rec = new StubReconciler(true)
     const { registry, mount } = gated(rec)
     mount.retiring = true
-    expect(await gateOf(registry).mayServeListing(mount, '/data/d')).toBe(false)
+    expect(await gateOf(registry).mayServeListing(mount, '/data/d', null)).toBe(false)
     expect(rec.asked).toEqual([])
   })
 
@@ -567,6 +567,8 @@ describe('MountRegistry read gate', () => {
   it('propagates a listing check failure', async () => {
     const rec = new StubReconciler(true, new Error('backend down'))
     const { registry, mount } = gated(rec)
-    await expect(gateOf(registry).mayServeListing(mount, '/data/d')).rejects.toThrow('backend down')
+    await expect(gateOf(registry).mayServeListing(mount, '/data/d', null)).rejects.toThrow(
+      'backend down',
+    )
   })
 })

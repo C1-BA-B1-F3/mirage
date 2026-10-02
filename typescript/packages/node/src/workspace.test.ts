@@ -14,10 +14,13 @@
 
 import { chmodSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
-import { MountMode } from '@struktoai/mirage-core/types'
+import { MountMode, ReadPolicy } from '@struktoai/mirage-core/types'
+import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { DiskVFS } from './vfs/disk/disk.ts'
+import { InlineGitHub } from './vfs/fixtures/github.ts'
+import { buildVfs } from './vfs/registry.ts'
 import { tmpRoot } from './test-utils.ts'
 import { Workspace } from './workspace.ts'
 
@@ -144,4 +147,41 @@ describe('@struktoai/mirage-node Workspace disk metadata', () => {
     await ws.close()
     cleanup()
   })
+})
+
+// A fresh github mount lists the tree once, then pays one check of the head
+// per command while nothing changes, and one check plus one walk after a
+// change outside mirage.
+it('checks a fresh github mount by its head once per command', async () => {
+  const gh = new InlineGitHub({ 'docs/a.txt': 'a\n', 'docs/b.txt': 'b\n' })
+  vi.stubGlobal('fetch', gh.fetch)
+  const vfs = await buildVfs('github', {
+    token: 't',
+    owner: 'o',
+    repo: 'r',
+    ref: 'main',
+    base_url: gh.url,
+  })
+  const ws = new Workspace({
+    '/gh': new Mount(vfs, { mode: MountMode.READ, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+  })
+  const ls = async (): Promise<[string, number[]]> => {
+    gh.log.length = 0
+    const result = await ws.shell('ls /gh/docs')
+    expect([result.exitCode, new TextDecoder().decode(result.stderr)]).toEqual([0, ''])
+    return [
+      new TextDecoder().decode(result.stdout),
+      [gh.count('dir'), gh.count('recursive'), gh.count('blob')],
+    ]
+  }
+  try {
+    gh.log.length = 0
+    expect(await ls()).toEqual(['a.txt\nb.txt\n', [0, 1, 0]])
+    expect(await ls()).toEqual(['a.txt\nb.txt\n', [1, 0, 0]])
+    gh.set('docs/c.txt', 'c\n')
+    expect(await ls()).toEqual(['a.txt\nb.txt\nc.txt\n', [1, 1, 0]])
+  } finally {
+    vi.unstubAllGlobals()
+    await ws.close()
+  }
 })

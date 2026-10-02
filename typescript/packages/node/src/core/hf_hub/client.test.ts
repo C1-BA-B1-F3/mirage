@@ -14,8 +14,9 @@
 
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  HfHubConnectionError,
   HfHubError,
   apiUrl,
   encodePath,
@@ -23,8 +24,12 @@ import {
   etagValue,
   hubBytes,
   hubBytesTagged,
+  hubFetch,
+  hubGet,
   hubHeaders,
   hubPost,
+  hubPostNdjson,
+  hubRequest,
   hubStream,
   resolveUrl,
   revSegment,
@@ -312,8 +317,8 @@ describe('stallFetch', () => {
   })
 
   it('reads a bound of zero or less as none', async () => {
-    expect(stallFetch(0)).toBe(fetch)
-    expect(stallFetch(-1)).toBe(fetch)
+    expect(stallFetch(0)).toBe(hubFetch)
+    expect(stallFetch(-1)).toBe(hubFetch)
     expect(await drain(hubStream(undefined, `${base}/drip`, undefined, 0))).toBe('abcdefgh')
   })
 
@@ -330,5 +335,57 @@ describe('stallFetch', () => {
     await expect(
       drain(hubStream(undefined, `${base}/stall`, undefined, STALL_MS)),
     ).rejects.toMatchObject({ name: 'TimeoutError' })
+  })
+})
+
+describe('a transport failure', () => {
+  // undici rejects a refused connection with `TypeError: fetch failed`, which
+  // every gate reads as a programming error. The client renames it a
+  // connection error, keeping the message and the original as its cause.
+  const failed = new TypeError('fetch failed')
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  async function rejected(call: () => Promise<unknown>): Promise<unknown> {
+    vi.stubGlobal('fetch', () => Promise.reject(failed))
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    const settled = call().then(
+      () => null,
+      (err: unknown) => err,
+    )
+    await vi.runAllTimersAsync()
+    return settled
+  }
+
+  async function drained(timeoutMs: number): Promise<void> {
+    for await (const chunk of hubStream(undefined, 'http://127.0.0.1:1/x', undefined, timeoutMs)) {
+      expect(chunk).toBeUndefined()
+    }
+  }
+
+  it.each([
+    ['hubGet', () => hubGet(undefined, 'http://127.0.0.1:1/x')],
+    ['hubGet with a bound', () => hubGet(undefined, 'http://127.0.0.1:1/x', undefined, 1000)],
+    ['hubPost', () => hubPost(undefined, 'http://127.0.0.1:1/x', {})],
+    ['hubPostNdjson', () => hubPostNdjson(undefined, 'http://127.0.0.1:1/x', new Uint8Array())],
+    ['hubBytes', () => hubBytes(undefined, 'http://127.0.0.1:1/x')],
+    ['hubBytesTagged', () => hubBytesTagged(undefined, 'http://127.0.0.1:1/x')],
+    ['hubRequest', () => hubRequest(undefined, 'DELETE', 'http://127.0.0.1:1/x', null)],
+    ['hubStream', () => drained(0)],
+  ] as [string, () => Promise<unknown>][])('is a connection error from %s', async (_name, call) => {
+    const err = await rejected(call)
+    expect(err).toBeInstanceOf(HfHubConnectionError)
+    expect(err).not.toBeInstanceOf(TypeError)
+    expect((err as Error).message).toBe('fetch failed')
+    expect((err as Error).cause).toBe(failed)
+  })
+
+  it('leaves any other rejection as it was', async () => {
+    const aborted = new DOMException('no progress', 'TimeoutError')
+    vi.stubGlobal('fetch', () => Promise.reject(aborted))
+    await expect(stallFetch(0)('http://127.0.0.1:1/x')).rejects.toBe(aborted)
   })
 })

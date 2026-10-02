@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from mirage.accessor.hf_hub import HfHubAccessor
@@ -24,6 +26,23 @@ from mirage.vfs.hf_buckets.config import HfRepoConfig
 class FakeAccessor(HfHubAccessor):
     REPO_TYPE = "model"
     VFS_NAME = "hf_models"
+
+
+@pytest.fixture(autouse=True)
+def head(monkeypatch):
+    """The head commit a refill or a root stat asks for, answered locally.
+
+    Every accessor here points at the real Hub, so the one request a refill
+    now makes before its tree walk is answered by this mock: "" by default,
+    which walks the tree at the branch and stores no version, the way a
+    mocked ``fetch_tree`` alone used to behave.
+    """
+    mock = AsyncMock(return_value="")
+    for module in ("tree", "stat"):
+        monkeypatch.setattr(
+            f"mirage.core.hf_hub.{module}.head_commit", mock, raising=False
+        )
+    return mock
 
 
 @pytest.fixture

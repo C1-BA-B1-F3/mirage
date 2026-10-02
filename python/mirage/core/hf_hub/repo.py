@@ -27,6 +27,27 @@ class Absence(Enum):
     REVISION = "revision"
 
 
+def mount_version(head: str | None, key_prefix: str) -> str | None:
+    """The version a mount's listings are stored and checked at.
+
+    The head commit, joined with the key prefix when the mount has one: the
+    index keys are mount-relative, so two mounts of one repository at one
+    head but different key prefixes hold different listings under the same
+    keys, and must not match each other's version. ":" cannot occur in a
+    hex sha, and a mount with no key prefix keeps the plain head.
+
+    Args:
+        head (str | None): the head commit, or None when none is known.
+        key_prefix (str): the mount's normalized key prefix, "" for none.
+
+    Returns:
+        str | None: the version, or None when the head is unknown.
+    """
+    if not head:
+        return None
+    return f"{head}:{key_prefix}" if key_prefix else head
+
+
 async def head_commit(accessor: HfHubAccessor) -> str:
     """The commit the mount's revision currently points at.
 
@@ -47,8 +68,15 @@ async def head_commit(accessor: HfHubAccessor) -> str:
     Returns:
         str: the commit sha, or "" when the Hub reported none.
     """
+    # Only the sha is read, so only the sha is asked for: the bare object
+    # lists every file (1.5 MB on a large dataset), the trimmed one is about
+    # 110 bytes. A param, never part of revision_url, which every not-found
+    # message names verbatim.
     data: JsonValue = await hub_get(
-        accessor.token, revision_url(accessor), session=accessor.pool
+        accessor.token,
+        revision_url(accessor),
+        {"expand[]": "sha"},
+        session=accessor.pool,
     )
     if not isinstance(data, dict):
         return ""

@@ -47,7 +47,8 @@ class IndexView(IndexCacheStore):
         locked: bool = False,
         read_ttl: float | None = None,
         on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
-        may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
+        may_serve_listing: Callable[[str, str | None], Awaitable[bool]]
+        | None = None,
         note_written: Callable[[str], None] | None = None,
         excluded_prefixes: Callable[[], tuple[str, ...]] = tuple,
     ) -> None:
@@ -63,9 +64,10 @@ class IndexView(IndexCacheStore):
         read_ttl (float | None): listing lifetime cap, or None.
         on_gone (Callable[[list[Evicted]], Awaitable[None]] | None): the
             mount's cleanup for the children a re-list found gone, or None.
-        may_serve_listing (Callable[[str], Awaitable[bool]] | None):
-            the mount's listing gate, asked before a cached listing is
-            served; None serves every cached listing.
+        may_serve_listing (Callable[[str, str | None], Awaitable[bool]]
+            | None): the mount's listing gate, asked with the folder and
+            its stored version before a cached listing is served; None
+            serves every cached listing.
         note_written (Callable[[str], None] | None): told each folder
             whose listing this view has just written.
         excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
@@ -144,7 +146,7 @@ class IndexView(IndexCacheStore):
                 result.entries is not None
                 or result.partial_entries is not None
             )
-            and not await self._may_serve_listing(vfs_path)
+            and not await self._may_serve_listing(vfs_path, result.version)
         ):
             return ListResult(status=LookupStatus.EXPIRED)
         return result
@@ -184,6 +186,7 @@ class IndexView(IndexCacheStore):
         *,
         window: bool = False,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         gone = await self._set_dir(
             vfs_path,
@@ -192,6 +195,7 @@ class IndexView(IndexCacheStore):
             partial=False,
             window=window,
             excluded=excluded,
+            version=version,
         )
         await self.report_gone(gone)
         return gone
@@ -215,6 +219,7 @@ class IndexView(IndexCacheStore):
         partial: bool,
         window: bool,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         async with self._fence():
             if not self._owns(vfs_path):
@@ -236,6 +241,7 @@ class IndexView(IndexCacheStore):
                 deadline,
                 window=window,
                 excluded=excluded + self._excluded_prefixes(),
+                version=version,
             )
             self._noted(vfs_path)
             return [child for child in gone if self._owns(child.path)]
@@ -268,6 +274,7 @@ class IndexView(IndexCacheStore):
                 for path, keys in snapshot.children.items()
                 if self._owns(path)
             },
+            version=snapshot.version,
         )
 
     def seed(
@@ -275,12 +282,19 @@ class IndexView(IndexCacheStore):
         entries: dict[str, IndexEntry],
         children: dict[str, list[str]],
         expires_at: datetime,
+        *,
+        version: str | None = None,
     ) -> None:
         if not self._owns(self._prefix):
             return
-        snapshot = self.scope_snapshot(IndexSnapshot(entries, children))
+        snapshot = self.scope_snapshot(
+            IndexSnapshot(entries, children, version)
+        )
         self._store.seed(
-            snapshot.entries, snapshot.children, self._cap(expires_at)
+            snapshot.entries,
+            snapshot.children,
+            self._cap(expires_at),
+            version=snapshot.version,
         )
         for folder in snapshot.children:
             self._noted(folder)

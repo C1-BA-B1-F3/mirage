@@ -14,7 +14,11 @@
 
 import { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
-import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
+import {
+  LookupStatus,
+  type ListResult,
+  type LookupResult,
+} from '@struktoai/mirage-core/cache/index/config'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { eacces } from '@struktoai/mirage-core/utils/errors'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
@@ -51,13 +55,15 @@ export function isDir(found: Found): boolean {
  * The single place the two storage paths are told apart: a workspace mount
  * answers from its seeded index, and a mount built without one answers from
  * tables derived from the accessor's tree. Both are built by `indexRows`, so
- * they cannot disagree.
+ * they cannot disagree. A listed name with no row refills once unless
+ * `recoverEvicted` is false, which the retry passes.
  */
 export async function lookup(
   accessor: HfHubAccessor,
   index: IndexCacheStore | undefined,
   prefix: string,
   key: string,
+  recoverEvicted = true,
 ): Promise<Found> {
   if (index === undefined) {
     const { entries, children } = await localRows(accessor, prefix)
@@ -73,10 +79,14 @@ export async function lookup(
     // The index is the whole listing rather than a cache in front of one, so an
     // *expired* answer means the tree aged out, not that the path is gone.
     // Refetch once and ask again; a miss against a live index is a real absence
-    // and must not cost a tree fetch.
+    // and must not cost a tree fetch. A name the parent lists with no row of
+    // its own was evicted, which the store does not check, so it is refilled
+    // the same way.
     if (
       refilled === null &&
-      (parent.status === LookupStatus.EXPIRED || listing.status === LookupStatus.EXPIRED)
+      (parent.status === LookupStatus.EXPIRED ||
+        listing.status === LookupStatus.EXPIRED ||
+        (recoverEvicted && rowEvicted(key, result, listing, parent)))
     ) {
       refilled = await refillSnapshot(accessor, index, prefix)
       result = await index.get(key)
@@ -99,6 +109,21 @@ export async function lookup(
   })
 }
 
+/** Whether the parent lists `key` while neither its row nor its listing is stored. */
+function rowEvicted(
+  key: string,
+  result: LookupResult,
+  listing: ListResult,
+  parent: ListResult,
+): boolean {
+  return (
+    result.entry == null &&
+    listing.entries == null &&
+    parent !== listing &&
+    parent.entries?.includes(key) === true
+  )
+}
+
 /**
  * `lookup`, asked once more if the index was cleared under it.
  *
@@ -108,7 +133,9 @@ export async function lookup(
  * the path's overlay for good. Two signs tell that miss from a real one: the
  * root listing is gone (a live index always has one), or the accessor refilled
  * an index while the lookup ran, which is a clear followed by a concurrent
- * reseed.
+ * reseed. The first lookup's own eviction refill counts as one, so the second
+ * lookup does not refill for a listed name with no row: a row that refill did
+ * not bring back is absent after one refill, not two.
  */
 export async function lookupRetrying(
   accessor: HfHubAccessor,
@@ -121,7 +148,7 @@ export async function lookupRetrying(
   if (exists(found) || index === undefined) return found
   const root = await index.listDir(keyOf(prefix, ''))
   if (root.status !== LookupStatus.NOT_FOUND && accessor.refills === refills) return found
-  return lookup(accessor, index, prefix, key)
+  return lookup(accessor, index, prefix, key, false)
 }
 
 /**

@@ -16,9 +16,13 @@ import { Accessor } from '@struktoai/mirage-core/accessor/index'
 
 export class DiskAccessor extends Accessor {
   readonly root: string
+  // Whether a listing is stored with its folder's version
+  // (core/disk/listing_version.ts).
+  readonly folderVersions: boolean
 
-  constructor(root: string) {
+  constructor(root: string, folderVersions = true) {
     super()
     this.root = root
+    this.folderVersions = folderVersions
   }
 }

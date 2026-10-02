@@ -16,6 +16,8 @@ import logging
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index.ram import ListingCheckStore
+from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.lookup import (
     dir_stat_entry,
     key_of,
@@ -23,6 +25,7 @@ from mirage.core.hf_hub.lookup import (
     point_lookup,
     refusals_denied,
 )
+from mirage.core.hf_hub.repo import head_commit, mount_version
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
@@ -92,7 +95,11 @@ async def stat(
     prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
     rel = path_spec.mount_path.strip("/")
     if not rel:
-        return FileStat(name="/", type=FileType.DIRECTORY)
+        return FileStat(
+            name="/",
+            type=FileType.DIRECTORY,
+            fingerprint=await _root_version(accessor, index),
+        )
     key = key_of(prefix, rel)
     # A probe through a throwaway index asks for this one path; everything
     # else answers from the mount's listing, loading it if need be.
@@ -107,3 +114,35 @@ async def stat(
     if found.children is not None:
         return stat_of(dir_stat_entry(key))
     raise enoent(path_spec.virtual)
+
+
+async def _root_version(
+    accessor: HfHubAccessor,
+    index: IndexCacheStore,
+) -> str | None:
+    """The version of the whole mount: the head commit its revision is at.
+
+    Only the gate's ``ListingCheckStore`` asks for it, with one small
+    request. Every other index (the mount's own, the null index) names no
+    version and reads nothing, neither the index nor the Hub, so a getattr
+    of the root never pays a check or a store round trip: nothing reads a
+    root fingerprint off a mount-view stat. Nothing here refills the index
+    or loads the tree: a refused head names no version rather than falling
+    into a lookup.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index the stat was asked through.
+
+    Returns:
+        str | None: the head commit sha, joined with the key prefix as
+        ``mount_version`` joins it, or None when it is not asked for or
+        not known.
+    """
+    if not isinstance(index, ListingCheckStore):
+        return None
+    try:
+        return mount_version(await head_commit(accessor), accessor.key_prefix)
+    except HfHubError as exc:
+        log.debug("head of %s not answered: %s", accessor.repo_id, exc)
+        return None

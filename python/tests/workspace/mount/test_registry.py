@@ -537,7 +537,9 @@ class _StubReconciler:
             raise self.raises
         return bool(self.answer)
 
-    async def may_serve_listing(self, mount, folder: str) -> bool:
+    async def may_serve_listing(
+        self, mount, folder: str, version: str | None
+    ) -> bool:
         self.asked.append(folder)
         if self.raises is not None:
             raise self.raises
@@ -655,14 +657,14 @@ async def test_gate_propagates_a_missing_path():
 @pytest.mark.asyncio
 async def test_listing_gate_trusts_the_index_with_no_reconciler():
     registry, mount = _gated_registry()
-    assert await registry._may_serve_listing(mount, "/data/d") is True
+    assert await registry._may_serve_listing(mount, "/data/d", None) is True
 
 
 @pytest.mark.asyncio
 async def test_listing_gate_consults_the_reconciler():
     rec = _StubReconciler(answer=False)
     registry, mount = _gated_registry(rec)
-    assert await registry._may_serve_listing(mount, "/data/d") is False
+    assert await registry._may_serve_listing(mount, "/data/d", None) is False
     assert rec.asked == ["/data/d"]
 
 
@@ -671,7 +673,7 @@ async def test_listing_gate_refuses_a_retiring_mount_without_asking():
     rec = _StubReconciler(answer=True)
     registry, mount = _gated_registry(rec)
     mount.retiring = True
-    assert await registry._may_serve_listing(mount, "/data/d") is False
+    assert await registry._may_serve_listing(mount, "/data/d", None) is False
     assert rec.asked == []
 
 
@@ -679,7 +681,7 @@ async def test_listing_gate_refuses_a_retiring_mount_without_asking():
 async def test_listing_gate_absorbs_ebusy():
     rec = _StubReconciler(raises=ebusy("/data/"))
     registry, mount = _gated_registry(rec)
-    assert await registry._may_serve_listing(mount, "/data/d") is False
+    assert await registry._may_serve_listing(mount, "/data/d", None) is False
 
 
 @pytest.mark.asyncio
@@ -687,4 +689,4 @@ async def test_listing_gate_propagates_any_other_oserror():
     rec = _StubReconciler(raises=OSError("backend down"))
     registry, mount = _gated_registry(rec)
     with pytest.raises(OSError, match="backend down"):
-        await registry._may_serve_listing(mount, "/data/d")
+        await registry._may_serve_listing(mount, "/data/d", None)

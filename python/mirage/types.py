@@ -401,6 +401,22 @@ class ReadPolicy(str, Enum):
     PINNED = "pinned"
 
 
+class ListingVersion(StrEnum):
+    """What a backend's cached listings can be checked against under fresh.
+
+    NONE: nothing, so a listing the running command did not write itself
+    is listed again. MOUNT: one version covers every listing of the mount,
+    and a stat of the mount root answers it. FOLDER: each listing carries
+    its own folder's version, and a stat of that folder answers it. The
+    stored version and the stat's fingerprint must be the same kind of
+    token, since the gate compares them with ``==``.
+    """
+
+    NONE = "none"
+    MOUNT = "mount"
+    FOLDER = "folder"
+
+
 # Maximum lifetime in seconds for cached bodies and listings.
 DEFAULT_READ_TTL: int = 600
 

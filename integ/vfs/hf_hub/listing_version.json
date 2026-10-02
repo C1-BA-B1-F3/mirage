@@ -1,0 +1,78 @@
+{
+  "cases": [
+    {
+      "id": "hf_hub_listing_version_add_edit_delete",
+      "seq": 960028,
+      "targets": [
+        "hf-hub"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lvh/a.txt",
+            "content": "a1\n"
+          }
+        },
+        {
+          "command": "ls /data/lvh"
+        },
+        {
+          "mutate": {
+            "path": "/data/lvh/new.txt",
+            "content": "new\n"
+          }
+        },
+        {
+          "command": "ls /data/lvh"
+        },
+        {
+          "command": "cat /data/lvh/new.txt"
+        },
+        {
+          "mutate": {
+            "path": "/data/lvh/sub/deep.txt",
+            "content": "deep\n"
+          }
+        },
+        {
+          "command": "ls /data/lvh"
+        },
+        {
+          "command": "find /data/lvh | sort"
+        },
+        {
+          "mutate": {
+            "path": "/data/lvh/a.txt",
+            "content": "a2 edited\n"
+          }
+        },
+        {
+          "command": "find /data/lvh -name a.txt -size 10c"
+        },
+        {
+          "command": "cat /data/lvh/a.txt"
+        },
+        {
+          "mutate": {
+            "path": "/data/lvh/new.txt",
+            "delete": true
+          }
+        },
+        {
+          "command": "ls /data/lvh"
+        },
+        {
+          "command": "cat /data/lvh/new.txt"
+        }
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "a.txt\na.txt\nnew.txt\nnew\na.txt\nnew.txt\nsub\n/data/lvh\n/data/lvh/a.txt\n/data/lvh/new.txt\n/data/lvh/sub\n/data/lvh/sub/deep.txt\n/data/lvh/a.txt\na2 edited\na.txt\nsub\n",
+        "stderr": "cat: /data/lvh/new.txt: No such file or directory\n"
+      },
+      "note": "Every commit moves the revision's head sha, so under fresh the next command re-lists: an add, an add in a new folder, an edit and a deletion (a commit with a deleted file) are each seen by the command after them."
+    }
+  ]
+}

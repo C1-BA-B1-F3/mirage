@@ -19,7 +19,7 @@ import { FileStat, FileType, PathSpec } from '../types.ts'
 import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
-import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
+import { CHECKED_LIMIT, LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
 import { runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
@@ -431,6 +431,68 @@ describe('which listings a mount trusts', () => {
       clock.advance(LISTING_TRUST_WINDOW * 10_000)
       expect(manager.listingTrusted('/data')).toBe(true)
     })
+  })
+})
+
+describe('which version check a mount remembers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // Check A is sent and stalls; once it is out of the window a caller sends
+  // check B, which answers V2 first. A then lands with V1, the head it saw
+  // before the move. Recording A would put the memo back to V1: a listing
+  // stored at V2 would be re-checked, and one stored at V1 served as current.
+  it('never lets a late, older check replace a newer memo', async () => {
+    const clock = shiftPerformanceNow()
+    const manager = new CacheManager(
+      new RAMFileCacheStore(),
+      new RAMIndexCacheStore({ ttl: 600 }),
+      '/data/',
+      true,
+    )
+    let release: (version: string) => void = () => undefined
+    const stalled = new Promise<string>((resolve) => {
+      release = resolve
+    })
+    const asked: string[] = []
+    const answer = (version: string) => (): Promise<string> => {
+      asked.push(version)
+      return Promise.resolve(version)
+    }
+    const first = manager.checkedVersion('/data', 'V0', () => stalled)
+    clock.advance(LISTING_TRUST_WINDOW * 1000 + 10)
+    expect(await manager.checkedVersion('/data', 'V0', answer('V2'))).toBe('V2')
+    release('V1')
+    expect(await first).toBe('V1')
+    asked.length = 0
+    expect(await manager.checkedVersion('/data', 'V2', answer('V3'))).toBe('V2')
+    expect(asked).toEqual([])
+    expect(await manager.checkedVersion('/data', 'V1', answer('V4'))).toBe('V4')
+    expect(asked).toEqual(['V4'])
+  })
+
+  // A check serves only a caller inside its window, so once the map is full
+  // the stale entries are dead weight; dropping one costs at most another
+  // check, never a stale listing.
+  it('drops checks out of their window once the map is full', async () => {
+    const clock = shiftPerformanceNow()
+    const manager = new CacheManager(
+      new RAMFileCacheStore(),
+      new RAMIndexCacheStore({ ttl: 600 }),
+      '/data/',
+      true,
+    )
+    const limit: number = CHECKED_LIMIT
+    expect(limit).toBeGreaterThan(0)
+    const check = (): Promise<string> => Promise.resolve('V')
+    for (let n = 0; n < limit; n++) {
+      expect(await manager.checkedVersion(`/data/old${String(n)}`, 'V', check)).toBe('V')
+    }
+    clock.advance(LISTING_TRUST_WINDOW * 1000 + 10)
+    expect(await manager.checkedVersion('/data/new', 'V', check)).toBe('V')
+    const checked = (manager as unknown as { checked: Map<string, unknown> }).checked
+    expect([...checked.keys()]).toEqual(['/data/new'])
   })
 })
 

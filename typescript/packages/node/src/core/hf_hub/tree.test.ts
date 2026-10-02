@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RAMFileCacheStore } from '@struktoai/mirage-core/cache/file/ram'
 import type { Evicted } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
@@ -31,7 +31,15 @@ import {
   treeUrl,
 } from './tree.ts'
 import * as client from './client.ts'
+import * as repo from './repo.ts'
 import type { TreeEntry } from './tree_entry.ts'
+
+// Every accessor here points at the real Hub, so the head a refill asks for
+// before its walk is answered locally: '' by default, which walks the branch
+// and stores no version, the way a mocked tree page alone used to behave.
+beforeEach(() => {
+  vi.spyOn(repo, 'headCommit').mockResolvedValue('')
+})
 
 function accessor(config: Record<string, unknown> = {}): HfHubAccessor {
   return new HfHubAccessor({ repoId: 'acme/widget', ...config } as never)
@@ -105,6 +113,15 @@ describe('treeUrl', () => {
     const prefixed = accessor({ keyPrefix: 'sub/dir/' })
     expect(prefixed.keyPrefix).toBe('sub/dir/')
     expect(treeUrl(prefixed)).toContain('/tree/main/sub/dir')
+  })
+
+  it('takes the revision it is given', () => {
+    const head = 'c'.repeat(40)
+    expect(treeUrl(accessor(), head)).toMatch(new RegExp(`/tree/${head}$`))
+    expect(treeUrl(accessor())).toMatch(/\/tree\/main$/)
+    expect(treeUrl(accessor({ keyPrefix: 'sub/dir/' }), head)).toMatch(
+      new RegExp(`/tree/${head}/sub/dir$`),
+    )
   })
 
   it('encodes a revision holding a slash', () => {
@@ -260,11 +277,20 @@ describe('indexRows', () => {
     expect(children.get('/m')).toEqual(['/m/a.txt'])
   })
 
+  // The implied folder gets a row of its own and a place in its parent's
+  // listing, so every listed path has an entry: a versioned listing on Redis
+  // reads EXPIRED when one of its children has none.
   it('implies a parent a page boundary split off', () => {
-    const tree = new Map([['d/a.txt', parseEntry(fileRow('d/a.txt'))]])
-    const { entries, children } = indexRows(tree, '')
-    expect(children.get('/d')).toEqual(['/d/a.txt'])
-    expect(entries.has('/d')).toBe(false)
+    const tree = new Map([['d/e/a.txt', parseEntry(fileRow('d/e/a.txt'))]])
+    const { entries, children } = indexRows(tree, '/m')
+    expect(children.get('/m/d/e')).toEqual(['/m/d/e/a.txt'])
+    expect(children.get('/m/d')).toEqual(['/m/d/e'])
+    expect(children.get('/m')).toEqual(['/m/d'])
+    for (const key of ['/m/d', '/m/d/e']) {
+      expect(entries.get(key)?.resourceType).toBe('folder')
+      expect(entries.get(key)?.name).toBe(key.slice(key.lastIndexOf('/') + 1))
+    }
+    expect(new Set(entries.keys())).toEqual(new Set([...children.values()].flat()))
   })
 
   it('leaves a directory size unset', () => {
@@ -410,5 +436,76 @@ describe('refillSnapshot reports what left the repository', () => {
     } finally {
       vi.restoreAllMocks()
     }
+  })
+})
+
+// The watcher sets accessor.tree with no lock, so a walk at an older head can
+// land while the refill awaits its invalidation. The refill seeds the tree it
+// fetched itself, stamped with the head it walked at, never the accessor's
+// tree re-read after an await.
+it('seeds its own tree when the watcher swaps the accessor tree', async () => {
+  const acc = accessor()
+  const index = new RAMIndexCacheStore()
+  const invalidate = index.invalidatePrefix.bind(index)
+  vi.spyOn(repo, 'headCommit').mockResolvedValue('c'.repeat(40))
+  vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([fileRow('new.txt')]))
+  vi.spyOn(index, 'invalidatePrefix').mockImplementation(async (...args) => {
+    acc.tree = new Map([['old.txt', parseEntry(fileRow('old.txt'))]])
+    await invalidate(...args)
+  })
+  try {
+    const snapshot = await refillSnapshot(acc, index, '/m')
+    const listing = await index.listDir('/m')
+    expect(listing.entries).toEqual(['/m/new.txt'])
+    expect(listing.version).toBe('c'.repeat(40))
+    expect((await index.get('/m/new.txt')).entry?.id).toBe('oid-new.txt')
+    expect((await index.get('/m/old.txt')).entry ?? null).toBeNull()
+    expect(snapshot.children.get('/m')).toEqual(['/m/new.txt'])
+  } finally {
+    vi.restoreAllMocks()
+  }
+})
+
+const HEAD = 'c'.repeat(40)
+
+describe('refillSnapshot at the head', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // The refill walks the tree at the commit the head named, passed to the walk
+  // rather than written to the accessor, and stamps every folder with it.
+  it('walks and stamps the head it resolved', async () => {
+    vi.spyOn(repo, 'headCommit').mockResolvedValue(HEAD)
+    const get = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValue(page([fileRow('a.txt'), fileRow('d/b.txt'), dirRow('d')]))
+    const acc = accessor()
+    const index = new RAMIndexCacheStore()
+    await refillSnapshot(acc, index, '/m')
+    expect(String(get.mock.calls[0]?.[1])).toMatch(new RegExp(`/tree/${HEAD}$`))
+    expect(acc.revision).toBe('main')
+    expect((await index.listDir('/m')).version).toBe(HEAD)
+    expect((await index.listDir('/m/d')).version).toBe(HEAD)
+  })
+
+  // A head the Hub names as '' walks the branch and stores no version.
+  it('walks the branch unversioned when the Hub names no head', async () => {
+    const get = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([fileRow('a.txt')]))
+    const index = new RAMIndexCacheStore()
+    await refillSnapshot(accessor(), index, '/m')
+    expect(String(get.mock.calls[0]?.[1])).toMatch(/\/tree\/main$/)
+    const listing = await index.listDir('/m')
+    expect(listing.entries).toEqual(['/m/a.txt'])
+    expect(listing.version ?? null).toBeNull()
+  })
+
+  // The head failing is the refill failing: a transient error is not hidden
+  // behind a branch walk that would store rows of an unknown commit.
+  it('raises when the head fails', async () => {
+    vi.spyOn(repo, 'headCommit').mockRejectedValue(new HfHubError('boom', 500))
+    const get = vi.spyOn(client, 'hubGetResponse')
+    await expect(refillSnapshot(accessor(), new RAMIndexCacheStore(), '/m')).rejects.toThrow('boom')
+    expect(get).not.toHaveBeenCalled()
   })
 })

@@ -20,14 +20,17 @@ import pytest
 from fakeredis.aioredis import FakeRedis
 
 from mirage.cache.index import IndexEntry
-from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.ram import ListingCheckStore, RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
+from mirage.core.github.config import GitHubConfig
 from mirage.core.github.read import read
 from mirage.core.github.readdir import readdir
 from mirage.core.github.stat import stat
 from mirage.core.github.tree import index_rows
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import ContentType, FileType, PathSpec
+from mirage.vfs.github import GitHubVFS
+from tests.fixtures.github_api import FakeGitHub, serve
 
 
 def _index_from_tree(tree: dict[str, TreeEntry]) -> RAMIndexCacheStore:
@@ -200,7 +203,7 @@ async def test_direct_lookup_after_invalidation(
         new_tree["src/main.py"] = TreeEntry(
             path="src/main.py", type="blob", sha="new-blob", size=9
         )
-    tree_fetch = AsyncMock(return_value=(new_tree, False))
+    tree_fetch = AsyncMock(return_value=(new_tree, False, None))
     dir_fetch = AsyncMock(side_effect=[[new_tree["src"]], new_files])
     blob_fetch = AsyncMock(return_value=b"new bytes")
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", tree_fetch)
@@ -266,7 +269,7 @@ async def test_parallel_snapshot_readers_share_one_replacement(
 
     async def fetch(*args):
         await asyncio.sleep(0)
-        return fresh, False
+        return fresh, False, None
 
     fetch_mock = AsyncMock(side_effect=fetch)
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", fetch_mock)
@@ -293,3 +296,43 @@ async def test_parallel_snapshot_readers_share_one_replacement(
     finally:
         await index.close()
         await client.aclose()
+
+
+ROOT = PathSpec(virtual="/gh", directory="/gh", vfs_path="")
+
+
+def _three() -> FakeGitHub:
+    return FakeGitHub(
+        files={f"d{i}/{n}.txt": b"x\n" for i in (1, 2, 3) for n in "abc"}
+    )
+
+
+def _vfs(hub: FakeGitHub) -> GitHubVFS:
+    return GitHubVFS(
+        GitHubConfig(
+            token="t", owner="o", repo="r", ref="main", base_url=hub.url
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 500])
+async def test_a_refused_head_names_no_version_and_refills_nothing(status):
+    with serve(_three()) as hub:
+        vfs = _vfs(hub)
+        hub.fail["dir"] = (status, "refused")
+        found = await stat(vfs.accessor, ROOT, ListingCheckStore())
+        assert found.fingerprint is None
+        assert hub.count("recursive") == 0
+        assert (vfs.accessor.tree, vfs.accessor.tree_loaded) == ({}, False)
+
+
+# With no index at all the root names no version and asks nothing (it used
+# to ask the head once; only the gate's check store wants that request).
+@pytest.mark.asyncio
+async def test_a_root_stat_with_no_index_asks_nothing():
+    with serve(_three()) as hub:
+        vfs = _vfs(hub)
+        found = await stat(vfs.accessor, ROOT)
+        assert found.fingerprint is None
+        assert hub.counts() == (0, 0, 0)

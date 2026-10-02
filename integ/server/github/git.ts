@@ -41,6 +41,7 @@ import {
   reaches,
   repoIsEmpty,
   resolveRef,
+  snapshotAt,
   stageTree,
   stagedTree,
   storeBlob,
@@ -52,7 +53,7 @@ import {
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
-import type { RepoRow, TagRow } from './store.ts'
+import type { RepoRow, TagRow, TreeAtId } from './store.ts'
 import {
   authedRoute,
   everywhere,
@@ -96,6 +97,20 @@ const createBlob = withRepo(async (ctx, repo) => {
   }
 })
 
+async function baseTree(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  base: string,
+): Promise<TreeAtId | null> {
+  const named = await treeById(db, tenant, repo, base)
+  if (named !== null || base.length !== 40) return named
+  const commit = await resolveRef(db, tenant, repo, base)
+  if (commit === null || commit.branch !== null) return null
+  const tree = await snapshotAt(db, tenant, repo, commit)
+  return tree === null ? null : { ...tree, at: '' }
+}
+
 // Build a tree from a base plus the caller's entries. A null sha is git's
 // delete, `content` is the inline form, a bare sha names a blob the caller
 // wrote earlier, and a `commit` entry is a gitlink to the commit it names.
@@ -104,8 +119,10 @@ const createBlob = withRepo(async (ctx, repo) => {
 // composes several staged trees into one commit: without it the second tree
 // starts from the branch again and silently drops everything the first one
 // added. Any tree id the fake reported names one, a commit's or one
-// directory's included. An unknown base is refused rather than silently
-// substituting another tree. The validation wording is the fake's own.
+// directory's included, and so does a commit sha, read as its root tree: the
+// sha a ref's tree listing reports is its commit. An unknown base is refused
+// rather than silently substituting another tree. The validation wording is
+// the fake's own.
 const createTree = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   // `tree` is required, and a body that omits it or spells it as anything but
@@ -118,7 +135,7 @@ const createTree = withRepo(async (ctx, repo) => {
   }
   const entries = body.tree
   const base = str(body, 'base_tree')
-  const named = base === '' ? null : await treeById(ctx.db, ctx.tenant, repo, base)
+  const named = base === '' ? null : await baseTree(ctx.db, ctx.tenant, repo, base)
   if (base !== '' && named === null) {
     return fail(422, 'Invalid request.\n\n"base_tree" is invalid.')
   }

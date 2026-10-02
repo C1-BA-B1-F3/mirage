@@ -98,7 +98,7 @@ async def test_an_expired_folder_under_a_live_root_refills(tree, index):
     )
 
 
-async def _refuse_listing(_folder: str) -> bool:
+async def _refuse_listing(_folder: str, _version: str | None) -> bool:
     return False
 
 

@@ -24,7 +24,7 @@ from mirage.cache.index import (
 )
 from mirage.cache.index.lock import index_lock
 from mirage.core.github.readdir import _readdir
-from mirage.core.github.tree import index_entry, point_row
+from mirage.core.github.tree import index_entry, point_row, refill_snapshot
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
@@ -75,6 +75,7 @@ async def lookup(
     index: IndexCacheStore,
     prefix: str,
     key: str,
+    recover_evicted: bool = True,
 ) -> Found:
     """Resolve one mount-absolute key through the mount's listing.
 
@@ -92,28 +93,66 @@ async def lookup(
         index (IndexCacheStore): the mount's index, or NULL_INDEX.
         prefix (str): the mount prefix the keys are built against.
         key (str): the mount-absolute path to resolve.
+        recover_evicted (bool): whether a listed name with no row refills
+            once; the retry passes False, so a row the refill did not bring
+            back costs one refill per call, not two.
 
     Returns:
         Found: the row, or an empty Found when the listing has no such key.
     """
     async with index_lock(index, root_of(prefix)):
-        parent = key.rsplit("/", 1)[0] or "/"
-        try:
-            children = await _readdir(
-                accessor,
-                PathSpec(
-                    virtual=parent,
-                    directory=parent,
-                    vfs_path=mount_key(parent, prefix),
-                ),
-                index=index,
-            )
-        except FileNotFoundError as exc:
-            log.debug("lookup of %s found no parent listing: %s", key, exc)
+        if not await _listed(accessor, index, prefix, key):
             return Found()
-        if key not in children:
+        entry = (await index.get(key)).entry
+        if entry is not None or index is NULL_INDEX:
+            return Found(entry=entry)
+        # A clear can race the read and another op reseed the index after
+        # it; read the row once more before taking the miss as an eviction.
+        entry = (await index.get(key)).entry
+        if entry is not None or not recover_evicted:
+            return Found(entry=entry)
+        # Eviction can drop a row its listing still names. The store serves
+        # the listing regardless, so the miss is checked here, on demand:
+        # refill once, as for an expired listing, and resolve the key again.
+        log.debug("lookup of %s found a listed name with no row", key)
+        if accessor.truncated:
+            await index.invalidate_dir(key.rsplit("/", 1)[0] or "/")
+        else:
+            await refill_snapshot(accessor, index, prefix)
+        if not await _listed(accessor, index, prefix, key):
             return Found()
         return Found(entry=(await index.get(key)).entry)
+
+
+async def _listed(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+    key: str,
+) -> bool:
+    """Whether the parent's current listing names ``key``.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the mount's index, held under its lock.
+        prefix (str): the mount prefix the keys are built against.
+        key (str): the mount-absolute path to resolve.
+    """
+    parent = key.rsplit("/", 1)[0] or "/"
+    try:
+        children = await _readdir(
+            accessor,
+            PathSpec(
+                virtual=parent,
+                directory=parent,
+                vfs_path=mount_key(parent, prefix),
+            ),
+            index=index,
+        )
+    except FileNotFoundError as exc:
+        log.debug("lookup of %s found no parent listing: %s", key, exc)
+        return False
+    return key in children
 
 
 async def lookup_retrying(
@@ -132,8 +171,10 @@ async def lookup_retrying(
     reseeded meanwhile, so a miss is absent only when both agree. A genuine
     miss costs one more index read and no request, since the first lookup
     left the listing that answers the second; only a missing directory in
-    a truncated tree is walked twice. Two clears inside one call can still
-    produce a false miss, as in hf.
+    a truncated tree is walked twice. The second lookup does not refill
+    for a listed name with no row: the first already did, so a row the
+    refill did not bring back is absent after one refill, not two. Two
+    clears inside one call can still produce a false miss, as in hf.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor.
@@ -147,7 +188,7 @@ async def lookup_retrying(
     found = await lookup(accessor, index, prefix, key)
     if found.entry is not None or index is NULL_INDEX:
         return found
-    return await lookup(accessor, index, prefix, key)
+    return await lookup(accessor, index, prefix, key, recover_evicted=False)
 
 
 async def point_lookup(

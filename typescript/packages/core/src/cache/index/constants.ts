@@ -34,3 +34,8 @@ export const LISTING_TRUST_WINDOW = 1
 // commands other than the running one. Only the probing command is ever served
 // an answer, so a dropped entry costs at most one backend stat.
 export const PROBED_LIMIT = 4096
+
+// How many remembered listing version checks a mount keeps before it drops
+// those no caller can trust any more. A dropped entry costs at most one more
+// check, never a stale listing.
+export const CHECKED_LIMIT = 4096

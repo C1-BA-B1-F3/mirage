@@ -12,12 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { statSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiskAccessor } from '../../accessor/disk.ts'
-import { FileType } from '@struktoai/mirage-core/types'
+import { IndexEntry, ResourceType } from '@struktoai/mirage-core/cache/index/config'
+import { FileType, MountMode, ReadPolicy } from '@struktoai/mirage-core/types'
+import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
+import { Reconciler } from '@struktoai/mirage-core/workspace/reconcile'
 import { spec, tmpRoot } from '../../test-utils.ts'
+import { DiskVFS } from '../../vfs/disk/disk.ts'
+import { Workspace } from '../../workspace.ts'
 import { stat } from './stat.ts'
 
 let root: string
@@ -49,4 +55,48 @@ describe('core/disk/stat', () => {
   it('throws "file not found" on missing', async () => {
     await expect(stat(accessor, spec('/nope'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
+})
+
+describe('core/disk/stat folder probe', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it.each([false, true])(
+    'a folder with an overlay still drops the index under fresh (quiet: %s)',
+    async (quiet) => {
+      const folder = join(root, 'd')
+      await mkdir(folder)
+      if (quiet) {
+        // Past the racy window the folder's stat carries a version, so the
+        // probe compares it instead of finding no fingerprint at all.
+        const st = statSync(folder, { bigint: true })
+        const changed = st.ctimeNs > st.mtimeNs ? st.ctimeNs : st.mtimeNs
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Number(changed / 1000000n) + 3000)
+      }
+      const ws = new Workspace({
+        '/m': new Mount(new DiskVFS({ root }), {
+          mode: MountMode.WRITE,
+          read: { policy: ReadPolicy.FRESH, ttl: 600 },
+        }),
+      })
+      try {
+        await ws.namespace.ensureLoaded()
+        await ws.namespace.setAttrs('/m/d', { uid: 1000 })
+        const mount = ws.namespace.mountFor('/m/d')
+        await mount.indexStore.setDir('/m/d', [
+          [
+            'x.txt',
+            new IndexEntry({ id: '/d/x.txt', name: 'x.txt', resourceType: ResourceType.FILE }),
+          ],
+        ])
+        expect((await mount.indexStore.listDir('/m/d')).entries ?? null).not.toBeNull()
+        await new Reconciler(ws.cache, ws.namespace, ws.opsRegistry).reconcileRead(mount, '/m/d')
+        expect((await mount.indexStore.listDir('/m/d')).entries ?? null).toBeNull()
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 })

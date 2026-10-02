@@ -120,12 +120,12 @@ describe('github under read: fresh', () => {
   // on a warm fresh mount: cat pays one probe, at routing, as hf's table
   // does; its own stat and the cache door both reuse that answer. cp skips
   // routing's probe, so the cache door asks, and cp's stat resolves through
-  // the listing, which fresh re-checks once per command: on github that
-  // listing is the whole tree (Task 1.3 makes it cheaper).
+  // the listing, which fresh re-checks once per command: on github that is
+  // one check of the head, which replaces the tree refetch (Task 1.3).
   const WARM: [string, [number, number, number]][] = [
     [`cat ${PATH}`, [1, 0, 0]],
     [`cat ${PATH} | head -c 1`, [1, 0, 0]],
-    [`cp ${PATH} /r/a.txt`, [1, 1, 0]],
+    [`cp ${PATH} /r/a.txt`, [2, 0, 0]],
   ]
   for (const [line, cost] of WARM) {
     it(`costs one listing per probe: ${line}`, async () => {
@@ -218,9 +218,10 @@ describe('github under read: fresh', () => {
       // directory until the listing fills it.
       expect(gh.counts()).toEqual([2, 1, 0])
       // The listing filled the index, but under fresh the next command
-      // re-checks it once, which on github is one walk of the tree.
+      // re-checks it once: one check of the head, which replaces the tree
+      // refetch (Task 1.3).
       await out(w, `stat ${PATH}`)
-      expect(gh.counts()).toEqual([2, 2, 0])
+      expect(gh.counts()).toEqual([3, 1, 0])
     } finally {
       await w.close()
     }
@@ -289,8 +290,9 @@ describe('github under read: fresh', () => {
         '/gh/top.txt',
       ])
       // The probe left the whole listing; find, a new command, re-checks it
-      // once under fresh.
-      expect(gh.count('recursive')).toBe(walks + 1)
+      // once under fresh, with a check of the head instead of a refetch of
+      // the tree (Task 1.3).
+      expect(gh.count('recursive')).toBe(walks)
     } finally {
       await w.close()
     }

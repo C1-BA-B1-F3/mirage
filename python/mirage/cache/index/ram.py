@@ -39,12 +39,15 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._expiry: dict[str, datetime] = {}
         self._partial: set[str] = set()
         self._tombstones: dict[str, list[Evicted]] = {}
+        self._versions: dict[str, str] = {}
 
     def seed(
         self,
         entries: dict[str, IndexEntry],
         children: dict[str, list[str]],
         expires_at: datetime,
+        *,
+        version: str | None = None,
     ) -> None:
         now_iso = to_iso_z(datetime.now(timezone.utc))
         self._entries.update(
@@ -62,6 +65,14 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         )
         self._expiry.update({path: expires_at for path in children})
         self._partial.difference_update(children)
+        for path in children:
+            self._stamp(path, version)
+
+    def _stamp(self, vfs_path: str, version: str | None) -> None:
+        if version is None:
+            self._versions.pop(vfs_path, None)
+        else:
+            self._versions[vfs_path] = version
 
     async def entries(self) -> dict[str, IndexEntry]:
         return dict(self._entries)
@@ -91,9 +102,10 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         if datetime.now(timezone.utc) >= exp:
             return ListResult(status=LookupStatus.EXPIRED)
         children = self._children.get(vfs_path)
+        version = self._versions.get(vfs_path)
         if vfs_path in self._partial:
-            return ListResult(partial_entries=children or [])
-        return ListResult(entries=children or [])
+            return ListResult(partial_entries=children or [], version=version)
+        return ListResult(entries=children or [], version=version)
 
     async def set_dir(
         self,
@@ -103,6 +115,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         *,
         window: bool = False,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         return await self._set_dir(
             vfs_path,
@@ -111,6 +124,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             partial=False,
             evict=not window,
             excluded=excluded,
+            version=version,
         )
 
     async def set_partial_dir(
@@ -132,6 +146,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         partial: bool,
         evict: bool,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         async with self._lock_for(vfs_path):
             now = datetime.now(timezone.utc)
@@ -182,6 +197,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             self._entries.update(rows)
             self._children[vfs_path] = child_keys
             self._expiry[vfs_path] = exp
+            self._stamp(vfs_path, None if partial else version)
             if partial:
                 self._partial.add(vfs_path)
             else:
@@ -246,6 +262,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._expiry.pop(vfs_path, None)
         self._children.pop(vfs_path, None)
         self._partial.discard(vfs_path)
+        self._versions.pop(vfs_path, None)
 
     async def invalidate_prefix(
         self, vfs_path: str, *, excluded: tuple[str, ...] = ()
@@ -295,6 +312,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         ]:
             self._expiry.pop(exp_key, None)
             self._partial.discard(exp_key)
+            self._versions.pop(exp_key, None)
 
     async def invalidate(self) -> None:
         past = datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -307,4 +325,15 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._expiry.clear()
         self._partial.clear()
         self._tombstones.clear()
+        self._versions.clear()
         self._clear_locks()
+
+
+class ListingCheckStore(RAMIndexCacheStore):
+    """The empty, throwaway store the listing gate stats a version through.
+
+    A root stat asks the backend for its head only through this store.
+    Through any other index it names no version and reads nothing, so a
+    getattr of the root never sends a request or reads the index; the gate
+    passes this store to say a request is what it wants.
+    """

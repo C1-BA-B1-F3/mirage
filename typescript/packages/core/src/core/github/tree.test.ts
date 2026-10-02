@@ -358,3 +358,39 @@ describe('refillSnapshot reports what left the repository', () => {
     expect(gone).toEqual([])
   })
 })
+
+describe('the head commit a tree response names', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('stamps every folder of a refill with its head', async () => {
+    const gh = new FakeGitHub({ 'd1/a.txt': 'a', 'd1/sub/b.txt': 'b', 'top.txt': 't' })
+    vi.stubGlobal('fetch', gh.fetch)
+    const accessor = servedAccessor()
+    const index = new RAMIndexCacheStore()
+    const snapshot = await refillSnapshot(accessor, index, '/gh')
+    const head = await gh.head()
+    expect(snapshot?.version).toBe(head)
+    expect(accessor.treeVersion).toBe(head)
+    for (const folder of ['/gh', '/gh/d1', '/gh/d1/sub']) {
+      expect((await index.listDir(folder)).version).toBe(head)
+    }
+  })
+
+  it.each([
+    ['truncated', true, false],
+    ['without a head', false, true],
+  ])('stores no version for a refill %s', async (_label, truncated, dropSha) => {
+    const gh = new FakeGitHub({ 'd1/a.txt': 'a', 'top.txt': 't' })
+    gh.truncatedRecursive = truncated
+    gh.dropSha = dropSha
+    vi.stubGlobal('fetch', gh.fetch)
+    const accessor = servedAccessor()
+    const index = new RAMIndexCacheStore()
+    const snapshot = await refillSnapshot(accessor, index, '/gh')
+    expect(snapshot?.version ?? null).toBeNull()
+    expect(accessor.treeVersion).toBeNull()
+    expect((await index.listDir('/gh')).version ?? null).toBeNull()
+  })
+})

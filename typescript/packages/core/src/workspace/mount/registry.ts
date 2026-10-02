@@ -53,7 +53,7 @@ import { compareCodePoints } from '../../utils/sort.ts'
 interface ReadReconciler {
   reconcileRead(mount: MountEntry, path: string): Promise<void>
   mayServeCached(mount: MountEntry, path: string): Promise<boolean>
-  mayServeListing(mount: MountEntry, folder: string): Promise<boolean>
+  mayServeListing(mount: MountEntry, folder: string, version: string | null): Promise<boolean>
   onGone(gone: readonly Evicted[], excluded?: readonly string[]): Promise<void>
 }
 
@@ -207,11 +207,15 @@ export class MountRegistry {
    * for EBUSY from a mount that began retiring mid-check; this side has no
    * such path, for the same reason as the read gate.
    */
-  private async mayServeListing(m: MountEntry, folder: string): Promise<boolean> {
+  private async mayServeListing(
+    m: MountEntry,
+    folder: string,
+    version: string | null,
+  ): Promise<boolean> {
     const reconciler = this.reconciler
     if (reconciler === null) return true
     if (m.retiring) return false
-    return reconciler.mayServeListing(m, folder)
+    return reconciler.mayServeListing(m, folder, version)
   }
 
   private attachManager(m: MountEntry): void {
@@ -239,7 +243,7 @@ export class MountRegistry {
             this.descendantMounts(m.prefix).map((entry) => entry.prefix.replace(/\/$/, '')),
           )
       },
-      (folder) => this.mayServeListing(m, folder),
+      (folder, version) => this.mayServeListing(m, folder, version),
       () => this.descendantMounts(m.prefix).map((entry) => entry.prefix.replace(/\/$/, '')),
     )
   }

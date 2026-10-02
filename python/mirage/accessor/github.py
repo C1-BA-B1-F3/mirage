@@ -63,3 +63,9 @@ class GitHubAccessor(SessionAccessor):
         # once an index was wired.
         self.tree_loaded: bool = tree is not None
         self.truncated = truncated
+        # The head commit that tree was fetched at, as the response named
+        # it, or None when it is not known (a tree handed in, a truncated
+        # or sha-less response). A tree walker compares it with the
+        # version its index listing was served at and refills on a
+        # difference, since another mount can refill a shared index.
+        self.tree_version: str | None = None

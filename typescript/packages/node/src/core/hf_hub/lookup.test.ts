@@ -21,6 +21,7 @@ import { RedisIndexCacheStore } from '@struktoai/mirage-core/cache/index/redis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
+import * as repo from './repo.ts'
 import { ExpiredOnArrival, FakeHub, serveHub } from './_test_util.ts'
 import { exists as pathExists } from './exists.ts'
 import { dirStatEntry, keyOf, lookup, probeDir, probeFile } from './lookup.ts'
@@ -62,6 +63,17 @@ function loaded(): HfHubAccessor {
   return accessor
 }
 
+// Most accessors here point at the real Hub, so the head a refill asks for
+// before its walk is answered locally: '' walks the branch and stores no
+// version, the way a mocked tree page alone used to behave.
+function stubHead(): void {
+  vi.spyOn(repo, 'headCommit').mockResolvedValue('')
+}
+
+beforeEach(() => {
+  stubHead()
+})
+
 describe('keyOf', () => {
   it.each([
     ['', 'a.txt', '/a.txt'],
@@ -80,14 +92,16 @@ describe('lookup', () => {
     expect(found.entry?.size).toBe(7)
   })
 
-  it('reports a directory with no row of its own', async () => {
+  // A directory the tree only implies gets a folder row of its own, so its
+  // parent lists it and every listed path has an entry (Task 1.3).
+  it('gives a directory with no tree row a folder row', async () => {
     const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
     accessor.tree = new Map([
       ['d/b.txt', parseEntry({ type: 'file', oid: 'o', size: 1, path: 'd/b.txt' })],
     ])
     accessor.treeLoaded = true
     const found = await lookup(accessor, undefined, '', '/d')
-    expect(found.entry).toBeNull()
+    expect([found.entry?.resourceType, found.entry?.id]).toEqual(['folder', ''])
     expect(found.children).toEqual(['/d/b.txt'])
   })
 
@@ -172,6 +186,7 @@ describe('stat', () => {
 describe('read', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
   })
 
   it('never reaches the network for a path the listing knows is absent', async () => {
@@ -218,6 +233,7 @@ for (const backend of ['ram', 'redis']) {
     () => {
       beforeEach(() => {
         vi.restoreAllMocks()
+        stubHead()
       })
 
       function indexForTest(): RAMIndexCacheStore | RedisIndexCacheStore {
@@ -250,7 +266,7 @@ for (const backend of ['ram', 'redis']) {
                 .spyOn(client, 'hubBytesTagged')
                 .mockResolvedValue([new TextEncoder().encode('new bytes'), ''])
               try {
-                await seedIndex(accessor, index, '/m')
+                await seedIndex(accessor.tree, index, '/m')
                 await index.setDir('/other', [
                   ['keep', new IndexEntry({ id: 'keep', name: 'keep', resourceType: 'file' })],
                 ])
@@ -297,7 +313,7 @@ for (const backend of ['ram', 'redis']) {
           .spyOn(client, 'hubGetResponse')
           .mockResolvedValue({ data: [], status: 200, headers: {} })
         try {
-          await seedIndex(accessor, index, '')
+          await seedIndex(accessor.tree, index, '')
           await index.setDir(
             '/d',
             [['b.txt', new IndexEntry({ id: 'old', name: 'b.txt', resourceType: 'file' })]],
@@ -321,7 +337,7 @@ for (const backend of ['ram', 'redis']) {
           .mockRejectedValueOnce(new Error('offline'))
           .mockResolvedValueOnce({ data: [], status: 200, headers: {} })
         try {
-          await seedIndex(accessor, index, '')
+          await seedIndex(accessor.tree, index, '')
           await index.invalidate()
           await expect(stat(accessor, ps('a.txt'), index)).rejects.toThrow('offline')
           expect((await index.get('/a.txt')).entry?.id).toBe('oid-a')
@@ -342,7 +358,7 @@ for (const backend of ['ram', 'redis']) {
           .spyOn(client, 'hubGetResponse')
           .mockRejectedValue(new Error('unexpected fetch'))
         try {
-          await seedIndex(accessor, index, '/m')
+          await seedIndex(accessor.tree, index, '/m')
           await index.setDir('/', [], new Date(0))
           expect((await lookup(accessor, index, '/m', '/m')).children).toEqual(['/m/a.txt', '/m/d'])
           expect(fetch).not.toHaveBeenCalled()
@@ -377,7 +393,7 @@ for (const backend of ['ram', 'redis']) {
         }
       })
       try {
-        await seedIndex(accessor, index, '/m')
+        await seedIndex(accessor.tree, index, '/m')
         await index.invalidate()
         const keys = Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? '/m/a.txt' : '/m'))
         const results = await Promise.all(keys.map((key) => lookup(accessor, index, '/m', key)))
@@ -418,6 +434,7 @@ function page(rows: unknown[]) {
 describe('stat on an index that holds no tree', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
     // No test here may reach the real Hub: a walk nobody expected answers an
     // empty tree, which the assertions then catch.
     vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
@@ -469,7 +486,7 @@ describe('stat on an index that holds no tree', () => {
   it('answers a live index without a request', async () => {
     const accessor = loaded()
     const index = new RAMIndexCacheStore()
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
     const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
     expect((await stat(accessor, ps('a.txt'), index)).fingerprint).toBe('oid-a')
@@ -480,7 +497,7 @@ describe('stat on an index that holds no tree', () => {
   it('refills an expired index rather than asking one path', async () => {
     const accessor = loaded()
     const index = new RAMIndexCacheStore()
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     await index.invalidate()
     const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
     const walk = vi
@@ -593,6 +610,7 @@ class ClearedMidLookup extends RAMIndexCacheStore {
 describe('a lookup the index is cleared under', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
   })
 
   it('retries at the read door', async () => {
@@ -610,7 +628,7 @@ describe('a lookup the index is cleared under', () => {
   it('retries at the stat door', async () => {
     const accessor = loaded()
     const index = new ClearedMidLookup()
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     const walk = vi
       .spyOn(client, 'hubGetResponse')
       .mockResolvedValue(page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]))
@@ -624,7 +642,7 @@ describe('a lookup the index is cleared under', () => {
     const accessor = loaded()
     const index = new ClearedMidLookup()
     index.cleared = true
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     expect(await codeOf(() => stat(accessor, ps('nope'), index))).toBe('ENOENT')
     expect(index.gets).toBe(1)
   })
@@ -662,6 +680,7 @@ class ClearedAndReseeded extends RAMIndexCacheStore {
 describe('a lookup a reseed hides the clear from', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
   })
 
   it('retries at the read door', async () => {

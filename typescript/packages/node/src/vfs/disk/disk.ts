@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+import { VFSConfigError } from '@struktoai/mirage-core/vfs/errors'
 import {
   chmod,
   mkdir,
@@ -27,7 +28,7 @@ import path from 'node:path'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import { CapacityState, PathSpec, VFSName } from '@struktoai/mirage-core/types'
+import { CapacityState, ListingVersion, PathSpec, VFSName } from '@struktoai/mirage-core/types'
 import type { CapacityResult } from '@struktoai/mirage-core/types'
 
 import { DISK_COMMANDS } from '../../commands/builtin/disk/index.ts'
@@ -41,10 +42,15 @@ import { buildDeltaHook } from '../../core/disk/watch/index.ts'
 
 export interface DiskVFSOptions {
   root: string
+  // Store each listing at its folder's version. Folder versions assume a
+  // local POSIX filesystem; turn them off for an NFS, SMB or FUSE root, whose
+  // change times may not move with the folder's entries.
+  folderVersions?: boolean
 }
 
 export interface DiskVFSState {
   type: string
+  config?: { root: string; folderVersions: boolean }
   files: Record<string, Uint8Array>
   modes?: Record<string, number>
 }
@@ -68,14 +74,27 @@ export class DiskVFS extends BaseVFS {
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 60
   override readonly prompt = PROMPT
+  // Each folder's listing is stored at the folder's own version (inode and
+  // change times, core/disk/listing_version.ts), so a fresh mount re-lists
+  // only the folders that changed. An instance built with folderVersions
+  // false declares NONE for itself; the initializer keeps FOLDER for the spec.
+  override readonly listingVersion: ListingVersion = ListingVersion.FOLDER
   readonly root: string
+  readonly folderVersions: boolean
   override readonly accessor: DiskAccessor
 
   constructor(options: DiskVFSOptions) {
+    let folderVersions: unknown = options.folderVersions
+    if (folderVersions === undefined) folderVersions = true
+    if (typeof folderVersions !== 'boolean') {
+      throw new VFSConfigError('disk: folder_versions: must be a boolean')
+    }
     super()
+    this.folderVersions = folderVersions
+    if (!folderVersions) this.listingVersion = ListingVersion.NONE
     this.root = path.resolve(options.root)
     mkdirSync(this.root, { recursive: true })
-    this.accessor = new DiskAccessor(this.root)
+    this.accessor = new DiskAccessor(this.root, folderVersions)
   }
 
   // The resolved root is the storage: two DiskVFS instances built on the same
@@ -129,6 +148,7 @@ export class DiskVFS extends BaseVFS {
     }
     return {
       type: this.name,
+      config: { root: this.root, folderVersions: this.folderVersions },
       files,
       modes,
     }

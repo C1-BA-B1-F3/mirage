@@ -345,6 +345,70 @@ describe('workspaces router', () => {
     await app.close()
   })
 
+  it('POST /v1/workspaces/:id/clone 400s for a bad mount override', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'mirage-clone-disk-'))
+    const app = buildApp()
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces',
+        payload: { id: 'src-m', config: { mounts: { '/': { vfs: 'ram', mode: 'write' } } } },
+      })
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces/src-m/clone',
+        payload: {
+          override: {
+            mounts: { '/': { vfs: 'disk', config: { root, folder_versions: 'no' } } },
+          },
+        },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json<{ detail: string }>().detail).toBe('disk: folder_versions: must be a boolean')
+    } finally {
+      await app.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('POST /v1/workspaces/:id/clone 400s for an unknown mount config key', async () => {
+    const app = buildApp()
+    await app.inject({
+      method: 'POST',
+      url: '/v1/workspaces',
+      payload: { id: 'src-k', config: { mounts: { '/': { vfs: 'ram', mode: 'write' } } } },
+    })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/workspaces/src-k/clone',
+      payload: { override: { mounts: { '/': { vfs: 'ram', config: { bogus: 1 } } } } },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json<{ detail: string }>().detail).toContain('bogus')
+    await app.close()
+  })
+
+  it('POST /v1/workspaces 400s for a bad mount config', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'mirage-create-disk-'))
+    const app = buildApp()
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/workspaces',
+        payload: {
+          config: {
+            mounts: { '/': { vfs: 'disk', config: { root, folder_versions: 'no' } } },
+          },
+        },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json<{ detail: string }>().detail).toBe('disk: folder_versions: must be a boolean')
+    } finally {
+      await app.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('POST /v1/workspaces/:id/clone 404s for unknown source', async () => {
     const app = buildApp()
     const res = await app.inject({

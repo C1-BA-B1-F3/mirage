@@ -30,6 +30,8 @@ const DIR = '/data'
 const EMPTY_DIR = '/data/empty'
 const PARTIAL_DIR = '/data/partial'
 const UNLISTED_DIR = '/data/never'
+const VERSIONED_DIR = '/data/versioned'
+const VERSION = '0123456789abcdef0123456789abcdef01234567'
 const FILE_NAME = 'a.txt'
 const FOLDER_NAME = 'sub'
 const FILE = `${DIR}/${FILE_NAME}`
@@ -99,6 +101,7 @@ async function write(prefix: string): Promise<void> {
   await store.put(`${DIR}/${FOLDER_NAME}/unlisted`, fileEntry)
   await store.setDir(EMPTY_DIR, [])
   await store.setPartialDir(PARTIAL_DIR, [[FILE_NAME, fileEntry]])
+  await store.setDir(VERSIONED_DIR, [[FILE_NAME, fileEntry]], undefined, { version: VERSION })
   const listing = await store.listDir(DIR)
   check(
     'ts write: listing reads back',
@@ -131,6 +134,19 @@ async function read(prefix: string): Promise<void> {
     'ts read: listing in order',
     (listing.status ?? null) === null && sameList(listing.entries, CHILDREN),
     JSON.stringify(listing),
+  )
+  check(
+    'ts read: an unversioned listing has no version',
+    listing.version === null,
+    JSON.stringify(listing),
+  )
+  const versioned = await store.listDir(VERSIONED_DIR)
+  check(
+    "ts read: a listing's version as written",
+    (versioned.status ?? null) === null &&
+      sameList(versioned.entries, [`${VERSIONED_DIR}/${FILE_NAME}`]) &&
+      versioned.version === VERSION,
+    JSON.stringify(versioned),
   )
   const empty = await store.listDir(EMPTY_DIR)
   check(

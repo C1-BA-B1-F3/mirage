@@ -63,7 +63,7 @@ class ReadReconciler(Protocol):
     ) -> None: ...
 
     async def may_serve_listing(
-        self, mount: MountEntry, folder: str
+        self, mount: MountEntry, folder: str, version: str | None
     ) -> bool: ...
 
 
@@ -223,7 +223,9 @@ class MountRegistry:
                 raise
             return False
 
-    async def _may_serve_listing(self, m: MountEntry, folder: str) -> bool:
+    async def _may_serve_listing(
+        self, m: MountEntry, folder: str, version: str | None
+    ) -> bool:
         """Run the shared listing verdict for one mount's cached listing.
 
         Mirrors :meth:`_may_serve_cached`: read at call time, a retiring
@@ -233,6 +235,7 @@ class MountRegistry:
         Args:
             m (MountEntry): the mount whose listing is in question.
             folder (str): mount-absolute listing key.
+            version (str | None): the version stored with the listing.
         """
         reconciler = self._reconciler
         if reconciler is None:
@@ -240,7 +243,7 @@ class MountRegistry:
         if m.retiring:
             return False
         try:
-            return await reconciler.may_serve_listing(m, folder)
+            return await reconciler.may_serve_listing(m, folder, version)
         except OSError as exc:
             if exc.errno != errno.EBUSY:
                 raise
@@ -257,8 +260,8 @@ class MountRegistry:
                 return False
             return await self._may_serve_cached(m, key)
 
-        async def listing_gate(folder: str) -> bool:
-            return await self._may_serve_listing(m, folder)
+        async def listing_gate(folder: str, version: str | None) -> bool:
+            return await self._may_serve_listing(m, folder, version)
 
         async def cleanup(gone: list[Evicted]) -> None:
             # Read at call time, for the same reason as the gate; a retiring

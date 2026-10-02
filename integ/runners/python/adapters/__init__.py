@@ -2409,30 +2409,52 @@ def build_ram(
 def build_disk(
     mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
-    root = tempfile.mkdtemp(prefix=f"mirage-integ-disk-{run_id}-")
+    # Named by the run and the mount, not minted, so the second build of
+    # one run (a consistency case's shadow) lands on the folder the first
+    # one made, the way another process sees the same disk; each case opens
+    # with its own run id, so nothing carries over between cases.
+    safe_path = mount["path"].strip("/").replace("/", "-") or "root"
+    name = f"mirage-integ-disk-py-{run_id}-{safe_path}"
+    root = Path(tempfile.gettempdir()) / name
 
     async def cleanup() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
-    mount_root = Path(root)
-    if fixture_name := mount.get("host_fixture"):
-        fixture = json.loads(
-            (
-                Path(__file__).resolve().parents[3]
-                / "fixtures"
-                / (fixture_name + ".json")
-            ).read_text()
-        )
-        for relative, text in fixture["files"].items():
-            target = mount_root / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
-        for relative in fixture["directories"]:
-            (mount_root / relative).mkdir(parents=True, exist_ok=True)
-        for relative, target in fixture["symlinks"].items():
-            (mount_root / relative).symlink_to(target)
-        mount_root /= "root"
+    fixture_name = mount.get("host_fixture")
+    try:
+        root.mkdir()
+    except FileExistsError:
+        # The shadow's build: the first one already seeded the folder.
+        logging.getLogger(__name__).debug("disk root %s is shared", root)
+    else:
+        if fixture_name:
+            seed_host_fixture(root, fixture_name)
+    mount_root = root / "root" if fixture_name else root
     return DiskVFS(root=str(mount_root)), cleanup
+
+
+def seed_host_fixture(root: Path, fixture_name: str) -> None:
+    """Lay a host fixture's files, folders and symlinks out under root.
+
+    Args:
+        root (Path): the folder to seed.
+        fixture_name (str): the fixture under integ/fixtures/, sans .json.
+    """
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "fixtures"
+            / (fixture_name + ".json")
+        ).read_text()
+    )
+    for relative, text in fixture["files"].items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+    for relative in fixture["directories"]:
+        (root / relative).mkdir(parents=True, exist_ok=True)
+    for relative, link in fixture["symlinks"].items():
+        (root / relative).symlink_to(link)
 
 
 def build_redis(
@@ -3049,10 +3071,78 @@ async def mutate_github(
     )
 
 
+async def delete_commit(shadow_ws: Workspace, path: str) -> None:
+    """Delete a Hub file the way the Hub deletes one: a commit removing it.
+
+    Args:
+        shadow_ws (Workspace): the workspace the case does not read from.
+        path (str): the virtual path to delete.
+    """
+    mount = shadow_ws.mount(path)
+    accessor = getattr(mount.vfs, "accessor", None)
+    if not isinstance(accessor, HfHubAccessor):
+        raise ValueError(f"hf-hub cannot delete {path}")
+    rel = path[len(mount.prefix.rstrip("/")) :]
+    await commit(accessor, deletions=[accessor.repo_path(rel)])
+
+
+async def delete_github(shadow_ws: Workspace, path: str) -> None:
+    """Delete a repository file the way GitHub deletes one: a contents DELETE.
+
+    GitHub wants the current blob sha, as it does for a replace, so the
+    file is read first; an absent file fails the case rather than passing
+    for a delete that never happened.
+
+    Args:
+        shadow_ws (Workspace): the workspace the case does not read from.
+        path (str): the virtual path to delete.
+    """
+    mount = shadow_ws.mount(path)
+    accessor = getattr(mount.vfs, "accessor", None)
+    if not isinstance(accessor, GitHubAccessor):
+        raise ValueError(f"github cannot delete {path}")
+    rel = path[len(mount.prefix.rstrip("/")) :].lstrip("/")
+    endpoint = f"/repos/{accessor.owner}/{accessor.repo}/contents/{quote(rel)}"
+    config = accessor.config
+    current = await github_request(
+        config.token, "GET", endpoint, base_url=config.base_url
+    )
+    await github_request(
+        config.token,
+        "DELETE",
+        endpoint,
+        {
+            "message": f"integ: delete {rel}",
+            "sha": str(current["sha"]),
+        },
+        base_url=config.base_url,
+    )
+
+
 MUTATORS: dict[str, Callable[[Workspace, str, bytes], Awaitable[None]]] = {
     "hf-hub": mutate_commit,
     "github": mutate_github,
 }
+
+# No fallback, unlike MUTATORS: a write is a fair stand-in for a write, but
+# nothing stands in for a delete, so a target missing here fails its case.
+DELETERS: dict[str, Callable[[Workspace, str], Awaitable[None]]] = {
+    "hf-hub": delete_commit,
+    "github": delete_github,
+}
+
+
+def refuse_delete(target_id: str) -> Callable[[str], Awaitable[None]]:
+    """The delete step of a target that has no delete mutator: a failure.
+
+    Args:
+        target_id (str): the target, named in the message.
+    """
+
+    async def refuse(path: str) -> None:
+        raise RuntimeError(f"{target_id}: no delete mutator for {path}")
+
+    return refuse
 
 
 async def teardown_target(
@@ -3208,6 +3298,7 @@ async def open_consistency(
     Workspace,
     Callable[[str, bytes], Awaitable[None]],
     Callable[[str], Awaitable[None]],
+    Callable[[str], Awaitable[None]],
     Callable[[], Awaitable[None]],
 ]:
     # Refused before anything opens, so there is nothing to clean up.
@@ -3244,10 +3335,18 @@ async def open_consistency(
         spec, config = cli_install(service, cli_name)
         read_ws.register_cli(cli_name, spec, config)
         shadow_ws.register_cli(cli_name, spec, config)
-    mutate = MUTATORS.get(target.get("service") or "", mutate_write)
+    service_name = target.get("service") or ""
+    mutate = MUTATORS.get(service_name, mutate_write)
+    delete = DELETERS.get(service_name)
+    remove = (
+        refuse_delete(target["id"])
+        if delete is None
+        else functools.partial(delete, shadow_ws)
+    )
     return (
         read_ws,
         functools.partial(mutate, shadow_ws),
+        remove,
         functools.partial(mutate_line, shadow_ws),
         functools.partial(
             teardown_target,

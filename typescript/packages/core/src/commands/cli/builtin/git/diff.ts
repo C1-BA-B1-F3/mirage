@@ -77,7 +77,7 @@ export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const cached = fl.asBool('cached') || fl.asBool('staged')
   const [revisions, paths] = splitMarked(texts, inv.argv)
-  if (revisions.length === 0 && !cached) return [null, new IOResult()]
+  if (revisions.length === 0 && !cached && paths.length === 0) return [null, new IOResult()]
   try {
     checkOperands(texts, InvalidOptionError, escaped(inv.argv))
     const repo = await opened(fl, doors)
@@ -89,6 +89,10 @@ export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
       await renamesEnabled(repo),
       await configBool(repo, 'core.quotepath', true),
     )
+    if (revisions.length === 0 && !cached) {
+      pathspecPatterns(repo.location, startPoint(fl), paths)
+      return [null, new IOResult()]
+    }
     let body: string,
       warning = ''
     if (cached) {

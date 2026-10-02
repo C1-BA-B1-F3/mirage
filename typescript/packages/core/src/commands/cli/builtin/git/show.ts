@@ -35,7 +35,6 @@ import { decorations, prettyFormat } from './history.ts'
 import {
   joinOutput,
   commitOutput,
-  commitTouches,
   parseDiffFlags,
   renamesEnabled,
   type DiffFlags,
@@ -59,7 +58,6 @@ interface ShowFlags {
   readonly date: DateMode
   readonly mailmap: readonly MailmapEntry[]
   readonly useMailmap: boolean
-  readonly firstParent: boolean
 }
 
 /** Read the raw show flag kwargs into a frozen struct. */
@@ -76,7 +74,6 @@ function parseShowFlags(
     date: parseDateMode(fl.asStr('date') ?? 'default', dateClock(env)),
     diff: parseDiffFlags(fl, true, 'dense-combined', true, defaultRenames, quotePathFully),
     pretty,
-    firstParent: fl.asBool('first_parent'),
   }
 }
 
@@ -146,14 +143,12 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
     }
     const oid = await resolveCommit(repo, revision)
     const facts = await commitFacts(repo, oid)
-    if (
-      parsed.diff.pathspecs.length &&
-      !(await commitTouches(repo, facts, parsed.diff, parsed.firstParent))
-    )
-      return [new Uint8Array(), new IOResult()]
     const decor = needsDecorations(parsed.pretty) ? await decorations(repo) : null
     const head = header(facts, parsed, repo.abbrev, decor)
     const bodies = await commitOutput(repo, facts, parsed.diff)
+    const combined =
+      facts.parents.length > 1 &&
+      (parsed.diff.merge === 'combined' || parsed.diff.merge === 'dense-combined')
     return [
       encodeText(
         joinOutput(
@@ -163,7 +158,7 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
           parsed.pretty.kind,
           repo.abbrev,
           parsed.diff,
-          parsed.diff.summary && !parsed.diff.noPatch,
+          (parsed.diff.summary || combined) && !parsed.diff.noPatch,
         ),
       ),
       new IOResult(),

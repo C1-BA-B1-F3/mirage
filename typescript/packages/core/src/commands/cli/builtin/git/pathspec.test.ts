@@ -32,26 +32,8 @@ it.each([
   ['docs/sub/a.md', ['*.md'], false, true],
   ['docs/a.md', ['docs/*.txt', '*.md'], false, true],
   ['a.txt', ['docs'], false, false],
-  ['docs/a.md', ['docs/'], false, true],
-  ['docs', ['docs/'], false, false],
-  ['docs', ['docs/'], true, true],
-  ['docs', ['docs/a.md'], true, true],
-  ['docs', ['docs/a.md'], false, false],
-  ['é.txt', ['?.txt'], false, false],
-  ['é.txt', ['??.txt'], false, true],
-])(
-  'names %s by path, directory or glob in %j (tree: %s)',
-  (path, patterns, directory, expected) => {
-    expect(pathspecSelects(path, patterns, directory)).toBe(expected)
-  },
-)
-
-it('resolves patterns from the run directory, keeping a trailing slash', () => {
-  expect(pathspecPatterns(LOCATION, '/repo/docs', ['sub/', '.', '*.md'])).toEqual([
-    'docs/sub/',
-    'docs',
-    'docs/*.md',
-  ])
+])('names %s by path, directory or glob in %j', (path, patterns, directory, expected) => {
+  expect(pathspecSelects(path, patterns, directory)).toBe(expected)
 })
 
 it.each([

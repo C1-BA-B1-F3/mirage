@@ -15,12 +15,7 @@ import { compareCodePoints } from '../../../../utils/sort.ts'
 
 const RENAME_SCORE = 50
 
-/**
- * One interpretation of Git diff options, shared by all tree readers.
- *
- * `pathspecs` limits every reader to the paths they name, all paths when
- * empty, the way git's diff options carry their pathspec.
- */
+/** One interpretation of Git diff options, shared by all tree readers. */
 export interface DiffFlags {
   nameOnly: boolean
   nameStatus: boolean
@@ -294,9 +289,6 @@ function summaryLines(row: Change, display: string, shown: string): string[] {
 /**
  * A tree's entries a diff compares, limited to a pathspec.
  *
- * Every leaf when recursive, otherwise the tree's own entries, where a subtree
- * stands for whatever lies inside it.
- *
  * @param repo repository to read
  * @param tree the tree id, null for the empty tree
  * @param recursive whether to descend into subtrees
@@ -315,11 +307,10 @@ async function entries(
 }
 
 /**
- * The entries a pathspec names, every one of them for none.
+ * The entries a pathspec names, all of them for none.
  *
- * Applied to both sides before anything is paired, so a rename is found only
- * where the pathspec names both of its paths and is otherwise an addition or a
- * deletion (pinned against git 2.54).
+ * Applied before pairing, so a rename is found only where both paths match
+ * (pinned against git 2.54).
  *
  * @param found path to entry
  * @param pathspecs repository-relative patterns
@@ -381,16 +372,7 @@ export async function treeOutput(
   flags: DiffFlags,
   recursive = true,
 ): Promise<string> {
-  return renderChanges(
-    repo,
-    await compare(
-      repo,
-      await entries(repo, before, recursive, flags.pathspecs),
-      await entries(repo, after, recursive, flags.pathspecs),
-      flags.renames,
-    ),
-    flags,
-  )
+  return (await block(repo, before, after, flags, recursive)) ?? ''
 }
 
 /** One parent's diff block, null when the commit does not differ from it. */
@@ -399,7 +381,7 @@ async function block(
   before: string | null,
   after: string,
   flags: DiffFlags,
-  recursive: boolean,
+  recursive = true,
 ): Promise<string | null> {
   const rows = await compare(
     repo,
@@ -413,10 +395,8 @@ async function block(
 /**
  * A commit's diff blocks, one per parent the merge mode compares.
  *
- * A parent the commit does not differ from gets null rather than an empty
- * block: git prints nothing for it, not even its header, where a block whose
- * format says nothing (`--summary` of a modification) still claims one (pinned
- * against git 2.54). A combined diff is one block whatever it holds.
+ * A parent the commit does not differ from is null, so its header is not
+ * printed either (pinned against git 2.54).
  *
  * @param repo repository to read
  * @param commit the commit to diff
@@ -494,47 +474,6 @@ export async function commitOutput(
         )
       : ''
   return [head + (head && body ? '\n' : '') + body]
-}
-
-/**
- * Whether a commit changes anything its pathspec names.
- *
- * `show <rev> -- <path>` prints nothing at all for a commit that changes none
- * of it, git's pruning. A root commit changes whatever it holds. A merge has to
- * differ from every parent, unless its diff is split per parent (`-m`,
- * `--diff-merges=first-parent`), which turns git's history simplification off
- * and keeps a merge that differs from any one; `--first-parent` weighs the
- * first parent alone (pinned against git 2.54).
- *
- * @param repo repository to read
- * @param commit the commit being shown
- * @param flags the diff flags, pathspec included
- * @param firstParent whether `--first-parent` was given
- */
-export async function commitTouches(
-  repo: Repo,
-  commit: CommitFacts,
-  flags: DiffFlags,
-  firstParent: boolean,
-): Promise<boolean> {
-  const after = await entries(repo, commit.tree, true, flags.pathspecs)
-  const parents = firstParent ? commit.parents.slice(0, 1) : commit.parents
-  const changed: boolean[] = []
-  for (const parent of parents) {
-    const tree = (await commitFacts(repo, parent)).tree
-    changed.push(!sameEntries(await entries(repo, tree, true, flags.pathspecs), after))
-  }
-  if (!changed.length) return after.size > 0
-  if (flags.merge === 'separate' || flags.merge === 'first-parent') return changed.includes(true)
-  return !changed.includes(false)
-}
-
-/** Whether two flattened trees hold the same entries. */
-function sameEntries(
-  a: ReadonlyMap<string, TreeEntry>,
-  b: ReadonlyMap<string, TreeEntry>,
-): boolean {
-  return a.size === b.size && [...a].every(([path, entry]) => equal(entry, b.get(path)))
 }
 
 async function combinedPatch(

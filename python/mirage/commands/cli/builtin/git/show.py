@@ -23,7 +23,6 @@ from mirage.commands.cli.builtin.git.dates import date_clock, parse_date_mode
 from mirage.commands.cli.builtin.git.diff_output import (
     DiffFlags,
     commit_output,
-    commit_touches,
     join_output,
     parse_diff_flags,
     renames_enabled,
@@ -73,7 +72,6 @@ class ShowFlags:
     date: DateMode = DEFAULT_DATE
     mailmap: tuple[MailmapEntry, ...] = ()
     use_mailmap: bool = True
-    first_parent: bool = False
 
 
 def parse_show_flags(
@@ -101,7 +99,6 @@ def parse_show_flags(
         ),
         date=parse_date_mode(fl.as_str("date") or "default", date_clock(env)),
         pretty=pretty,
-        first_parent=fl.as_bool("first_parent"),
     )
 
 
@@ -175,13 +172,13 @@ def _render(
             for name, mode, _ in obj.iteritems()
         )
     commit = resolve_commit(repo, revision)
-    if flags.diff.pathspecs and not commit_touches(
-        repo, commit, flags.diff, flags.first_parent
-    ):
-        return b""
     decor = decorations(repo) if want_decor else None
     header = _header(commit, flags, abbrev_for(repo), decor)
     bodies = commit_output(repo, commit, flags.diff)
+    combined = len(commit.parents) > 1 and flags.diff.merge in (
+        "combined",
+        "dense-combined",
+    )
     return join_output(
         commit,
         header,
@@ -189,7 +186,7 @@ def _render(
         flags.pretty.kind,
         abbrev_for(repo),
         flags.diff,
-        flags.diff.summary and not flags.diff.no_patch,
+        (flags.diff.summary or combined) and not flags.diff.no_patch,
     )
 
 

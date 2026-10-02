@@ -286,7 +286,7 @@ def test_an_alias_carries_its_own_name(name):
     assert vfs.ops()
     assert {ro.vfs for ro in vfs.ops()} == {name}
     assert {rc.vfs for rc in vfs.commands()} == {name}
-    assert vfs.storage_location() == f"{name}:{vfs.config.endpoint_url}:b"
+    assert vfs.storage_location() == f"s3:{vfs.config.endpoint_url}:b"
     state = vfs.get_state()
     assert state["type"] == name
     rebuilt = build_vfs(state["type"], state["config"])
@@ -294,9 +294,12 @@ def test_an_alias_carries_its_own_name(name):
     assert rebuilt.alias_config == vfs.alias_config
 
 
-def test_storage_location_spells_the_wire_name():
+def test_an_alias_and_s3_on_one_endpoint_are_one_store():
+    minio = build_vfs("minio", ALIASES["minio"])
+    s3 = build_vfs("s3", {**ALIASES["minio"], "region": "us-east-1"})
+    assert minio.storage_location() == s3.storage_location()
     r2 = build_vfs("r2", {**ALIASES["r2"], "key_prefix": "/team/x/"})
     assert r2.storage_location() == (
-        "r2:https://acc.r2.cloudflarestorage.com:b/team/x"
+        "s3:https://acc.r2.cloudflarestorage.com:b/team/x"
     )
     assert build_vfs("s3", {"bucket": "b"}).storage_location() == "s3:aws:b"

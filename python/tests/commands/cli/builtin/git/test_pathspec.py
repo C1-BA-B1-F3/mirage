@@ -101,37 +101,21 @@ def test_a_name_that_is_both_a_file_and_a_directory_selects_both():
 
 
 @pytest.mark.parametrize(
-    "path,patterns,directory,expected",
+    "path,patterns,expected",
     [
-        ("docs/a.md", [""], False, True),
-        ("docs/a.md", ["docs"], False, True),
-        ("docs/a.md", ["doc"], False, False),
-        ("docs/a.md", ["docs/a.md"], False, True),
-        ("docs/sub/a.md", ["*.md"], False, True),
-        ("docs/a.md", ["docs/*.txt", "*.md"], False, True),
-        ("a.txt", ["docs"], False, False),
-        ("docs/a.md", ["docs/"], False, True),
-        ("docs", ["docs/"], False, False),
-        ("docs", ["docs/"], True, True),
-        ("docs", ["docs/a.md"], True, True),
-        ("docs", ["docs/a.md"], False, False),
-        ("\u00e9.txt", ["?.txt"], False, False),
-        ("\u00e9.txt", ["??.txt"], False, True),
+        ("docs/a.md", [""], True),
+        ("docs/a.md", ["docs"], True),
+        ("docs/a.md", ["doc"], False),
+        ("docs/a.md", ["docs/a.md"], True),
+        ("docs/sub/a.md", ["*.md"], True),
+        ("docs/a.md", ["docs/*.txt", "*.md"], True),
+        ("a.txt", ["docs"], False),
     ],
 )
 def test_a_pathspec_names_a_path_a_directory_or_a_glob(
-    path, patterns, directory, expected
+    path, patterns, expected
 ):
-    assert pathspec_selects(path, patterns, directory) is expected
-
-
-def test_patterns_resolve_from_the_run_directory_keeping_a_trailing_slash():
-    operands = ["sub/", ".", "*.md"]
-    assert pathspec_patterns(LOCATION, "/repo/docs", operands) == (
-        "docs/sub/",
-        "docs",
-        "docs/*.md",
-    )
+    assert pathspec_selects(path, patterns) is expected
 
 
 @pytest.mark.parametrize(

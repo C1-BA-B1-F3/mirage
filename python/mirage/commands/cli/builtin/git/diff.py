@@ -187,7 +187,7 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(flags)
     cached = fl.as_bool("cached") or fl.as_bool("staged")
     revisions, paths = split_marked(tuple(texts), inv.argv)
-    if not revisions and not cached:
+    if not revisions and not cached and not paths:
         return None, IOResult()
     try:
         if dispatch is None:
@@ -201,6 +201,9 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
                 dispatch, location, b"core", b"quotepath", True
             ),
         )
+        if not revisions and not cached:
+            pathspec_patterns(location, start_point(fl), paths)
+            return None, IOResult()
         if cached:
             state = await read_index(dispatch, location.gitdir)
             refuse_unresolved(state)

@@ -53,12 +53,14 @@ class S3VFS(BaseVFS):
     def storage_location(self) -> str:
         # Endpoint, bucket and key prefix pin the object namespace. The
         # endpoint matters because the same bucket name on two providers
-        # (AWS vs MinIO vs R2) is two different stores. The prefix joins
+        # (AWS vs MinIO vs R2) is two different stores, so it, not an
+        # alias's name, tells them apart: an s3 mount and a minio mount of
+        # one endpoint and bucket are one store. The prefix joins
         # path-like so two mounts whose prefixes nest still resolve to
         # one key once the mount-relative path is appended.
         cfg = self.config
         prefix = (cfg.key_prefix or "").strip("/")
-        base = f"{self.name}:{cfg.endpoint_url or 'aws'}:{cfg.bucket}"
+        base = f"{VFSName.S3}:{cfg.endpoint_url or 'aws'}:{cfg.bucket}"
         return f"{base}/{prefix}" if prefix else base
 
     def delta_hook(self) -> DeltaHook:

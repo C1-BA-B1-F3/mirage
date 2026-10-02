@@ -85,12 +85,18 @@ async def test_read_refills_an_expired_index(monkeypatch):
 
     async def fake_fetch_tree(config, owner, repo, ref, session=None):
         calls.append(ref)
-        return {
-            "src": TreeEntry(path="src", type="tree", sha="aaa", size=None),
-            "src/main.py": TreeEntry(
-                path="src/main.py", type="blob", sha="bbb", size=3
-            ),
-        }, False
+        return (
+            {
+                "src": TreeEntry(
+                    path="src", type="tree", sha="aaa", size=None
+                ),
+                "src/main.py": TreeEntry(
+                    path="src/main.py", type="blob", sha="bbb", size=3
+                ),
+            },
+            False,
+            None,
+        )
 
     async def fake_read_bytes(config, owner, repo, sha, session=None):
         return b"hi\n"
@@ -117,7 +123,7 @@ async def test_read_does_not_refill_on_a_real_miss(monkeypatch):
 
     async def fake_fetch_tree(config, owner, repo, ref, session=None):
         calls.append(ref)
-        return {}, False
+        return {}, False, None
 
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", fake_fetch_tree)
     accessor = MagicMock()

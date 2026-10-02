@@ -47,6 +47,8 @@ class NullIndexCacheStore(IndexCacheStore):
         entries: dict[str, IndexEntry],
         children: dict[str, list[str]],
         expires_at: datetime,
+        *,
+        version: str | None = None,
     ) -> None:
         return None
 
@@ -64,6 +66,7 @@ class NullIndexCacheStore(IndexCacheStore):
         *,
         window: bool = False,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         return []
 

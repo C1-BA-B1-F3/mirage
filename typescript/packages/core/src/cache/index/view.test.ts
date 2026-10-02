@@ -755,6 +755,66 @@ describe('the listing gate', () => {
     )
   }
 
+  function versionGate(answer: boolean): {
+    asked: [string, string | null][]
+    answer: boolean
+    call: (key: string, version: string | null) => Promise<boolean>
+  } {
+    const spy = {
+      asked: [] as [string, string | null][],
+      answer,
+      call: (key: string, version: string | null) => {
+        spy.asked.push([key, version])
+        return Promise.resolve(spy.answer)
+      },
+    }
+    return spy
+  }
+
+  it('hands the gate the stored version', async () => {
+    const spy = versionGate(true)
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/data',
+      () => true,
+      {
+        mayServeListing: spy.call,
+      },
+    )
+    await view.setDir('/data', [['a', row('a')]], undefined, { version: 'v1' })
+    await view.setPartialDir('/data/p', [['b', row('b')]])
+    await view.listDir('/data')
+    await view.listDir('/data/p')
+    expect(spy.asked).toEqual([
+      ['/data', 'v1'],
+      ['/data/p', null],
+    ])
+  })
+
+  it('a refusal keeps the version for the next serve', async () => {
+    const spy = versionGate(false)
+    const store = storeOf('ram')
+    try {
+      const view = new IndexView(store, new RAMFileCacheStore(), '/data', () => true, {
+        mayServeListing: spy.call,
+      })
+      await view.setDir('/data', [['a', row('a')]], undefined, { version: 'v1' })
+      expect((await view.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
+      spy.answer = true
+      const served = await view.listDir('/data')
+      expect(served.entries).toEqual(['/data/a'])
+      expect(served.version).toBe('v1')
+      expect(spy.asked).toEqual([
+        ['/data', 'v1'],
+        ['/data', 'v1'],
+      ])
+    } finally {
+      await store.clear()
+      await store.close()
+    }
+  })
+
   it('passes a served listing through', async () => {
     const [, mayServeListing] = gate(true)
     const view = new IndexView(

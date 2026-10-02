@@ -19,17 +19,21 @@ import { FileStat, FileType } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { contentTypeForPath } from '@struktoai/mirage-core/utils/filetype'
 import { diskError } from './errors.ts'
+import { stamp, wallNs } from './listing_version.ts'
 import { resolveInside } from './utils.ts'
 
 export async function stat(accessor: DiskAccessor, p: PathSpec): Promise<FileStat> {
   const full = await resolveInside(accessor.root, p)
+  const nowNs = wallNs()
   let st
   try {
-    st = await fsStat(full)
+    st = await fsStat(full, { bigint: true })
   } catch (err) {
     throw diskError(err, p)
   }
   const modified = st.mtime.toISOString()
+  const mode = Number(st.mode & 0o7777n)
+  const birthtime = st.birthtimeMs > 0n ? st.birthtime.toISOString() : null
   const name = path.basename(full)
   // Fields setattr applies natively (mode, times) read from the real
   // inode, so external chmod/utime stays visible. Ownership can never be
@@ -37,27 +41,30 @@ export async function stat(accessor: DiskAccessor, p: PathSpec): Promise<FileSta
   // namespace overlay, merged at the stat-merge layer; host uid/gid
   // numbers would also be machine-dependent noise.
   if (st.isDirectory()) {
+    // A folder's fingerprint is the version its listing is stored at, so the
+    // listing gate's check and the readdir fill agree.
     return new FileStat({
       name,
       size: null,
       modified,
+      fingerprint: accessor.folderVersions ? stamp(st, nowNs) : null,
       type: FileType.DIRECTORY,
-      mode: st.mode & 0o7777,
+      mode,
       atime: st.atime.toISOString(),
       ctime: st.ctime.toISOString(),
-      birthtime: st.birthtimeMs > 0 ? st.birthtime.toISOString() : null,
+      birthtime,
     })
   }
   return new FileStat({
     name,
-    size: st.size,
+    size: Number(st.size),
     modified,
     fingerprint: modified,
     type: FileType.FILE,
     content: contentTypeForPath(name),
-    mode: st.mode & 0o7777,
+    mode,
     atime: st.atime.toISOString(),
     ctime: st.ctime.toISOString(),
-    birthtime: st.birthtimeMs > 0 ? st.birthtime.toISOString() : null,
+    birthtime,
   })
 }

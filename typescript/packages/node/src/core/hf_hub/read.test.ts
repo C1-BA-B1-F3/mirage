@@ -16,10 +16,11 @@ import { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { runWithRecording } from '@struktoai/mirage-core/observe/context'
 import { PathSpec } from '@struktoai/mirage-core/types'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
 import { read, rowToken } from './read.ts'
+import * as repo from './repo.ts'
 import { parseEntry } from './tree.ts'
 
 function loaded(): HfHubAccessor {
@@ -121,6 +122,12 @@ describe('hf_hub read stamp', () => {
 })
 
 describe('a read the Hub refuses', () => {
+  // The accessor points at the real Hub, so the head the refill asks for
+  // before its walk is answered locally; the refused walk is the subject.
+  beforeEach(() => {
+    vi.spyOn(repo, 'headCommit').mockResolvedValue('')
+  })
+
   it('is permission denied', async () => {
     vi.spyOn(client, 'hubGetResponse').mockRejectedValue(new client.HfHubError('nope', 403))
     const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)

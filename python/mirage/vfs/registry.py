@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from mirage.secrets.summary import error_summary
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.errors import VFSConfigError
 from mirage.vfs.loader import load_backend_class
 
 logger = logging.getLogger(__name__)
@@ -329,7 +330,7 @@ def _vfs_defect(built: BaseVFS) -> str | None:
     return None
 
 
-def _unknown_kwargs(vfs_cls: type, config: Mapping[str, Any]) -> list[str]:
+def unknown_kwargs(vfs_cls: type, config: Mapping[str, Any]) -> list[str]:
     """The config keys a kwargs-built VFS's constructor does not take.
 
     A VFS with no typed config (``ram``, ``disk``, ``redis``, or a
@@ -412,9 +413,9 @@ def build_vfs(name: str, config: dict[str, Any] | None = None) -> BaseVFS:
         config_ref = getattr(vfs_cls, "CONFIG_CLS", None)
     try:
         if config_ref is None:
-            unknown = _unknown_kwargs(vfs_cls, cfg_dict)
+            unknown = unknown_kwargs(vfs_cls, cfg_dict)
             if unknown:
-                raise ValueError(
+                raise VFSConfigError(
                     f"{name}: "
                     + "; ".join(f"{key}: {EXTRA_FORBIDDEN}" for key in unknown)
                 )
@@ -428,7 +429,7 @@ def build_vfs(name: str, config: dict[str, Any] | None = None) -> BaseVFS:
         # own rendering would hand the refused value straight back to a
         # caller whose only way to name it was a pointer. The chain is
         # cut for the same reason; a logged traceback prints `__cause__`.
-        raise ValueError(f"{name}: {error_summary(exc)}") from None
+        raise VFSConfigError(f"{name}: {error_summary(exc)}") from None
     if ":" in name:
         defect = _vfs_defect(built)
         if defect is not None:

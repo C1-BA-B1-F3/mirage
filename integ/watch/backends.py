@@ -163,7 +163,7 @@ class GitHubWriter:
         is an empty listing, and the first PUT creates the tree.
         """
         try:
-            tree, _truncated = await fetch_tree(
+            tree, _truncated, _sha = await fetch_tree(
                 self._config, self._owner, self._repo, self._ref
             )
         except aiohttp.ClientResponseError as exc:

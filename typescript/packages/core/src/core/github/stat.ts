@@ -14,11 +14,13 @@
 
 import type { GitHubAccessor } from '../../accessor/github.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
+import { ListingCheckStore } from '../../cache/index/ram.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
 import { FileStat, FileType } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
+import { fetchHead, GitHubApiError } from './client.ts'
 import { locate, lookupRetrying, pointLookup } from './lookup.ts'
 
 // Render one tree row as a FileStat, the same from either route.
@@ -43,7 +45,11 @@ export async function stat(
 ): Promise<FileStat> {
   const { prefix, rel, key } = locate(path)
   if (rel === '') {
-    return new FileStat({ name: '/', type: FileType.DIRECTORY })
+    return new FileStat({
+      name: '/',
+      type: FileType.DIRECTORY,
+      fingerprint: await rootVersion(accessor, index),
+    })
   }
   if (index === undefined) throw enoent(path)
   // A probe through a throwaway index asks for this one path; everything
@@ -53,4 +59,32 @@ export async function stat(
     (await lookupRetrying(accessor, index, prefix, key))
   if (found.entry === null) throw enoent(path)
   return statOf(found.entry)
+}
+
+/**
+ * The version of the whole mount: the head commit its ref is at.
+ *
+ * Only the gate's `ListingCheckStore` asks for it, with one shallow request.
+ * Every other index (the mount's own, an undefined index) names no version
+ * and reads nothing, neither the index nor the backend, so a getattr of the
+ * root never pays a check or a store round trip: nothing reads a root
+ * fingerprint off a mount-view stat. Nothing here refills the index: a
+ * refused head names no version rather than falling into a lookup.
+ *
+ * Mirrors Python's `_root_version`.
+ */
+async function rootVersion(
+  accessor: GitHubAccessor,
+  index: IndexCacheStore | undefined,
+): Promise<string | null> {
+  if (!(index instanceof ListingCheckStore)) return null
+  try {
+    return await fetchHead(accessor.transport, accessor.owner, accessor.repo, accessor.ref)
+  } catch (err) {
+    // An answer that refuses the head is no answer about the version, the
+    // way pointRow reads a refusal; anything else propagates.
+    if (!(err instanceof GitHubApiError)) throw err
+    console.warn(`head of ${accessor.owner}/${accessor.repo} not answered: ${String(err)}`)
+    return null
+  }
 }

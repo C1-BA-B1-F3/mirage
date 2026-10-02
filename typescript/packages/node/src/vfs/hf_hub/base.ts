@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ListingVersion } from '@struktoai/mirage-core/types'
 import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
@@ -50,6 +51,13 @@ export abstract class HfHubVFS extends BaseVFS {
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = true
   override readonly readRevalidatable: boolean = true
+  // One version covers every listing: the head commit the revision resolves
+  // to, asked with `revision/{rev}?expand[]=sha`, and the tree is walked at
+  // that commit so the rows and the version agree. A full-sha revision is
+  // checked the same way and never pinned: a branch or tag named like it
+  // could take the name, and mirage does not assume which one the Hub
+  // resolves.
+  override readonly listingVersion: ListingVersion = ListingVersion.MOUNT
   // The index is not a cache in front of a listing, it IS the listing: one
   // recursive fetch seeds it whole. A long TTL therefore spares the Hub a
   // full re-walk rather than risking a stale row.

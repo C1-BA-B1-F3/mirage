@@ -1,0 +1,140 @@
+{
+  "cases": [
+    {
+      "id": "github_listing_version_add_nested_and_edit",
+      "seq": 530032,
+      "targets": [
+        "github"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lva/a.txt",
+            "content": "a1\n"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/new.txt",
+            "content": "x\n"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/new.txt",
+            "delete": true
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/sub/deep.txt",
+            "content": "x\n"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/sub/deep.txt",
+            "delete": true
+          }
+        },
+        {
+          "command": "ls /data/lva"
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/new.txt",
+            "content": "new\n"
+          }
+        },
+        {
+          "command": "ls /data/lva"
+        },
+        {
+          "command": "cat /data/lva/new.txt"
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/sub/deep.txt",
+            "content": "deep\n"
+          }
+        },
+        {
+          "command": "ls /data/lva"
+        },
+        {
+          "command": "find /data/lva | sort"
+        },
+        {
+          "command": "cat /data/lva/sub/deep.txt"
+        },
+        {
+          "mutate": {
+            "path": "/data/lva/a.txt",
+            "content": "a2 edited\n"
+          }
+        },
+        {
+          "command": "find /data/lva -name a.txt -size 10c"
+        },
+        {
+          "command": "cat /data/lva/a.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\na.txt\nnew.txt\nnew\na.txt\nnew.txt\nsub\n/data/lva\n/data/lva/a.txt\n/data/lva/new.txt\n/data/lva/sub\n/data/lva/sub/deep.txt\ndeep\n/data/lva/a.txt\na2 edited\n",
+        "stderr": ""
+      },
+      "note": "Each outside change (an add, an add in a new folder, an edit) moves the head commit the listing was fetched at, so under fresh the next command re-lists instead of serving the stored folder. The fake keeps files between runs, so the scenario first writes and deletes the two names it adds, and resets a.txt."
+    },
+    {
+      "id": "github_listing_version_delete_seen",
+      "seq": 530033,
+      "targets": [
+        "github"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lv/keep.txt",
+            "content": "k\n"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lv/gone.txt",
+            "content": "x\n"
+          }
+        },
+        {
+          "command": "ls /data/lv | grep -c gone.txt"
+        },
+        {
+          "command": "cat /data/lv/gone.txt"
+        },
+        {
+          "mutate": {
+            "path": "/data/lv/gone.txt",
+            "delete": true
+          }
+        },
+        {
+          "command": "ls /data/lv | grep -c gone.txt"
+        },
+        {
+          "command": "cat /data/lv/gone.txt"
+        }
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "1\nx\n0\n",
+        "stderr": "cat: /data/lv/gone.txt: No such file or directory\n"
+      },
+      "note": "A delete outside moves the head commit too, so the next command re-lists and the file is gone from both the listing and a read. keep.txt keeps the folder alive; gone.txt is written first, so a fake left by an earlier run still has it to delete."
+    }
+  ]
+}

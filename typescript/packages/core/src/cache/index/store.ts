@@ -24,11 +24,16 @@ import type {
 export abstract class IndexCacheStore {
   /** Seconds a listing lives when its writer names no expiry. */
   abstract readonly ttl: number
-  /** Merge snapshots by path; deferred stores flush before operations or close. Clear discards them. */
+  /**
+   * Merge snapshots by path; deferred stores flush before operations or
+   * close. Clear discards them. `version` replaces the version of every
+   * listed folder, and null clears it.
+   */
   abstract seed(
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
+    version?: string | null,
   ): void
   /** Apply this index's ownership rules to a refill snapshot. */
   scopeSnapshot(snapshot: IndexSnapshot): IndexSnapshot {
@@ -64,7 +69,8 @@ export abstract class IndexCacheStore {
   /**
    * Cache observed children without claiming a complete directory. Stores
    * supporting partial freshness return these keys as `partialEntries`
-   * until expiry or invalidation. Custom stores inherit the conservative
+   * until expiry or invalidation. A partial listing proves nothing
+   * complete, so it carries no version. Custom stores inherit the conservative
    * put-only fallback, which refreshes the parent on the next lookup.
    */
   async setPartialDir(

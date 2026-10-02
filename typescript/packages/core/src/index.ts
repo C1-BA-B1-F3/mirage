@@ -110,6 +110,7 @@ export {
   FileStat,
   FileType,
   Limit,
+  ListingVersion,
   MountBackend,
   MountMode,
   OnExceed,

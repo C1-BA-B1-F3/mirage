@@ -17,6 +17,8 @@ import { resolve } from 'node:path'
 
 import ts from 'typescript'
 
+import { ListingVersion } from '@struktoai/mirage-core'
+
 // Capability values and CommandIO slots are read from the source rather
 // than from a live object on purpose. Python can introspect its VFS
 // classes because the values are class attributes, but the typescript
@@ -38,6 +40,7 @@ const CAPABILITY_FIELDS = [
   'readRevalidatable',
   'supportsSnapshot',
   'sizesAlwaysKnown',
+  'listingVersion',
 ] as const
 
 // Slots that carry a configuration value rather than an operation. They
@@ -52,6 +55,7 @@ export interface Capabilities {
   read_revalidatable: boolean | string
   supports_snapshot: boolean | string
   sizes_always_known: boolean | string
+  listing_version: string
   storage_location: boolean
   capacity: boolean
   has_prompt: boolean
@@ -102,6 +106,16 @@ function literalValue(node: ts.Expression | undefined): CapabilityValue {
   if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)) {
     const value = Number(node.operand.text.replaceAll('_', ''))
     return node.operator === ts.SyntaxKind.MinusToken ? -value : value
+  }
+  // `ListingVersion.MOUNT` reads as its wire value, the string python's
+  // StrEnum dumps; a member the enum lacks falls through to the marker.
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'ListingVersion' &&
+    Object.hasOwn(ListingVersion, node.name.text)
+  ) {
+    return ListingVersion[node.name.text as keyof typeof ListingVersion]
   }
   return `<expr:${ts.SyntaxKind[node.kind]}>`
 }
@@ -257,6 +271,7 @@ export function capabilitiesOf(className: string, classes: Map<string, ClassInfo
     read_revalidatable: booleanCapability(values, 'readRevalidatable', false, className),
     supports_snapshot: booleanCapability(values, 'supportsSnapshot', false, className),
     sizes_always_known: booleanCapability(values, 'sizesAlwaysKnown', false, className),
+    listing_version: stringCapability(values, 'listingVersion', className),
     storage_location: overrides.some((info) => declaresMethod(info, 'storageLocation')),
     capacity: overrides.some((info) => declaresMethod(info, 'capacity')),
     has_prompt: givesText(ancestry, 'prompt'),
@@ -294,6 +309,20 @@ function booleanCapability(
   if (value === undefined) return fallback
   if (typeof value === 'number') {
     throw new Error(`${className}.${name} is a number, expected a boolean`)
+  }
+  return value
+}
+
+// A slot with no default of its own: BaseVFS declares it, so every chain
+// reaches a value, and anything but a string is a misread.
+function stringCapability(
+  values: Record<string, CapabilityValue>,
+  name: string,
+  className: string,
+): string {
+  const value = values[name]
+  if (typeof value !== 'string') {
+    throw new Error(`${className}.${name} is ${String(value)}, expected a string`)
   }
   return value
 }

@@ -603,6 +603,32 @@ ${script}`,
     },
   )
 
+  // Redis eviction can drop a row while its listing survives. The store
+  // serves the listing as written; the reader that finds a listed name with
+  // no row refills on demand.
+  it('serves a versioned listing missing a child row', async () => {
+    await store.setDir(
+      '/d',
+      [
+        ['a', entry('a', 'a')],
+        ['b', entry('b', 'b')],
+      ],
+      undefined,
+      { version: 'v1' },
+    )
+    await (await redis()).del(`${prefix}mirage:idx:entry:/d/b`)
+    const listing = await store.listDir('/d')
+    expect(listing.entries).toEqual(['/d/a', '/d/b'])
+    expect(listing.version).toBe('v1')
+  })
+
+  it('serves an empty versioned listing', async () => {
+    await store.setDir('/e', [], undefined, { version: 'v1' })
+    const listing = await store.listDir('/e')
+    expect(listing.entries).toEqual([])
+    expect(listing.version).toBe('v1')
+  })
+
   it('get returns NOT_FOUND when missing', async () => {
     const r = await store.get('/nope')
     expect(r.status).toBe(LookupStatus.NOT_FOUND)
@@ -831,6 +857,19 @@ describe('deferred Redis seeds', () => {
     expect(value.eval).toHaveBeenCalled()
     vi.mocked(value.mGet).mockResolvedValue([raw, generation ?? null, 'dir'])
     expect((await store.listDir('/old')).status).toBe(LookupStatus.EXPIRED)
+  })
+
+  it('reads a row without a version key as unversioned', async () => {
+    const { value } = client()
+    vi.mocked(value.mGet).mockResolvedValue([
+      JSON.stringify({ entries: ['/d/a'], expires_at: 4102444800, generation: 'g:d' }),
+      'g',
+      'd',
+    ])
+    const store = new RedisIndexCacheStore({ client: value })
+    const listing = await store.listDir('/d')
+    expect(listing.entries).toEqual(['/d/a'])
+    expect(listing.version).toBeNull()
   })
 
   it('reads a listing and its invalidation generation in one request', async () => {

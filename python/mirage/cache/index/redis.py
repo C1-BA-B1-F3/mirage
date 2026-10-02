@@ -53,6 +53,10 @@ def _text(value: str | bytes) -> str:
     return value.decode() if isinstance(value, bytes) else value
 
 
+_PendingSeed = tuple[
+    dict[str, IndexEntry], dict[str, list[str]], datetime, str | None
+]
+
 _PATH_REGISTRY = """
 local function track(registry, prefixes, paths)
   for _, path in ipairs(paths) do redis.call('ZADD', registry, 0, path) end
@@ -321,9 +325,7 @@ class RedisIndexCacheStore(IndexCacheStore):
             else Redis.from_url(url, decode_responses=True)
         )
         self._owns_client = client is None
-        self._pending_seeds: list[
-            tuple[dict[str, IndexEntry], dict[str, list[str]], datetime]
-        ] = []
+        self._pending_seeds: list[_PendingSeed] = []
         self._seed_lock = asyncio.Lock()
         self._generation_tasks: dict[str, asyncio.Task[str]] = {}
         p = key_prefix or ""
@@ -442,6 +444,8 @@ class RedisIndexCacheStore(IndexCacheStore):
         entries: dict[str, IndexEntry],
         children: dict[str, list[str]],
         expires_at: datetime,
+        *,
+        version: str | None = None,
     ) -> None:
         now_iso = to_iso_z(datetime.now(timezone.utc))
         self._pending_seeds.append(
@@ -454,6 +458,7 @@ class RedisIndexCacheStore(IndexCacheStore):
                 },
                 {path: list(keys) for path, keys in children.items()},
                 expires_at,
+                version,
             )
         )
 
@@ -529,7 +534,7 @@ class RedisIndexCacheStore(IndexCacheStore):
                 pending = list(self._pending_seeds)
                 generation = await self._generation(self._generation_key)
                 directories = {
-                    path for _, children, _ in pending for path in children
+                    path for _, children, _, _ in pending for path in children
                 }
                 directory_generations = await self._directory_generations(
                     directories
@@ -539,11 +544,11 @@ class RedisIndexCacheStore(IndexCacheStore):
                     pipe,
                     [
                         path
-                        for entries, children, _ in pending
+                        for entries, children, _, _ in pending
                         for path in set(entries) | set(children)
                     ],
                 )
-                for entries, children, expires_at in pending:
+                for entries, children, expires_at, version in pending:
                     for vfs_path, entry in entries.items():
                         pipe.set(
                             self._entry_key(vfs_path), entry.model_dump_json()
@@ -553,6 +558,7 @@ class RedisIndexCacheStore(IndexCacheStore):
                             entries=child_keys,
                             expires_at=expires_at.timestamp(),
                             generation=f"{generation}:{directory_generations[vfs_path]}",
+                            version=version,
                         )
                         pipe.set(
                             self._children_key(vfs_path),
@@ -603,8 +609,10 @@ class RedisIndexCacheStore(IndexCacheStore):
         ):
             return ListResult(status=LookupStatus.EXPIRED)
         if listing.partial:
-            return ListResult(partial_entries=listing.entries)
-        return ListResult(entries=listing.entries)
+            return ListResult(
+                partial_entries=listing.entries, version=listing.version
+            )
+        return ListResult(entries=listing.entries, version=listing.version)
 
     async def set_dir(
         self,
@@ -614,6 +622,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         *,
         window: bool = False,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         return await self._set_dir(
             vfs_path,
@@ -622,6 +631,7 @@ class RedisIndexCacheStore(IndexCacheStore):
             partial=False,
             evict=not window,
             excluded=excluded,
+            version=version,
         )
 
     async def set_partial_dir(
@@ -643,6 +653,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         partial: bool,
         evict: bool,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         await self._flush_seed()
         now = datetime.now(timezone.utc)
@@ -669,6 +680,7 @@ class RedisIndexCacheStore(IndexCacheStore):
             expires_at=expiry.timestamp(),
             generation=f"{generation}:{directory_generation}",
             partial=partial,
+            version=None if partial else version,
         )
         if not evict:
             pipe = self._client.pipeline()

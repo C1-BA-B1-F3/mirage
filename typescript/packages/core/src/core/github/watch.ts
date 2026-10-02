@@ -20,7 +20,7 @@ import type { DeltaHook } from '../../watch/base.ts'
 import { ListingDeltaHook } from '../../watch/delta.ts'
 import { IncompleteWalkError } from '../../watch/errors.ts'
 import { fetchTree } from './client.ts'
-import { buildTreeMap } from './tree.ts'
+import { reseatTree } from './tree.ts'
 
 /**
  * One recursive git tree fetch feeding the generic listing differ.
@@ -45,7 +45,7 @@ export class GitHubWalk {
   async *walk(root: PathSpec): AsyncGenerator<WalkEntry> {
     const accessor = this.accessor
     const prefix = mountPrefixOf(root.virtual, root.vfsPath)
-    const { tree, truncated } = await fetchTree(
+    const { tree, truncated, sha } = await fetchTree(
       accessor.transport,
       accessor.owner,
       accessor.repo,
@@ -61,8 +61,10 @@ export class GitHubWalk {
     // find/du/grep's scope counter read it directly. Discarding it here
     // left them answering from the tree the mount was built with until an
     // unrelated read happened to refill the index, so a pull that reported
-    // a CREATE was followed by a find that could not see the file.
-    accessor.tree = buildTreeMap(tree)
+    // a CREATE was followed by a find that could not see the file. It
+    // carries the head it was walked at, so a walker can tell it from the
+    // tree the index was filled with.
+    reseatTree(accessor, tree, truncated, sha)
     const stem = stripSlash(rstripSlash(root.vfsPath))
     const base = stem !== '' ? `${stem}/` : ''
     for (const item of tree) {

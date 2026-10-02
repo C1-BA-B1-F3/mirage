@@ -22,6 +22,8 @@ from mirage.cache.index import (
     NULL_INDEX,
     IndexCacheStore,
     IndexEntry,
+    ListResult,
+    LookupResult,
     LookupStatus,
 )
 from mirage.cache.index.lock import index_lock
@@ -73,6 +75,7 @@ async def lookup(
     index: IndexCacheStore,
     prefix: str,
     key: str,
+    recover_evicted: bool = True,
 ) -> Found:
     """Resolve one mount-absolute key against the mount's listing.
 
@@ -87,6 +90,9 @@ async def lookup(
         index (IndexCacheStore): the mount's index, or NULL_INDEX.
         prefix (str): the mount prefix the keys are built against.
         key (str): the mount-absolute path to resolve.
+        recover_evicted (bool): whether a listed name with no row refills
+            once; the retry passes False, so a row the refill did not bring
+            back costs one refill per call, not two.
 
     Returns:
         Found: the row and/or listing at that key.
@@ -104,10 +110,12 @@ async def lookup(
         # The index is the whole listing rather than a cache in front of one,
         # so an *expired* answer means the tree aged out, not that the path
         # is gone. Refetch once and ask again; a miss against a live index is
-        # a real absence and must not cost a tree fetch.
-        if refilled is None and LookupStatus.EXPIRED in (
-            parent.status,
-            listing.status,
+        # a real absence and must not cost a tree fetch. A name the parent
+        # lists with no row of its own was evicted, which the store does not
+        # check, so it is refilled the same way.
+        if refilled is None and (
+            LookupStatus.EXPIRED in (parent.status, listing.status)
+            or (recover_evicted and _row_evicted(key, result, listing, parent))
         ):
             refilled = await refill_snapshot(accessor, index, prefix)
             result = await index.get(key)
@@ -129,6 +137,27 @@ async def lookup(
         return Found(entry=result.entry, children=listing.entries)
 
 
+def _row_evicted(
+    key: str, result: LookupResult, listing: ListResult, parent: ListResult
+) -> bool:
+    """Whether the parent lists ``key`` while neither its row nor its listing
+    is stored.
+
+    Args:
+        key (str): the mount-absolute path being resolved.
+        result (LookupResult): the key's own row lookup.
+        listing (ListResult): the key's own listing, for a directory.
+        parent (ListResult): the parent's listing.
+    """
+    return (
+        result.entry is None
+        and listing.entries is None
+        and parent is not listing
+        and parent.entries is not None
+        and key in parent.entries
+    )
+
+
 async def lookup_retrying(
     accessor: HfHubAccessor,
     index: IndexCacheStore,
@@ -143,7 +172,10 @@ async def lookup_retrying(
     dispatcher door and drops the path's overlay for good. Two signs tell
     that miss from a real one: the root listing is gone (a live index
     always has one), or the accessor refilled an index while the lookup
-    ran, which is a clear followed by a concurrent reseed.
+    ran, which is a clear followed by a concurrent reseed. The first
+    lookup's own eviction refill counts as one, so the second lookup does
+    not refill for a listed name with no row: a row that refill did not
+    bring back is absent after one refill, not two.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
@@ -164,7 +196,7 @@ async def lookup_retrying(
         and accessor.refills == refills
     ):
         return found
-    return await lookup(accessor, index, prefix, key)
+    return await lookup(accessor, index, prefix, key, recover_evicted=False)
 
 
 async def point_lookup(

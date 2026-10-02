@@ -129,10 +129,12 @@ export interface Open {
   cleanup: () => Promise<void>
   shadow?: () => ExecWorkspace
   mutate?: (path: string, content: Uint8Array) => Promise<void>
+  remove?: (path: string) => Promise<void>
 }
 
 export interface OpenConsistency extends Open {
   mutate: (path: string, content: Uint8Array) => Promise<void>
+  remove: (path: string) => Promise<void>
   mutateLine: (command: string) => Promise<void>
 }
 
@@ -350,42 +352,59 @@ async function openRam(target: Target): Promise<Open> {
   return { ws: ws as unknown as ExecWorkspace, cleanup }
 }
 
-async function openDisk(target: Target): Promise<Open> {
+async function openDisk(target: Target, options?: OpenOptions): Promise<Open> {
+  // Made and seeded once per open, then mounted by every workspace built from
+  // it: a consistency case's shadow writes into the folder the read workspace
+  // mounts, the way another process sees the same disk. Each case opens with
+  // its own roots, so nothing carries over between cases.
   const roots: string[] = []
-  const mounts: Record<string, DiskVFS | [DiskVFS, MountMode]> = {}
-  for (const m of target.mounts) {
+  const mountRoots = target.mounts.map((m) => {
     const root = mkdtempSync(join(tmpdir(), 'mirage-integ-disk-'))
     roots.push(root)
-    let mountRoot = root
-    if (m.host_fixture) {
-      const fixture = JSON.parse(
-        readFileSync(join(integRoot(), 'fixtures', m.host_fixture + '.json'), 'utf8'),
-      ) as {
-        files: Record<string, string>
-        directories: string[]
-        symlinks: Record<string, string>
-      }
-      for (const [relative, text] of Object.entries(fixture.files)) {
-        const full = join(root, relative)
-        mkdirSync(dirname(full), { recursive: true })
-        writeFileSync(full, text)
-      }
-      for (const relative of fixture.directories)
-        mkdirSync(join(root, relative), { recursive: true })
-      for (const [relative, target] of Object.entries(fixture.symlinks))
-        symlinkSync(target, join(root, relative))
-      mountRoot = join(root, 'root')
+    if (!m.host_fixture) return root
+    const fixture = JSON.parse(
+      readFileSync(join(integRoot(), 'fixtures', m.host_fixture + '.json'), 'utf8'),
+    ) as {
+      files: Record<string, string>
+      directories: string[]
+      symlinks: Record<string, string>
     }
-    const vfs = new DiskVFS({ root: mountRoot })
-    mounts[m.path] = m.mode === 'read' ? [vfs, MountMode.READ] : vfs
+    for (const [relative, text] of Object.entries(fixture.files)) {
+      const full = join(root, relative)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, text)
+    }
+    for (const relative of fixture.directories) mkdirSync(join(root, relative), { recursive: true })
+    for (const [relative, link] of Object.entries(fixture.symlinks))
+      symlinkSync(link, join(root, relative))
+    return join(root, 'root')
+  })
+  const build = (): Record<string, DiskVFS | [DiskVFS, MountMode]> => {
+    const mounts: Record<string, DiskVFS | [DiskVFS, MountMode]> = {}
+    target.mounts.forEach((m, i) => {
+      const vfs = new DiskVFS({ root: mountRoots[i] ?? '' })
+      mounts[m.path] = m.mode === 'read' ? [vfs, MountMode.READ] : vfs
+    })
+    return mounts
   }
-  const ws = new Workspace(mounts, { mode: MountMode.WRITE, ...permissionOptions(target) })
-  installLocalClis(ws, target)
-  const cleanup = async (): Promise<void> => {
-    await ws.close()
+  const removeRoots = (): void => {
     for (const root of roots) rmSync(root, { recursive: true, force: true })
   }
-  return { ws: ws as unknown as ExecWorkspace, cleanup }
+  if (options === undefined) {
+    const ws = new Workspace(build(), { mode: MountMode.WRITE, ...permissionOptions(target) })
+    installLocalClis(ws, target)
+    const cleanup = async (): Promise<void> => {
+      await ws.close()
+      removeRoots()
+    }
+    return { ws: ws as unknown as ExecWorkspace, cleanup }
+  }
+  const opened = openWorkspaces(build, options)
+  const cleanup = async (): Promise<void> => {
+    await opened.closeAll()
+    removeRoots()
+  }
+  return { ws: opened.ws, shadow: opened.shadow, cleanup }
 }
 
 async function openRedis(target: Target): Promise<Open> {
@@ -798,7 +817,21 @@ async function openHfHub(target: Target, options?: OpenOptions): Promise<Open> {
       await vfs.close()
     }
   }
-  return { ws: opened.ws, shadow: opened.shadow, mutate, cleanup: opened.closeAll }
+  // A deletion is a commit too, one naming the file it removes.
+  const remove = async (path: string): Promise<void> => {
+    const m = target.mounts
+      .filter((x) => path === x.path || path.startsWith(`${rstripSlash(x.path)}/`))
+      .sort((a, b) => b.path.length - a.path.length)[0]
+    if (m === undefined || m.vfs === 'ram') throw new Error(`hf-hub cannot delete ${path}`)
+    const vfs = hubMount(m)
+    const rel = path.slice(rstripSlash(m.path).length)
+    try {
+      await hubCommit(vfs.accessor, { deletions: [vfs.accessor.repoPath(rel)] })
+    } finally {
+      await vfs.close()
+    }
+  }
+  return { ws: opened.ws, shadow: opened.shadow, mutate, remove, cleanup: opened.closeAll }
 }
 
 // The seeding calls have to reach the SAME account the mount will read, and
@@ -2017,7 +2050,29 @@ async function openGitHub(target: Target, options?: OpenOptions): Promise<Open> 
       await vfs.close()
     }
   }
-  return { ws: opened.ws, shadow: opened.shadow, mutate, cleanup: opened.closeAll }
+  // A contents DELETE, which wants the current blob sha as a replace does; an
+  // absent file fails the case rather than passing for a delete never made.
+  const remove = async (path: string): Promise<void> => {
+    const m = target.mounts
+      .filter((x) => path === x.path || path.startsWith(`${x.path.replace(/\/+$/, '')}/`))
+      .sort((a, b) => b.path.length - a.path.length)[0]
+    if (m === undefined || m.vfs === 'ram') throw new Error(`github cannot delete ${path}`)
+    const rel = path.slice(m.path.replace(/\/+$/, '').length).replace(/^\/+/, '')
+    const [owner, repo] = String(m.repo).split('/')
+    const encoded = rel.split('/').map(encodeURIComponent).join('/')
+    const endpoint = `/repos/${owner ?? ''}/${repo ?? ''}/contents/${encoded}`
+    const vfs = await create(m)
+    try {
+      const current = (await vfs.accessor.transport.get(endpoint)) as { sha: string }
+      await vfs.accessor.transport.request('DELETE', endpoint, {
+        message: `integ: delete ${rel}`,
+        sha: current.sha,
+      })
+    } finally {
+      await vfs.close()
+    }
+  }
+  return { ws: opened.ws, shadow: opened.shadow, mutate, remove, cleanup: opened.closeAll }
 }
 
 // In-process for the reason openMem0 is: the fake is a kit fake and this host
@@ -2336,9 +2391,14 @@ export async function openConsistency(
   // shadow's shell. A file an account CLI edits by id (a Google Doc through
   // gws) has no bytes to write, so its scenario names the line the shadow
   // runs: the same line on the read side would drop that side's own caches.
+  // No fallback for a delete: a write is a fair stand-in for a write, but
+  // nothing stands in for a delete, so a target without one fails its case.
+  const refuse = (path: string): Promise<void> =>
+    Promise.reject(new Error(`${target.id}: no delete mutator for ${path}`))
   return {
     ws: opened.ws,
     mutate: opened.mutate ?? tee,
+    remove: opened.remove ?? refuse,
     mutateLine: (command) => onShadow(command),
     cleanup: opened.cleanup,
   }

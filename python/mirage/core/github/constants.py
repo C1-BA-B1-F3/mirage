@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
+
 API_BASE = "https://api.github.com"
 API_VERSION = "2022-11-28"
 SCOPE_WARN = 100
@@ -31,3 +33,6 @@ DEFER_STATUSES = frozenset({404, 422})
 # its REST base. A REST path always leads with a slash, so `gh api
 # /graphql` stays a REST call, as gh's `p == "graphql"` has it.
 GRAPHQL_PATH = "graphql"
+# A full commit sha, SHA-1 or SHA-256, as GitHub answers it (lowercase). A
+# mount whose ref matches is pinned to a commit that cannot move.
+COMMIT_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")

@@ -344,19 +344,58 @@ export async function fetchRepoInfo(
   return data
 }
 
+/**
+ * Fetch the recursive tree of `ref`, and the head it answered at.
+ *
+ * A tree asked by a branch, a tag or a commit sha names the commit it
+ * resolved to as its top-level `sha` (measured against GitHub, 2026-09-30),
+ * so the rows and the version come from one response.
+ *
+ * Returns:
+ *   { tree, truncated, sha }: the rows, GitHub's `truncated` flag, and the
+ *   head commit sha, or null when the response names none.
+ */
 export async function fetchTree(
   transport: GitHubTransport,
   owner: string,
   repo: string,
   ref: string,
-): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
+): Promise<{ tree: GitHubTreeItem[]; truncated: boolean; sha: string | null }> {
   const data = (await transport.get(
     `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}`,
     {
       recursive: '1',
     },
-  )) as { tree?: GitHubTreeItem[]; truncated?: boolean }
-  return { tree: dropSubmodules(data.tree ?? []), truncated: data.truncated === true }
+  )) as { tree?: GitHubTreeItem[]; truncated?: boolean; sha?: unknown }
+  return {
+    tree: dropSubmodules(data.tree ?? []),
+    truncated: data.truncated === true,
+    sha: headOf(data),
+  }
+}
+
+/**
+ * Ask which commit `ref` resolves to, with one shallow request: the shallow
+ * tree of the root answers the same top-level `sha` as the recursive one, at
+ * a fraction of the size.
+ *
+ * Returns:
+ *   string | null: the head commit sha, or null when the response names none.
+ */
+export async function fetchHead(
+  transport: GitHubTransport,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<string | null> {
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}`,
+  )) as { sha?: unknown }
+  return headOf(data)
+}
+
+function headOf(data: { sha?: unknown }): string | null {
+  return typeof data.sha === 'string' && data.sha !== '' ? data.sha : null
 }
 
 // Submodule gitlinks (type "commit") have no size and no blob to read;

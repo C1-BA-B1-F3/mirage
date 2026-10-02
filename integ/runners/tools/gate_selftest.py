@@ -267,6 +267,149 @@ def selftest_mount_read() -> None:
     )
 
 
+def selftest_delete_refused() -> None:
+    """A delete step on a target with no delete mutator fails, loudly.
+
+    A plain mutate falls back to a write through the shadow, which is right
+    for a writable mount. A delete has no such fallback: writing instead
+    would leave the file there and let the case pass on what it never did.
+    The shadow is asked afterwards, so a write that happened anyway shows.
+    Disk, because it has a shadow on both hosts and no service to start.
+    """
+    target = {"id": "t", "mounts": [{"path": "/data", "vfs": "disk"}]}
+
+    async def probe() -> tuple[str, bool]:
+        (
+            read_ws,
+            mutate,
+            remove,
+            mutate_line,
+            cleanup,
+        ) = await runner_main.adapters.open_consistency(target, ReadSpec(), {})
+        try:
+            try:
+                await harness.run_scenario(
+                    read_ws,
+                    mutate,
+                    remove,
+                    mutate_line,
+                    [{"mutate": {"path": "/data/x.txt", "delete": True}}],
+                )
+            except RuntimeError as exc:
+                refused = str(exc)
+            else:
+                refused = ""
+            try:
+                await mutate_line("test ! -e /data/x.txt")
+            except RuntimeError:
+                return refused, False
+            return refused, True
+        finally:
+            await cleanup()
+
+    try:
+        refused, absent = asyncio.run(probe())
+    except Exception as exc:
+        check(
+            "consistency: a delete with no delete mutator is refused",
+            False,
+            f"{type(exc).__name__}: {exc}",
+        )
+        return
+    check(
+        "consistency: a delete with no delete mutator is refused",
+        "t: no delete mutator" in refused and "/data/x.txt" in refused,
+        repr(refused),
+    )
+    check(
+        "consistency: a refused delete writes nothing",
+        absent,
+        "the shadow has /data/x.txt",
+    )
+
+
+# A step's ``delete`` is a flag: only ``true`` removes. ``false`` is a
+# plain mutate, the same as leaving the key out, so a case reads alike on
+# both hosts. Steps the scenario runs through recording stubs.
+DELETE_FLAG_STEPS = [
+    {"mutate": {"path": "/data/a.txt", "content": "a", "delete": False}},
+    {"mutate": {"path": "/data/b.txt", "delete": True}},
+    {"mutate": {"path": "/data/c.txt", "content": "c"}},
+]
+DELETE_FLAG_CALLS = [
+    ["write", "/data/a.txt", "a"],
+    ["remove", "/data/b.txt"],
+    ["write", "/data/c.txt", "c"],
+]
+
+MALFORMED_STEPS = [
+    {"path": "/data/a.txt", "delete": False},
+    {"path": "/data/a.txt"},
+    {"path": "/data/a.txt", "content": 1},
+    {"path": "/data/a.txt", "delete": "yes"},
+    {"path": "/data/a.txt", "content": "a", "delete": 1},
+]
+MALFORMED_ERRORS = [
+    'malformed mutate step {"path":"/data/a.txt","delete":false}: '
+    '"content" must be a string unless "delete" is true',
+    'malformed mutate step {"path":"/data/a.txt"}: '
+    '"content" must be a string unless "delete" is true',
+    'malformed mutate step {"path":"/data/a.txt","content":1}: '
+    '"content" must be a string unless "delete" is true',
+    'malformed mutate step {"path":"/data/a.txt","delete":"yes"}: '
+    '"delete" must be true or false',
+    'malformed mutate step {"path":"/data/a.txt","content":"a","delete":1}: '
+    '"delete" must be true or false',
+]
+
+
+def selftest_delete_flag() -> None:
+    """Only ``"delete": true`` removes; ``false`` writes its content."""
+    calls: list[list[str]] = []
+
+    async def mutate(path: str, content: bytes) -> None:
+        calls.append(["write", path, content.decode()])
+
+    async def remove(path: str) -> None:
+        calls.append(["remove", path])
+
+    async def mutate_line(command: str) -> None:
+        calls.append(["line", command])
+
+    asyncio.run(
+        harness.run_scenario(
+            None, mutate, remove, mutate_line, DELETE_FLAG_STEPS
+        )
+    )
+    check(
+        "consistency: only delete: true removes, false writes",
+        calls == DELETE_FLAG_CALLS,
+        repr(calls),
+    )
+    calls.clear()
+    errors = []
+    for spec in MALFORMED_STEPS:
+        try:
+            asyncio.run(
+                harness.run_scenario(
+                    None, mutate, remove, mutate_line, [{"mutate": spec}]
+                )
+            )
+            errors.append(None)
+        except Exception as exc:
+            errors.append(
+                f"{type(exc).__name__}: {exc}"
+                if not isinstance(exc, ValueError)
+                else str(exc)
+            )
+    check(
+        "consistency: a mutate step without content or a boolean delete "
+        "is refused",
+        (errors, calls) == (MALFORMED_ERRORS, []),
+        repr((errors, calls)),
+    )
+
+
 def selftest_case_target_defaults(typescript: bool = False) -> None:
     """Both loaders preserve explicit overrides and reject untested cases.
 
@@ -1181,6 +1324,122 @@ def selftest_mount_read_typescript() -> None:
     )
 
 
+# selftest_delete_refused on the typescript host. A delete step used to reach
+# the write fallback as an empty `content`, so it wrote a zero-byte file.
+DELETE_PROBE = (
+    "Promise.all([import('./runners/typescript/harness.ts'),\n"
+    "  import('./runners/typescript/adapters/index.ts')])"
+    ".then(async ([h, a]) => {\n"
+    "  const t = { id: 't', hosts: [],\n"
+    "    mounts: [{ path: '/data', vfs: 'disk' }] }\n"
+    "  const read = { policy: 'bounded', ttl: 45 }\n"
+    "  const o = await a.openConsistency(t, read, {})\n"
+    "  if (o === null) {\n"
+    "    const out = { refused: 'no shadow', absent: false }\n"
+    "    console.log(JSON.stringify(out))\n"
+    "    return\n"
+    "  }\n"
+    "  let refused = ''\n"
+    "  try {\n"
+    "    await h.runScenario(o.ws, o.mutate, o.remove, o.mutateLine,\n"
+    "      [{ mutate: { path: '/data/x.txt', delete: true } }])\n"
+    "  } catch (e) { refused = String(e.message) }\n"
+    "  let absent = true\n"
+    "  try { await o.mutateLine('test ! -e /data/x.txt') }\n"
+    "  catch { absent = false }\n"
+    "  await o.cleanup()\n"
+    "  console.log(JSON.stringify({ refused, absent }))\n"
+    "})\n"
+)
+
+
+def selftest_delete_refused_typescript() -> None:
+    """selftest_delete_refused's claims on the typescript host."""
+    proc = subprocess.run(
+        [str(TSX), "--eval", DELETE_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    try:
+        out = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError) as exc:
+        check(
+            "consistency (ts): the delete probe ran",
+            False,
+            f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}",
+        )
+        return
+    check(
+        "consistency (ts): a delete with no delete mutator is refused",
+        "t: no delete mutator" in out["refused"]
+        and "/data/x.txt" in out["refused"],
+        repr(out["refused"]),
+    )
+    check(
+        "consistency (ts): a refused delete writes nothing",
+        out["absent"] is True,
+        "the shadow has /data/x.txt",
+    )
+
+
+DELETE_FLAG_PROBE = (
+    "import('./runners/typescript/harness.ts').then(async (h) => {\n"
+    "  const calls = []\n"
+    "  const dec = new TextDecoder()\n"
+    "  await h.runScenario(null,\n"
+    "    async (p, c) => { calls.push(['write', p, dec.decode(c)]) },\n"
+    "    async (p) => { calls.push(['remove', p]) },\n"
+    "    async (l) => { calls.push(['line', l]) },\n"
+    f"    {json.dumps(DELETE_FLAG_STEPS)})\n"
+    "  const errors = []\n"
+    "  const stray = []\n"
+    f"  for (const spec of {json.dumps(MALFORMED_STEPS)}) {{\n"
+    "    try {\n"
+    "      await h.runScenario(null, async () => { stray.push('write') },\n"
+    "        async () => { stray.push('remove') }, async () => {},\n"
+    "        [{ mutate: spec }])\n"
+    "      errors.push(null)\n"
+    "    } catch (err) { errors.push(err.message) }\n"
+    "  }\n"
+    "  console.log(JSON.stringify(calls))\n"
+    "  console.log(JSON.stringify([errors, stray]))\n"
+    "})\n"
+)
+
+
+def selftest_delete_flag_typescript() -> None:
+    """selftest_delete_flag's claim on the typescript host."""
+    proc = subprocess.run(
+        [str(TSX), "--eval", DELETE_FLAG_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    try:
+        calls, (errors, stray) = (
+            json.loads(line) for line in proc.stdout.strip().splitlines()[-2:]
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        check(
+            "consistency (ts): the delete-flag probe ran",
+            False,
+            f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}",
+        )
+        return
+    check(
+        "consistency (ts): only delete: true removes, false writes",
+        calls == DELETE_FLAG_CALLS,
+        repr(calls),
+    )
+    check(
+        "consistency (ts): a mutate step without content or a boolean "
+        "delete is refused",
+        (errors, stray) == (MALFORMED_ERRORS, []),
+        repr((errors, stray)),
+    )
+
+
 def selftest_typescript_gates(require: bool) -> None:
     """The same two exits on the typescript host, so the gate is symmetric.
 
@@ -1232,6 +1491,8 @@ def selftest_typescript_gates(require: bool) -> None:
     selftest_plan_run()
     selftest_no_shadow_fails()
     selftest_mount_read_typescript()
+    selftest_delete_refused_typescript()
+    selftest_delete_flag_typescript()
 
     code, err = run_typescript(["--target", "ram", "--target-jobs=0"], {})
     check("--target-jobs=0 is refused (ts)", code == 2, f"exit {code}: {err}")
@@ -1331,6 +1592,8 @@ def main() -> None:
     selftest_services_table()
     selftest_case_validation()
     selftest_mount_read()
+    selftest_delete_refused()
+    selftest_delete_flag()
     selftest_case_target_defaults()
     selftest_strict_exit()
     selftest_fake_ports()

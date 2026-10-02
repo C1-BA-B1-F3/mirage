@@ -18,5 +18,11 @@ from mirage.accessor.base import Accessor
 
 
 class DiskAccessor(Accessor):
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, folder_versions: bool = True) -> None:
+        """Args:
+        root (Path): the mount root on the host.
+        folder_versions (bool): whether a listing is stored with its
+            folder's version (``mirage.core.disk.listing_version``).
+        """
         self.root = root
+        self.folder_versions = folder_versions

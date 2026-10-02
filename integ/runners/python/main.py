@@ -100,12 +100,11 @@ async def run_consistency_case(
     emit: list[dict] | None,
 ) -> None:
     spec = read_spec_of(case)
-    read_ws, mutate, mutate_line, cleanup = await adapters.open_consistency(
-        target, spec, mount_read_of(case)
-    )
+    opened = await adapters.open_consistency(target, spec, mount_read_of(case))
+    read_ws, mutate, remove, mutate_line, cleanup = opened
     try:
         exit_code, out, err, notes = await harness.run_scenario(
-            read_ws, mutate, mutate_line, case["scenario"]
+            read_ws, mutate, remove, mutate_line, case["scenario"]
         )
         _emit_or_record(
             emit,

@@ -23,6 +23,7 @@ from mirage.cache.index import (
     ResourceType,
 )
 from mirage.core.disk.errors import disk_error
+from mirage.core.disk.listing_version import folder_version, wall_ns
 from mirage.core.disk.utils import read_entries, resolve_inside
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
@@ -43,6 +44,23 @@ def _entry_types(p: Path) -> dict[str, ResourceType]:
         else ResourceType.FILE
         for entry in read_entries(p)
     }
+
+
+def _scan(
+    p: Path, versioned: bool
+) -> tuple[str | None, dict[str, ResourceType]]:
+    """The folder's version, then its entries.
+
+    The version is read first: a change landing during the scan then
+    leaves the stored version behind the folder's, and the next check
+    re-lists instead of serving rows that missed it.
+
+    Args:
+        p (Path): the host directory.
+        versioned (bool): whether the mount stores folder versions.
+    """
+    version = folder_version(p, wall_ns()) if versioned else None
+    return version, _entry_types(p)
 
 
 async def readdir(
@@ -71,7 +89,9 @@ async def readdir(
     # that call instead of collapsing both into one errno. Restamped onto the
     # PathSpec so the virtual path, never the real fs path, is reported.
     try:
-        raw = await asyncio.to_thread(_entry_types, p)
+        version, raw = await asyncio.to_thread(
+            _scan, p, accessor.folder_versions
+        )
     except FileNotFoundError as exc:
         raise enoent(path_spec) from exc
     except NotADirectoryError as exc:
@@ -91,5 +111,5 @@ async def readdir(
         )
         for e in entries
     ]
-    await index.set_dir(virtual_key, index_entries)
+    await index.set_dir(virtual_key, index_entries, version=version)
     return virtual_entries

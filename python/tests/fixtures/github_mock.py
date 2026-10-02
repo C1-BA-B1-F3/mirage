@@ -127,7 +127,7 @@ def mock_github_api(monkeypatch):
         return MOCK_DEFAULT_BRANCH
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
-        return dict(MOCK_TREE), False
+        return dict(MOCK_TREE), False, None
 
     async def _read_bytes(config, owner, repo, sha, session=None):
         return MOCK_BLOBS[sha]

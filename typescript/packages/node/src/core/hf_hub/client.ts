@@ -47,6 +47,40 @@ export class HfHubError extends Error {
 }
 
 /**
+ * A request that never reached the Hub: the connection was refused, reset or
+ * could not be resolved.
+ *
+ * undici rejects these as `TypeError: fetch failed`, the same class a
+ * programming error throws, so a caller that keeps the two apart (the
+ * freshness gate, the read probe) would take an outage for a bug and fail
+ * the whole line. The message is kept, since the executor renders it, and
+ * the original rejection rides along as `cause`. Python's aiohttp raises a
+ * `ClientError` here of its own.
+ */
+export class HfHubConnectionError extends Error {
+  constructor(cause: TypeError) {
+    super(cause.message, { cause })
+    this.name = 'HfHubConnectionError'
+  }
+}
+
+/**
+ * The fetch every Hub call rides, with a transport failure renamed.
+ *
+ * Only a `TypeError` is a transport failure; an abort, including the
+ * stall bound's `TimeoutError`, passes through as it was. The global is read
+ * per call, not captured, so a stubbed fetch is the one used.
+ */
+export const hubFetch: typeof fetch = async (input, init) => {
+  try {
+    return await fetch(input, init)
+  } catch (err) {
+    if (err instanceof TypeError) throw new HfHubConnectionError(err)
+    throw err
+  }
+}
+
+/**
  * Auth and accept headers for one Hub call.
  *
  * An anonymous call is a first-class case here, unlike GitHub's: the Hub
@@ -64,7 +98,7 @@ export class HfHubError extends Error {
  * bound of zero or less is none, as aiohttp reads a zero.
  */
 export function stallFetch(ms: number): typeof fetch {
-  if (ms <= 0) return fetch
+  if (ms <= 0) return hubFetch
   return async (input, init) => {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -81,7 +115,7 @@ export function stallFetch(ms: number): typeof fetch {
       init?.signal == null ? controller.signal : AbortSignal.any([init.signal, controller.signal])
     let response: Response
     try {
-      response = await fetch(input, { ...init, signal })
+      response = await hubFetch(input, { ...init, signal })
     } catch (err) {
       clearTimeout(timer)
       throw err
@@ -110,8 +144,8 @@ export function stallFetch(ms: number): typeof fetch {
 }
 
 /** The fetch a call rides: bounded by the mount's timeout when it has one. */
-function fetchFor(timeoutMs: number | undefined): typeof fetch | undefined {
-  return timeoutMs === undefined ? undefined : stallFetch(timeoutMs)
+function fetchFor(timeoutMs: number | undefined): typeof fetch {
+  return timeoutMs === undefined ? hubFetch : stallFetch(timeoutMs)
 }
 
 export function hubHeaders(token: string | undefined): Record<string, string> {
@@ -268,6 +302,7 @@ export async function hubRequest(
     headers: hubHeaders(token),
     params,
     retry: RETRY,
+    fetchFn: hubFetch,
   }
   if (body !== null && body !== undefined) options.json = body
   return apiRequest(method.toUpperCase(), url, options)
@@ -358,7 +393,7 @@ export async function* hubStream(
   onResponse?: (headers: Record<string, string>) => void,
   timeoutMs?: number,
 ): AsyncIterable<Uint8Array> {
-  const response = await (fetchFor(timeoutMs) ?? fetch)(url, { headers: hubHeaders(token) })
+  const response = await fetchFor(timeoutMs)(url, { headers: hubHeaders(token) })
   if (response.status >= 400) throw errorOf(response, await response.text())
   if (onResponse !== undefined) {
     const headers: Record<string, string> = {}

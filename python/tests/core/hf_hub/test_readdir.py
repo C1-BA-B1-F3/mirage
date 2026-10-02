@@ -33,7 +33,7 @@ async def test_readdir_lists_a_subdirectory(loaded):
 @pytest.mark.asyncio
 async def test_readdir_answers_the_same_through_an_index(loaded):
     index = RAMIndexCacheStore()
-    seed_index(loaded, index, "")
+    seed_index(loaded.tree, index, "")
     assert await readdir(loaded, ps(""), index) == ["/a.txt", "/d"]
 
 

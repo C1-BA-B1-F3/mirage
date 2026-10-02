@@ -14,3 +14,7 @@
 
 export const SCOPE_WARN = 5000
 export const SCOPE_ERROR = 50000
+
+// A folder changed this recently is not versioned: a timestamp is coarser
+// than the changes it would have to tell apart (git's racy-clean rule).
+export const RACY_WINDOW_NS = 2000000000n

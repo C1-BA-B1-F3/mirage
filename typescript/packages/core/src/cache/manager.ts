@@ -20,7 +20,7 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import type { Evicted } from './index/config.ts'
-import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
+import { CHECKED_LIMIT, LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { commandStarted, tick } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
@@ -64,6 +64,14 @@ export class CacheManager {
   // identity, the read generation then, and the stat.
   private readonly probed = new Map<string, [number, number, FileStat]>()
   private probeBound = PROBED_LIMIT
+  // What a listing version check covers (the mount root or a folder) to the
+  // version the backend answered, the tick taken just before it was sent and
+  // the monotonic millisecond it was sent at.
+  private readonly checked = new Map<string, [string, number, number]>()
+  // The newest check in flight per key, with its tick and send time.
+  private readonly checking = new Map<string, [number, number, Promise<string | null>]>()
+  private checkEpoch = 0
+  private checkBound = CHECKED_LIMIT
 
   constructor(
     fileCache: FileCache | null,
@@ -78,7 +86,7 @@ export class CacheManager {
     private readonly onGone?: (gone: readonly Evicted[]) => Promise<void>,
     // The listing gate every view of this mount asks before serving a
     // cached listing; undefined serves them all.
-    private readonly mayServeListing?: (folder: string) => Promise<boolean>,
+    private readonly mayServeListing?: (folder: string, version: string | null) => Promise<boolean>,
     private readonly excludedPrefixes: () => readonly string[] = () => [],
   ) {
     this.fileCache = fileCache
@@ -138,6 +146,7 @@ export class CacheManager {
     if (this.fileCache === null || index instanceof IndexView) return index
     if (this.view?.store !== index) {
       this.written.clear()
+      if (this.view !== null) this.forgetChecks()
       this.view = new IndexView(
         index,
         this.fileCache,
@@ -153,7 +162,7 @@ export class CacheManager {
     excludedPrefixes: () => readonly string[]
     readTtl: number
     onGone?: (gone: readonly Evicted[]) => Promise<void>
-    mayServeListing?: (folder: string) => Promise<boolean>
+    mayServeListing?: (folder: string, version: string | null) => Promise<boolean>
     noteWritten: (folder: string) => void
   } {
     return {
@@ -194,6 +203,87 @@ export class CacheManager {
     const started = commandStarted()
     if (started !== null) return stamp > started
     return performance.now() - at < LISTING_TRUST_WINDOW * 1000
+  }
+
+  // A check answers only a caller inside its window, so the rest are dead
+  // weight; the next prune waits for the map to double.
+  private pruneChecks(): void {
+    for (const [key, [, sentTick, sentAt]] of this.checked) {
+      if (!this.sentRecently(sentTick, sentAt)) this.checked.delete(key)
+    }
+    this.checkBound = Math.max(CHECKED_LIMIT, 2 * this.checked.size)
+  }
+
+  // The versions were checked against listings of the old store, so none of
+  // them says anything about the new one. The first view has no old store,
+  // and a check may be what builds it.
+  private forgetChecks(): void {
+    this.checked.clear()
+    this.checking.clear()
+    this.checkEpoch += 1
+  }
+
+  /**
+   * Whether a version check is recent enough to answer for the caller.
+   *
+   * The rule `listingTrusted` applies to listings: inside a command, only a
+   * check sent after the command started, since one sent before may predate a
+   * change the command must see; outside any command, one sent within
+   * `LISTING_TRUST_WINDOW` seconds.
+   */
+  private sentRecently(sentTick: number, sentAt: number): boolean {
+    const started = commandStarted()
+    if (started !== null) return sentTick > started
+    return performance.now() - sentAt < LISTING_TRUST_WINDOW * 1000
+  }
+
+  /**
+   * The backend's listing version for `key`, asking at most once.
+   *
+   * A check recent enough for the caller (`sentRecently`) that answered
+   * `stored` is reused, so one command checks a mount once however many of
+   * its folders it lists. Otherwise a check in flight that is recent enough
+   * is shared, and only then is a new one sent; the newest in flight is the
+   * one later callers find. A remembered answer that differs from `stored` is
+   * asked again rather than trusted, since the listing may have been written
+   * since. `check` answers null when the backend gives no version.
+   */
+  checkedVersion(
+    key: string,
+    stored: string,
+    check: () => Promise<string | null>,
+  ): Promise<string | null> {
+    const checked = this.checked.get(key)
+    if (checked?.[0] === stored && this.sentRecently(checked[1], checked[2])) {
+      return Promise.resolve(checked[0])
+    }
+    const flight = this.checking.get(key)
+    if (flight !== undefined && this.sentRecently(flight[0], flight[1])) return flight[2]
+    return this.sendCheck(key, check)
+  }
+
+  private sendCheck(key: string, check: () => Promise<string | null>): Promise<string | null> {
+    const sentTick = tick()
+    const sentAt = performance.now()
+    const epoch = this.checkEpoch
+    const answer = check().then((version) => {
+      const checked = this.checked.get(key)
+      // An older check that lands late never replaces a newer one.
+      if (version !== null && epoch === this.checkEpoch && (checked?.[1] ?? 0) < sentTick) {
+        if (checked === undefined && this.checked.size >= this.checkBound) this.pruneChecks()
+        this.checked.set(key, [version, sentTick, sentAt])
+      }
+      return version
+    })
+    const flight: [number, number, Promise<string | null>] = [sentTick, sentAt, answer]
+    this.checking.set(key, flight)
+    const done = (): void => {
+      if (this.checking.get(key) === flight) this.checking.delete(key)
+    }
+    // Each waiter receives the outcome from `answer` itself; this branch only
+    // drops the finished check from the map.
+    void answer.then(done, done)
+    return answer
   }
 
   /**

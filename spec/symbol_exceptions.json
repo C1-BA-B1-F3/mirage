@@ -7,6 +7,35 @@
     "_make_emulated_pwrite": "The read/splice/write pwrite for a table without a native one, built by a named `_make_*` builder in Python and inline in makeGenericOps in TypeScript, like emulated append."
    }
   },
+  "core/github/tree": {
+   "python_only": {
+    "fetch_head": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",
+    "_head_of": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",
+    "_match_tree_to_index": "TypeScript makes the same tree-older-than-index check inline in ensureLiveTree."
+   }
+  },
+  "core/github/client": {
+   "typescript_only": {
+    "fetchHead": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",
+    "headOf": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts."
+   }
+  },
+  "core/hf_hub/client": {
+   "typescript_only": {
+    "hubFetch": "fetch reports a transport failure as a bare TypeError, so TypeScript wraps it; aiohttp already raises ClientError, which the Python callers catch.",
+    "HfHubConnectionError": "fetch reports a transport failure as a bare TypeError, so TypeScript wraps it; aiohttp already raises ClientError, which the Python callers catch."
+   }
+  },
+  "workspace/reconcile": {
+   "typescript_only": {
+    "scopeOf": "TypeScript's opsRegistry.call takes a PathSpec; Python's dispatcher takes the path itself."
+   }
+  },
+  "core/disk/readdir": {
+   "python_only": {
+    "_scan": "Python moves the blocking os.scandir to a thread; Node's fs readdir is already async."
+   }
+  },
   "server/ssh/mcp": {
    "python_only": {
     "ChannelWriter": "The SDK's stdio transport awaits write and flush on its stdout, and asyncssh writes synchronously and drains, so Python adapts the channel's stdout. TypeScript's StdioServerTransport takes the ssh2 channel, a Node stream, as it is."

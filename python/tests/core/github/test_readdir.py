@@ -152,7 +152,7 @@ async def test_readdir_refills_an_expired_index(tree, monkeypatch):
 
     async def fake_fetch_tree(config, owner, repo, ref, session=None):
         calls.append((owner, repo, ref))
-        return tree, False
+        return tree, False, None
 
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", fake_fetch_tree)
     accessor = MagicMock()
@@ -174,7 +174,7 @@ async def test_readdir_does_not_refill_on_a_real_miss(tree, monkeypatch):
 
     async def fake_fetch_tree(config, owner, repo, ref, session=None):
         calls.append((owner, repo, ref))
-        return tree, False
+        return tree, False, None
 
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", fake_fetch_tree)
     accessor = MagicMock()
@@ -308,7 +308,7 @@ async def test_complete_refill_removes_obsolete_directories(
         if replacement == "missing"
         else {"src": TreeEntry(path="src", type="blob", sha="new", size=3)}
     )
-    fetch = AsyncMock(return_value=(tree, False))
+    fetch = AsyncMock(return_value=(tree, False, None))
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", fetch)
     path = PathSpec(vfs_path="src", virtual="/repo/src", directory="/repo/src")
     try:
@@ -374,7 +374,7 @@ async def test_truncated_refill_does_not_cache_partial_listings(
         partial_tree["docs/first.md"] = TreeEntry(
             path="docs/first.md", type="blob", sha="first", size=1
         )
-    tree_fetch = AsyncMock(return_value=(partial_tree, True))
+    tree_fetch = AsyncMock(return_value=(partial_tree, True, None))
     dir_fetch = AsyncMock(
         side_effect=[
             [folder],

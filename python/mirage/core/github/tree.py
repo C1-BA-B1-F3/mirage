@@ -25,6 +25,7 @@ from mirage.cache.index import (
     NULL_INDEX,
     IndexCacheStore,
     IndexEntry,
+    ListResult,
     LookupStatus,
 )
 from mirage.cache.index.config import IndexSnapshot
@@ -40,12 +41,17 @@ from mirage.core.github.tree_entry import TreeEntry
 log = logging.getLogger(__name__)
 
 
+def _head_of(data: dict[str, Any]) -> str | None:
+    head = data.get("sha")
+    return head if isinstance(head, str) and head else None
+
+
 def _parse_tree_response(
     data: dict[str, Any],
     owner: str,
     repo: str,
     ref: str,
-) -> tuple[dict[str, TreeEntry], bool]:
+) -> tuple[dict[str, TreeEntry], bool, str | None]:
     truncated = bool(data.get("truncated"))
     if truncated:
         log.warning(
@@ -63,7 +69,7 @@ def _parse_tree_response(
             sha=item["sha"],
             size=item.get("size"),
         )
-    return result, truncated
+    return result, truncated, _head_of(data)
 
 
 async def fetch_tree(
@@ -72,7 +78,25 @@ async def fetch_tree(
     repo: str,
     ref: str,
     session: SessionArg = None,
-) -> tuple[dict[str, TreeEntry], bool]:
+) -> tuple[dict[str, TreeEntry], bool, str | None]:
+    """Fetch the recursive tree of ``ref``, and the head it answered at.
+
+    A tree asked by a branch, a tag or a commit sha names the commit it
+    resolved to as its top-level ``sha`` (measured against GitHub,
+    2026-09-30), so the rows and the version come from one response.
+
+    Args:
+        config (GitHubConfig): token and base URL.
+        owner (str): repository owner.
+        repo (str): repository name.
+        ref (str): the ref the mount reads.
+        session (SessionArg): pool or live session to ride.
+
+    Returns:
+        tuple[dict[str, TreeEntry], bool, str | None]: the rows keyed by
+        repo-relative path, GitHub's ``truncated`` flag, and the head
+        commit sha, or None when the response names none.
+    """
     data = await github_get(
         config.token,
         "/repos/{owner}/{repo}/git/trees/{ref}",
@@ -84,6 +108,41 @@ async def fetch_tree(
         ref=quote(ref, safe=""),
     )
     return _parse_tree_response(data, owner, repo, ref)
+
+
+async def fetch_head(
+    config: GitHubConfig,
+    owner: str,
+    repo: str,
+    ref: str,
+    session: SessionArg = None,
+) -> str | None:
+    """Ask which commit ``ref`` resolves to, with one shallow request.
+
+    The shallow tree of the root answers the same top-level ``sha`` as the
+    recursive one, at a fraction of the size.
+
+    Args:
+        config (GitHubConfig): token and base URL.
+        owner (str): repository owner.
+        repo (str): repository name.
+        ref (str): the ref the mount reads.
+        session (SessionArg): pool or live session to ride.
+
+    Returns:
+        str | None: the head commit sha, or None when the response names
+        none.
+    """
+    data = await github_get(
+        config.token,
+        "/repos/{owner}/{repo}/git/trees/{ref}",
+        base_url=config.base_url,
+        session=session,
+        owner=owner,
+        repo=repo,
+        ref=quote(ref, safe=""),
+    )
+    return _head_of(data)
 
 
 async def fetch_dir_page(
@@ -294,13 +353,16 @@ def seed_index(
 ) -> IndexSnapshot:
     """Write the accessor's tree into ``index`` under ``prefix``.
 
+    Every listing is stamped with ``accessor.tree_version``, the head the
+    tree was fetched at, so one version covers the whole mount.
+
     Args:
         accessor (GitHubAccessor): the mount's accessor, holding the tree.
         index (IndexCacheStore): the index to seed.
         prefix (str): the mount prefix the keys are built against.
 
     Returns:
-        IndexSnapshot: the rows it wrote.
+        IndexSnapshot: the rows it wrote, and their version.
     """
     entries, children = index_rows(accessor.tree, prefix)
     # A truncated response cannot establish that any listing is complete,
@@ -310,8 +372,9 @@ def seed_index(
         if accessor.truncated
         else datetime.now(timezone.utc) + timedelta(days=365)
     )
-    index.seed(entries, children, expires_at)
-    return IndexSnapshot(entries=entries, children=children)
+    version = None if accessor.truncated else accessor.tree_version
+    index.seed(entries, children, expires_at, version=version)
+    return IndexSnapshot(entries=entries, children=children, version=version)
 
 
 async def refill_snapshot(
@@ -354,12 +417,10 @@ async def refill_snapshot(
         else None
     )
     ref = await ensure_ref(accessor)
-    tree, truncated = await fetch_tree(
+    tree, truncated, head = await fetch_tree(
         accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
     )
-    accessor.truncated = truncated
-    accessor.tree = tree
-    accessor.tree_loaded = True
+    reseat_tree(accessor, tree, truncated, head)
     # A refill replaces this mount's snapshot, including paths now absent.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
     snapshot = seed_index(accessor, index, prefix)
@@ -372,6 +433,28 @@ async def refill_snapshot(
 
 def _is_folder(entry: TreeEntry) -> bool:
     return entry.type == "tree"
+
+
+def reseat_tree(
+    accessor: GitHubAccessor,
+    tree: dict[str, TreeEntry],
+    truncated: bool,
+    head: str | None,
+) -> None:
+    """Replace the accessor's tree with one response, and its version.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        tree (dict[str, TreeEntry]): the recursive tree just fetched.
+        truncated (bool): whether GitHub truncated it.
+        head (str | None): the head commit the response named.
+    """
+    accessor.truncated = truncated
+    accessor.tree = tree
+    accessor.tree_loaded = True
+    # A truncated tree is not the whole listing at that head, so it is
+    # versioned by nothing.
+    accessor.tree_version = None if truncated else head
 
 
 async def ensure_live_snapshot(
@@ -416,8 +499,29 @@ async def ensure_live_snapshot(
         return None
     # The liveness probe comes before anything on the accessor, so a live
     # index still answers every read without one.
-    status = (await index.list_dir(prefix.rstrip("/") or "/")).status
-    if status not in (LookupStatus.NOT_FOUND, LookupStatus.EXPIRED):
+    root = await index.list_dir(prefix.rstrip("/") or "/")
+    return await _refill_unless_live(accessor, index, prefix, root)
+
+
+async def _refill_unless_live(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+    root: ListResult,
+) -> IndexSnapshot | None:
+    """``ensure_live_snapshot`` for a root listing the caller already read.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to fill, held under its lock.
+        prefix (str): the mount prefix the index keys are built against.
+        root (ListResult): the root listing, read through the gate.
+
+    Returns:
+        IndexSnapshot | None: the refill's rows, or None when none was
+        needed or possible.
+    """
+    if root.status not in (LookupStatus.NOT_FOUND, LookupStatus.EXPIRED):
         return None
     # A truncated tree is not the whole listing, so the invariant this
     # rests on does not hold and readdir's per-directory fallback owns
@@ -461,7 +565,12 @@ async def ensure_tree(
         # Tree walkers bypass listings, so they need their own expiry probe.
         if index is not NULL_INDEX:
             async with index_lock(index, prefix.rstrip("/") or "/"):
-                await ensure_live_snapshot(accessor, index, prefix)
+                root = await index.list_dir(prefix.rstrip("/") or "/")
+                refilled = await _refill_unless_live(
+                    accessor, index, prefix, root
+                )
+                if refilled is None:
+                    await _match_tree_to_index(accessor, index, prefix, root)
         return
     async with accessor.tree_lock:
         if accessor.tree_loaded:
@@ -472,9 +581,37 @@ async def ensure_tree(
                 if accessor.tree_loaded:
                     return
         ref = await ensure_ref(accessor)
-        tree, truncated = await fetch_tree(
+        tree, truncated, head = await fetch_tree(
             accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
         )
-        accessor.truncated = truncated
-        accessor.tree = tree
-        accessor.tree_loaded = True
+        reseat_tree(accessor, tree, truncated, head)
+
+
+async def _match_tree_to_index(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+    root: ListResult,
+) -> None:
+    """Refill when the in-memory tree is older than the live index.
+
+    Another mount sharing the index can refill it, which moves its root
+    listing to a newer head while this accessor still holds the tree it
+    fetched earlier. Listings answer from the index and never notice; a
+    walker of ``accessor.tree`` would read the old tree. The root listing
+    is the one the liveness probe just read through the gate, under the
+    same lock, so its version is the one the gate approved and the index
+    is not read again. A truncated tree keeps readdir's per-directory
+    fallback instead.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the mount's index, held under its lock.
+        prefix (str): the mount prefix the index keys are built against.
+        root (ListResult): the live root listing the probe read.
+    """
+    if accessor.truncated:
+        return
+    if root.entries is None or root.version == accessor.tree_version:
+        return
+    await refill_snapshot(accessor, index, prefix)

@@ -16,6 +16,22 @@ import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
 
 /**
+ * The version a mount's listings are stored and checked at.
+ *
+ * The head commit, joined with the key prefix when the mount has one: the
+ * index keys are mount-relative, so two mounts of one repository at one head
+ * but different key prefixes hold different listings under the same keys, and
+ * must not match each other's version. ':' cannot occur in a hex sha, and a
+ * mount with no key prefix keeps the plain head.
+ *
+ * Mirrors Python's `mount_version`.
+ */
+export function mountVersion(head: string | null, keyPrefix: string): string | null {
+  if (head === null || head === '') return null
+  return keyPrefix === '' ? head : `${head}:${keyPrefix}`
+}
+
+/**
  * The commit the mount's revision currently points at.
  *
  * Read from the repo object rather than from /refs because the repo object
@@ -29,7 +45,16 @@ import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
  * finds the snapshot already there and serves dev's bytes.
  */
 export async function headCommit(accessor: HfHubAccessor): Promise<string> {
-  const data = await hubGet(accessor.token, revisionUrl(accessor), undefined, accessor.timeoutMs)
+  // Only the sha is read, so only the sha is asked for: the bare object lists
+  // every file (1.5 MB on a large dataset), the trimmed one is about 110
+  // bytes. A param, never part of revisionUrl, which every not-found message
+  // names verbatim.
+  const data = await hubGet(
+    accessor.token,
+    revisionUrl(accessor),
+    { 'expand[]': 'sha' },
+    accessor.timeoutMs,
+  )
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return ''
   const sha = (data as Record<string, unknown>).sha
   return typeof sha === 'string' ? sha : ''

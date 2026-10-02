@@ -290,7 +290,7 @@ async def test_a_truncated_tree_is_not_refetched_by_every_find():
     files = {"top.txt": b"t", "docs/a.txt": OLD}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
-        tree, truncated = await fetch_tree(config, "o", "r", "main")
+        tree, truncated, _ = await fetch_tree(config, "o", "r", "main")
         vfs = GitHubVFS(
             config,
             "o",
@@ -435,30 +435,31 @@ def _fresh(hub: FakeGitHub, prefix: str = "/gh") -> Workspace:
     )
 
 
-# One recursive tree fetch per command: the listing it writes is trusted
-# for the rest of that command, whatever the command reads it for.
+# One version check per command: the head it answers is trusted for the rest
+# of that command, whatever the command reads the listing for. The version
+# check replaces the tree refetch (Task 1.3).
 FRESH_BUDGET = [
-    ("ls /gh/d1", (0, 1, 0)),
-    ("ls -R /gh", (0, 1, 0)),
-    ("ls /gh/d1 /gh/d2 /gh/d3", (0, 1, 0)),
-    ("echo /gh/*/*.txt", (0, 1, 0)),
-    ("find /gh", (0, 1, 0)),
-    ("du -a /gh", (0, 1, 0)),
-    ("stat /gh/d1/a.txt", (0, 1, 0)),
-    ("ls -l /gh/d1", (0, 1, 0)),
-    ("ls /gh/d1 | cat", (0, 1, 0)),
-    ("echo /gh/d1/* $(true) /gh/d2/*", (0, 1, 0)),
-    ("for f in /gh/*/*.txt; do echo $f; done", (0, 1, 0)),
-    ("x=(/gh/*/*.txt); echo ${x[@]}", (0, 1, 0)),
-    ("f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f", (0, 1, 0)),
-    ("select f in /gh/*/*.txt; do break; done <<< 1 2>/dev/null", (0, 1, 0)),
-    ("cp /gh/*/a.txt /r/", (0, 1, 3)),
+    ("ls /gh/d1", (1, 0, 0)),
+    ("ls -R /gh", (1, 0, 0)),
+    ("ls /gh/d1 /gh/d2 /gh/d3", (1, 0, 0)),
+    ("echo /gh/*/*.txt", (1, 0, 0)),
+    ("find /gh", (1, 0, 0)),
+    ("du -a /gh", (1, 0, 0)),
+    ("stat /gh/d1/a.txt", (1, 0, 0)),
+    ("ls -l /gh/d1", (1, 0, 0)),
+    ("ls /gh/d1 | cat", (1, 0, 0)),
+    ("echo /gh/d1/* $(true) /gh/d2/*", (1, 0, 0)),
+    ("for f in /gh/*/*.txt; do echo $f; done", (1, 0, 0)),
+    ("x=(/gh/*/*.txt); echo ${x[@]}", (1, 0, 0)),
+    ("f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f", (1, 0, 0)),
+    ("select f in /gh/*/*.txt; do break; done <<< 1 2>/dev/null", (1, 0, 0)),
+    ("cp /gh/*/a.txt /r/", (1, 0, 3)),
 ]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("line,expected", FRESH_BUDGET)
-async def test_a_fresh_command_refetches_the_tree_once(line, expected):
+async def test_a_fresh_command_checks_the_version_once(line, expected):
     with serve(_three()) as hub:
         ws = _fresh(hub)
         try:
@@ -484,7 +485,8 @@ async def test_a_fresh_ls_sees_a_file_added_outside_mirage():
                 await _out(ws, "ls /gh/d1")
                 == b"a.txt\nb.txt\nc.txt\nnew.txt\n"
             )
-            assert hub.counts() == (0, 1, 0)
+            # The check misses, then the tree is fetched once (Task 1.3).
+            assert hub.counts() == (1, 1, 0)
         finally:
             await ws.close()
 
@@ -498,12 +500,14 @@ async def test_each_command_of_a_loop_sees_changes_made_before_it():
         try:
             await _out(ws, "ls /gh")
             hub.log.clear()
-            hub.after_recursive = lambda: hub.files.setdefault(
+            hub.after_head = lambda: hub.files.setdefault(
                 "d1/new.txt", b"new\n"
             )
             out = await _out(ws, "for i in 1 2; do ls /gh/d1; done")
             assert out.count(b"new.txt") == 1
-            assert hub.counts() == (0, 2, 0)
+            # Each command checks the head once; the add lands after the
+            # first check, so only the second misses and walks (Task 1.3).
+            assert hub.counts() == (2, 1, 0)
         finally:
             await ws.close()
 
@@ -524,7 +528,8 @@ async def test_a_bounded_mount_next_to_a_fresh_one_keeps_serving():
             fresh_hub.log.clear()
             bounded_hub.log.clear()
             await _out(ws, "ls /gh/d1 /gb/d1")
-            assert fresh_hub.counts() == (0, 1, 0)
+            # The version check replaces the tree refetch (Task 1.3).
+            assert fresh_hub.counts() == (1, 0, 0)
             assert bounded_hub.counts() == (0, 0, 0)
         finally:
             await ws.close()
@@ -532,8 +537,9 @@ async def test_a_bounded_mount_next_to_a_fresh_one_keeps_serving():
 
 @pytest.mark.asyncio
 async def test_seven_fresh_sessions_share_one_refetch():
-    # All seven start before the one tree fetch answers, so the refill it
-    # writes lands after every one of their stamps.
+    # Each session may send its own small check, since one sent before its
+    # command began is not trusted; the walk they all miss is fetched once.
+    # The version check replaces the tree refetch (Task 1.3).
     with serve(_three()) as hub:
         ws = _fresh(hub)
         try:
@@ -546,11 +552,17 @@ async def test_seven_fresh_sessions_share_one_refetch():
             reads = asyncio.gather(
                 *(_out(ws, "ls /gh/d1", session_id) for session_id in ids)
             )
-            await asyncio.sleep(0.2)
+            seen = -1
+            for _ in range(200):
+                await asyncio.sleep(0.05)
+                if hub.count("recursive") and hub.count("dir") == seen:
+                    break
+                seen = hub.count("dir")
             hold.set()
             outs = await asyncio.wait_for(reads, 10)
             assert all(b"new.txt" in out for out in outs)
-            assert hub.counts() == (0, 1, 0)
+            assert hub.count("recursive") == 1
+            assert 1 <= hub.count("dir") <= 7
         finally:
             await ws.close()
 
@@ -578,7 +590,9 @@ async def test_an_unscoped_read_trusts_a_listing_for_the_window(monkeypatch):
             now[0] += LISTING_TRUST_WINDOW
             await ws.dispatch("readdir", readdir)
             await ws.dispatch("stat", stat)
-            assert hub.counts() == (0, 1, 0)
+            # One version check answers both calls inside the window; it
+            # replaces the tree refetch (Task 1.3).
+            assert hub.counts() == (1, 0, 0)
         finally:
             await ws.close()
 
@@ -629,14 +643,15 @@ async def test_a_truncated_find_honours_maxdepth():
 @pytest.mark.asyncio
 async def test_a_complete_tree_walk_still_reads_the_tree():
     # The folder-by-folder walk is only for a truncated tree; a complete one
-    # stays a single refetch with no per-folder listing.
+    # stays on the tree with no per-folder listing, and an unchanged head
+    # costs one check instead of a refetch (Task 1.3).
     with serve(_three()) as hub:
         ws = _fresh(hub)
         try:
             await _out(ws, "ls /gh")
             hub.log.clear()
             await _out(ws, "find /gh")
-            assert hub.counts() == (0, 1, 0)
+            assert hub.counts() == (1, 0, 0)
         finally:
             await ws.close()
 

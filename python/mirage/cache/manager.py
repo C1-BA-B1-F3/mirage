@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -20,7 +21,11 @@ from typing import TypeVar
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
-from mirage.cache.index.constants import LISTING_TRUST_WINDOW, PROBED_LIMIT
+from mirage.cache.index.constants import (
+    CHECKED_LIMIT,
+    LISTING_TRUST_WINDOW,
+    PROBED_LIMIT,
+)
 from mirage.cache.index.scope import command_started, tick
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
@@ -72,7 +77,8 @@ class CacheManager:
         may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
         read_ttl: int = DEFAULT_READ_TTL,
         on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
-        may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
+        may_serve_listing: Callable[[str, str | None], Awaitable[bool]]
+        | None = None,
         excluded_prefixes: Callable[[], tuple[str, ...]] = tuple,
     ) -> None:
         """Args:
@@ -96,9 +102,10 @@ class CacheManager:
         on_gone (Callable[[list[Evicted]], Awaitable[None]] | None):
             cleanup for children a re-list found gone. This keeps the
             dependency one-way, like the read gate; None cleans nothing.
-        may_serve_listing (Callable[[str], Awaitable[bool]] | None):
-            the listing gate every view of this mount asks before
-            serving a cached listing; None serves them all.
+        may_serve_listing (Callable[[str, str | None], Awaitable[bool]]
+            | None): the listing gate every view of this mount asks,
+            with the folder and its stored version, before serving a
+            cached listing; None serves them all.
         excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
             mount roots protected from recursive deletion.
         """
@@ -113,6 +120,12 @@ class CacheManager:
         self._excluded_prefixes = excluded_prefixes
         self._may_serve_listing = may_serve_listing
         self._written: dict[str, tuple[int, float]] = {}
+        self._checked: dict[str, tuple[str, int, float]] = {}
+        self._checking: dict[
+            str, tuple[int, float, asyncio.Task[str | None]]
+        ] = {}
+        self._check_epoch = 0
+        self._check_bound = CHECKED_LIMIT
         self._probed: dict[str, tuple[int, int, FileStat]] = {}
         self._probe_bound = PROBED_LIMIT
         self._read_generation = 0
@@ -151,6 +164,8 @@ class CacheManager:
             return index
         if self._view is None or self._view.store is not index:
             self._written.clear()
+            if self._view is not None:
+                self._forget_checks()
             self._view = IndexView(
                 index,
                 self._file_cache,
@@ -217,6 +232,112 @@ class CacheManager:
         if started is not None:
             return stamp > started
         return _now() - at < LISTING_TRUST_WINDOW
+
+    def _prune_checks(self) -> None:
+        # A check answers only a caller inside its window, so the rest are
+        # dead weight; the next prune waits for the map to double.
+        self._checked = {
+            key: checked
+            for key, checked in self._checked.items()
+            if self._sent_recently(checked[1], checked[2])
+        }
+        self._check_bound = max(CHECKED_LIMIT, 2 * len(self._checked))
+
+    def _forget_checks(self) -> None:
+        # The versions were checked against listings of the old store, so
+        # none of them says anything about the new one. The first view has
+        # no old store, and a check may be what builds it.
+        self._checked.clear()
+        self._checking.clear()
+        self._check_epoch += 1
+
+    @staticmethod
+    def _sent_recently(sent_tick: int, sent_at: float) -> bool:
+        """Whether a version check is recent enough to answer for the caller.
+
+        The rule ``listing_trusted`` applies to listings: inside a command,
+        only a check sent after the command started, since one sent before
+        may predate a change the command must see; outside any command, one
+        sent within ``LISTING_TRUST_WINDOW`` seconds.
+
+        Args:
+            sent_tick (int): the tick taken just before the check was sent.
+            sent_at (float): the monotonic second it was sent at.
+        """
+        started = command_started()
+        if started is not None:
+            return sent_tick > started
+        return _now() - sent_at < LISTING_TRUST_WINDOW
+
+    async def checked_version(
+        self, key: str, stored: str, check: Callable[[], Awaitable[str | None]]
+    ) -> str | None:
+        """The backend's listing version for ``key``, asking at most once.
+
+        A check recent enough for the caller (``_sent_recently``) that
+        answered ``stored`` is reused, so one command checks a mount once
+        however many of its folders it lists. Otherwise a check in flight
+        that is recent enough is shared, and only then is a new one sent;
+        the newest in flight is the one later callers find. A remembered
+        answer that differs from ``stored`` is asked again rather than
+        trusted, since the listing may have been written since. The shared
+        check is shielded, so one caller's cancellation never reaches the
+        others.
+
+        Args:
+            key (str): what the version covers: the mount root, or a folder.
+            stored (str): the version stored with the caller's listing.
+            check (Callable[[], Awaitable[str | None]]): asks the backend;
+                None when it answers no version.
+        """
+        checked = self._checked.get(key)
+        if (
+            checked is not None
+            and checked[0] == stored
+            and self._sent_recently(checked[1], checked[2])
+        ):
+            return checked[0]
+        flight = self._checking.get(key)
+        if flight is None or not self._sent_recently(flight[0], flight[1]):
+            flight = self._send_check(key, check)
+        return await asyncio.shield(flight[2])
+
+    def _send_check(
+        self, key: str, check: Callable[[], Awaitable[str | None]]
+    ) -> tuple[int, float, asyncio.Task[str | None]]:
+        sent_tick = tick()
+        sent_at = _now()
+        epoch = self._check_epoch
+
+        async def run() -> str | None:
+            version = await check()
+            checked = self._checked.get(key)
+            # Recorded here rather than by a waiter, so the answer lands
+            # even when every waiter was cancelled; an older check that
+            # lands late never replaces a newer one.
+            if (
+                version is not None
+                and epoch == self._check_epoch
+                and (checked is None or checked[1] < sent_tick)
+            ):
+                if checked is None and len(self._checked) >= self._check_bound:
+                    self._prune_checks()
+                self._checked[key] = (version, sent_tick, sent_at)
+            return version
+
+        def finished(completed: asyncio.Task[str | None]) -> None:
+            flight = self._checking.get(key)
+            if flight is not None and flight[2] is completed:
+                self._checking.pop(key, None)
+            # Retrieve failures even if every waiter was cancelled.
+            if not completed.cancelled():
+                completed.exception()
+
+        task = asyncio.create_task(run())
+        flight = (sent_tick, sent_at, task)
+        self._checking[key] = flight
+        task.add_done_callback(finished)
+        return flight
 
     @property
     def generation(self) -> int:

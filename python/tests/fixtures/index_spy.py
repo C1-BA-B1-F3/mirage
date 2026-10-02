@@ -23,8 +23,14 @@ class WindowSpy(RAMIndexCacheStore):
         *,
         window: bool = False,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         self.windows[vfs_path] = window
         return await super().set_dir(
-            vfs_path, entries, expired_at, window=window, excluded=excluded
+            vfs_path,
+            entries,
+            expired_at,
+            window=window,
+            excluded=excluded,
+            version=version,
         )

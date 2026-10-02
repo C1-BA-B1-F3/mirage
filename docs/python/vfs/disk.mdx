@@ -17,8 +17,13 @@ vfs = DiskVFS(root="/path/to/dir")
 ws = Workspace({"/data": vfs}, mode=MountMode.READ)
 ```
 
-`DiskVFS(root=...)` takes a single `root` path argument pointing to the
+`DiskVFS(root=..., folder_versions=True)` takes the `root` path of the
 directory to mount. Both `READ` and `WRITE` modes are supported.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `root` | required | The host directory the mount mirrors. |
+| `folder_versions` | `True` | Store each listing at its folder's version, so a `read: fresh` mount re-lists only folders that changed. Must be a boolean. Turn it off for a network or FUSE root. |
 
 ## Filesystem Layout
 
@@ -53,6 +58,25 @@ to the root boundary.
 The Disk VFS uses `IndexCacheStore` with `index_ttl = 60` (1 minute).
 Directory listings are cached for up to 60 seconds before being refreshed
 from disk.
+
+Each listing is stored with its folder's version: the folder's device,
+inode, change time and modified time. Under `read: fresh`, a later command
+stats the folder and serves the cached listing while the version still matches, so
+it pays one local stat per listed folder instead of a scan. A folder changed
+in the last 2 seconds gets no version and is re-listed until it has been
+quiet that long, since two changes inside one timestamp tick could leave its
+times unmoved.
+
+This assumes a local POSIX filesystem, where adding, renaming or removing an
+entry moves the folder's change time. A network or FUSE root (NFS, SMB,
+rclone, s3fs, mirage's own FUSE) may not, so turn the versions off there:
+
+```python
+vfs = DiskVFS(root="/mnt/nfs/share", folder_versions=False)
+```
+
+That mount then re-lists a cached folder once per command, as every
+unversioned backend does. See [the cache](/home/cache#listings-under-fresh).
 
 ## Example
 

@@ -24,9 +24,16 @@ from mirage.core.disk.utils import resolve_inside_sync, walk_entries
 from mirage.core.disk.watch import build_delta_hook
 from mirage.ops.disk import OPS as DISK_OPS
 from mirage.ops.registry import RegisteredOp
-from mirage.types import CapacityResult, CapacityState, PathSpec, VFSName
+from mirage.types import (
+    CapacityResult,
+    CapacityState,
+    ListingVersion,
+    PathSpec,
+    VFSName,
+)
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.disk.prompt import PROMPT
+from mirage.vfs.errors import VFSConfigError
 from mirage.watch.base import DeltaHook
 
 
@@ -37,16 +44,34 @@ class DiskVFS(BaseVFS):
     accessor: DiskAccessor
     index_ttl: float = 60
     prompt: str = PROMPT
+    # Each folder's listing is stored at the folder's own version (inode
+    # and change times, mirage.core.disk.listing_version), so a fresh
+    # mount re-lists only the folders that changed. An instance built with
+    # folder_versions=False declares NONE for itself; the class keeps
+    # FOLDER for the spec table.
+    listing_version: ListingVersion = ListingVersion.FOLDER
 
-    def __init__(self, root: str) -> None:
+    def __init__(self, root: str, folder_versions: bool = True) -> None:
+        """Args:
+        root (str): the host directory the mount mirrors.
+        folder_versions (bool): store each listing at its folder's
+            version. Folder versions assume a local POSIX filesystem;
+            turn them off for an NFS, SMB or FUSE root, whose change
+            times may not move with the folder's entries.
+        """
+        if not isinstance(folder_versions, bool):
+            raise VFSConfigError("disk: folder_versions: must be a boolean")
         super().__init__()
+        self.folder_versions = folder_versions
+        if not folder_versions:
+            self.listing_version = ListingVersion.NONE
         self.root = Path(root).resolve()
         # The mount root is infrastructure, not a path component a caller
         # asked for, so it is created here rather than on demand by the
         # first write: writes must report ENOENT for a missing parent the
         # way GNU does. Mirrors TypeScript's DiskVFS constructor.
         self.root.mkdir(parents=True, exist_ok=True)
-        self.accessor = DiskAccessor(self.root)
+        self.accessor = DiskAccessor(self.root, folder_versions)
 
     def ops(self) -> list[RegisteredOp]:
         return DISK_OPS
@@ -91,6 +116,10 @@ class DiskVFS(BaseVFS):
                     modes[rel] = info.st_mode & 0o7777
         return {
             "type": self.name,
+            "config": {
+                "root": str(self.root),
+                "folder_versions": self.folder_versions,
+            },
             "files": files,
             "modes": modes,
         }

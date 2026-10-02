@@ -40,8 +40,16 @@ from mirage.policy.types import SessionContext
 from mirage.secrets import registry
 from mirage.secrets.registry import register_secrets
 from mirage.secrets.types import ResolvedSecret
-from mirage.types import ContentType, FileType, ReadPolicy, ReadSpec
+from mirage.types import (
+    ContentType,
+    FileType,
+    ListingVersion,
+    ReadPolicy,
+    ReadSpec,
+)
 from mirage.vfs import registry as vfs_registry
+from mirage.vfs.disk import DiskVFS
+from mirage.vfs.errors import VFSConfigError
 from mirage.vfs.loader import SCRIPT_MODULE_NAME, load_backend_class
 from mirage.vfs.minio import MinIOConfig, MinIOVFS
 from mirage.vfs.ram import RAMVFS
@@ -982,3 +990,116 @@ async def test_a_restore_into_a_live_workspace_keeps_the_live_read_policy():
         assert target._registry.mount_for_prefix("/d/").read.ttl == 90
     finally:
         await target.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("door", ["copy", "load"])
+@pytest.mark.parametrize(
+    "folder_versions, listing_version",
+    [(True, ListingVersion.FOLDER), (False, ListingVersion.NONE)],
+)
+async def test_a_rebuilt_disk_mount_keeps_its_folder_versions(
+    tmp_path, door, folder_versions, listing_version
+):
+    root = tmp_path / "root"
+    root.mkdir()
+    ws = Workspace({"/d": DiskVFS(str(root), folder_versions=folder_versions)})
+    try:
+        if door == "copy":
+            rebuilt = await ws.copy()
+        else:
+            snap = tmp_path / "ws.tar"
+            await ws.snapshot(snap)
+            rebuilt = await Workspace.load(snap)
+        try:
+            vfs = rebuilt.mount("/d").vfs
+            assert vfs.folder_versions is folder_versions
+            assert vfs.listing_version is listing_version
+            assert Path(vfs.root) != root
+        finally:
+            await rebuilt.close()
+    finally:
+        await ws.close()
+
+
+class RootOnlyDisk(DiskVFS):
+    def __init__(self, root: str) -> None:
+        super().__init__(root)
+
+
+class OffOnlyDisk(DiskVFS):
+    def __init__(self, root: str) -> None:
+        super().__init__(root, folder_versions=False)
+
+
+class DefaultOffDisk(DiskVFS):
+    def __init__(self, root: str, folder_versions: bool = False) -> None:
+        super().__init__(root, folder_versions=folder_versions)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cls, kwargs, expected",
+    [
+        (RootOnlyDisk, {}, ListingVersion.FOLDER),
+        (OffOnlyDisk, {}, ListingVersion.NONE),
+        (DefaultOffDisk, {"folder_versions": True}, ListingVersion.FOLDER),
+    ],
+)
+async def test_a_registered_disk_subclass_rebuilds_with_its_own_knob(
+    tmp_path, cls, kwargs, expected
+):
+    register_vfs(cls.__name__.lower(), cls)
+    mount = Mount(
+        vfs=build_vfs(cls.__name__.lower(), {"root": str(tmp_path), **kwargs}),
+        mode=MountMode.WRITE,
+        vfs_ref=cls.__name__.lower(),
+    )
+    ws = Workspace({"/d": mount})
+    try:
+        rebuilt = await ws.copy()
+        try:
+            vfs = rebuilt.mount("/d").vfs
+            assert type(vfs) is cls
+            assert vfs.listing_version is expected
+        finally:
+            await rebuilt.close()
+    finally:
+        await ws.close()
+
+
+def _disk_state(state: dict) -> dict:
+    return next(
+        m[MountKey.VFS_STATE]
+        for m in state[StateKey.MOUNTS]
+        if m[MountKey.PREFIX] == "/d/"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_saved_disk_mount_without_the_knob_rebuilds_versioned(
+    tmp_path,
+):
+    ws = Workspace({"/d": DiskVFS(str(tmp_path), folder_versions=False)})
+    try:
+        state = await to_state_dict(ws)
+    finally:
+        await ws.close()
+    del _disk_state(state)[VFSStateKey.CONFIG]["folder_versions"]
+    rebuilt = await Workspace.from_state(state)
+    try:
+        assert rebuilt.mount("/d").vfs.listing_version is ListingVersion.FOLDER
+    finally:
+        await rebuilt.close()
+
+
+@pytest.mark.asyncio
+async def test_a_saved_non_boolean_knob_is_refused(tmp_path):
+    ws = Workspace({"/d": DiskVFS(str(tmp_path))})
+    try:
+        state = await to_state_dict(ws)
+    finally:
+        await ws.close()
+    _disk_state(state)[VFSStateKey.CONFIG]["folder_versions"] = "false"
+    with pytest.raises(VFSConfigError, match="must be a boolean"):
+        await Workspace.from_state(state)

@@ -19,6 +19,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import TypedDict
 
 from check_layout_parity import (
     PY_ROOT,
@@ -29,6 +30,12 @@ from check_layout_parity import (
 )
 
 EXCEPTIONS = ROOT / "spec" / "symbol_exceptions.json"
+
+
+class Exceptions(TypedDict, total=False):
+    baseline: int
+    modules: dict[str, dict[str, dict[str, str]]]
+
 
 # JavaScript's TextEncoder/TextDecoder singletons; a Python str encodes
 # itself, so these have no counterpart to mirror.
@@ -44,14 +51,17 @@ TS_DECL = re.compile(
 TS_EXPORT_LIST = re.compile(
     r"^export\s+(?:type\s+)?\{([^}]*)\}(?!\s*from)", re.M
 )
+TS_DESTRUCTURE = re.compile(
+    r"^(?:export\s+)?(?:const|let|var)\s*[{\[]([^}\]]*)[}\]]\s*=", re.M
+)
 
 
 def python_names(path: Path) -> dict[str, str]:
     """Top-level names a python module defines, keyed by folded name.
 
-    Functions, classes and capitalized assignments (constants and type
-    aliases); a TypeVar is skipped because typescript declares generics
-    inline.
+    Functions, classes and capitalized assignments, unpacked ones
+    included (constants and type aliases); a TypeVar is skipped because
+    typescript declares generics inline.
 
     Args:
         path (Path): the module.
@@ -62,8 +72,6 @@ def python_names(path: Path) -> dict[str, str]:
             node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
         ):
             names[canonical(node.name)] = node.name
-        elif isinstance(node, ast.TypeAlias):
-            names[canonical(node.name.id)] = node.name.id
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value
             if (
@@ -76,11 +84,16 @@ def python_names(path: Path) -> dict[str, str]:
                 node.targets if isinstance(node, ast.Assign) else [node.target]
             )
             for target in targets:
-                if (
-                    isinstance(target, ast.Name)
-                    and target.id.lstrip("_")[:1].isupper()
-                ):
-                    names[canonical(target.id)] = target.id
+                if isinstance(target, (ast.Tuple, ast.List)):
+                    leaves = target.elts
+                else:
+                    leaves = [target]
+                for leaf in leaves:
+                    if (
+                        isinstance(leaf, ast.Name)
+                        and leaf.id.lstrip("_")[:1].isupper()
+                    ):
+                        names[canonical(leaf.id)] = leaf.id
     return names
 
 
@@ -102,7 +115,12 @@ def typescript_names(paths: list[Path]) -> dict[str, str]:
                 part = re.sub(r"^type\s+", "", part.strip())
                 if part:
                     found.add(part.split(" as ")[-1].strip())
-        for name in found - TS_CODECS:
+        for body in TS_DESTRUCTURE.findall(text):
+            for part in body.split(","):
+                name = part.split(":")[-1].split("=")[0].strip(" .\n")
+                if name:
+                    found.add(name)
+        for name in sorted(found - TS_CODECS):
             names[canonical(name)] = name
     return names
 
@@ -158,22 +176,21 @@ def divergences() -> dict[str, dict[str, list[str]]]:
 
 
 def excuse(
-    found: dict[str, dict[str, list[str]]], exceptions: dict[str, object]
+    found: dict[str, dict[str, list[str]]], exceptions: Exceptions
 ) -> tuple[dict[str, dict[str, list[str]]], list[str]]:
     """Drop excused names and list the exceptions nothing matches any more.
 
     Args:
         found (dict[str, dict[str, list[str]]]): every divergence.
-        exceptions (dict[str, object]): the committed exceptions payload.
+        exceptions (Exceptions): the committed exceptions payload.
     """
     excused = exceptions.get("modules", {})
-    assert isinstance(excused, dict)
     remaining: dict[str, dict[str, list[str]]] = {}
     stale: list[str] = []
-    for module, sides in excused.items():
-        for side, names in sides.items():
-            for name, reason in names.items():
-                if not str(reason).strip():
+    for module, allowed in excused.items():
+        for side, reasons in allowed.items():
+            for name, reason in reasons.items():
+                if not isinstance(reason, str) or not reason.strip():
                     stale.append(f"{module}: {side} {name} (no reason)")
                 elif name not in found.get(module, {}).get(side, []):
                     stale.append(f"{module}: {side} {name}")
@@ -206,7 +223,7 @@ def main() -> int:
     parser.add_argument("--json", dest="as_json", action="store_true")
     args = parser.parse_args()
 
-    exceptions = (
+    exceptions: Exceptions = (
         json.loads(EXCEPTIONS.read_text()) if EXCEPTIONS.is_file() else {}
     )
     baseline = exceptions.get("baseline", 0)

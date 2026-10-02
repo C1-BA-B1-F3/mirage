@@ -1058,6 +1058,62 @@ describe('a marked op keeps every endpoint to its rule', () => {
     }
   })
 
+  // Both endpoints are walked before either is judged: a destination whose
+  // linked parent leads into hidden space is missing, before a rule on the
+  // source can name it.
+  it('answers a rename into hidden space through a linked parent first', async () => {
+    const ws = await linkedWs()
+    try {
+      await ws.shell('mkdir -p /data/hid && ln -s /data/hid /data/halias')
+      const session = new SessionState({
+        sessionId: 'hider',
+        hiddenPaths: { paths: ['/data/hid'] },
+      })
+      const { gate, asked } = refusing('/data/real/secret')
+      await runWithSession(session, async () => {
+        await expect(
+          ws.dispatch('rename', '/data/real/secret', [PathSpec.fromStrPath('/data/halias/x')], {
+            ruleGate: gate,
+          }),
+        ).rejects.toMatchObject({ code: 'ENOENT' })
+      })
+      expect(asked).toEqual([])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // A follow op whose parent is linked has three spellings: as handed in,
+  // walked, followed. A rule on the walked one, the link entry at its real
+  // place, holds.
+  it('judges a followed op on its walked spelling', async () => {
+    const ws = await linkedWs()
+    try {
+      await ws.shell('echo o > /data/other && ln -s /data/other /data/real/flink2')
+      const { gate, asked } = refusing('/data/real/flink2')
+      await expect(
+        ws.dispatch('read', '/data/alias/flink2', [], { ruleGate: gate }),
+      ).rejects.toThrow('sealed')
+      expect(asked).toEqual(['/data/alias/flink2', '/data/real/flink2'])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // A null mark is no mark, as Python's rule_gate=None: the op runs as the
+  // door's alone.
+  it('treats a null mark as absent', async () => {
+    const ws = await linkedWs()
+    try {
+      const read = (await ws.dispatch('read', '/data/real/secret', [], {
+        ruleGate: null,
+      })) as Uint8Array
+      expect(new TextDecoder().decode(read)).toBe('s\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
   // Hiding answers first for either endpoint: a rule on the visible one is
   // never asked, so no refusal names a path next to hidden space.
   it('answers a hidden rename endpoint before a rule on the other', async () => {

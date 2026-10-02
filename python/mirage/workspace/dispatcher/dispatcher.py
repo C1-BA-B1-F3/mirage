@@ -329,7 +329,7 @@ class Dispatcher:
     ) -> tuple[Any, IOResult]:
         # A command's own dispatcher marks its ops with the gate the
         # command was admitted under (with_dispatch_rule_guard); the door
-        # judges that gate on the paths it actually reaches, after its
+        # judges that gate on the path as handed in and the paths it reaches, after its
         # own walk, and never forwards the mark to an op.
         rule_gate: EntryGate | None = kwargs.pop("rule_gate", None)
         await self._namespace.ensure_loaded()
@@ -386,13 +386,22 @@ class Dispatcher:
         # the final link is judged below, once the follow has answered
         # for hidden space.
         no_follow = op in NO_FOLLOW_OPS or bool(kwargs.get("nofollow"))
+        # Both rename endpoints are walked before either is judged, so a
+        # destination whose linked parent leads into hidden space answers
+        # as missing before a rule on the source can.
+        typed_dst = dst
+        if op == "rename" and isinstance(dst, PathSpec):
+            dst = kwargs["dst"] = self._walked(dst, True)
         if rule_gate is not None and no_follow:
             _judge(rule_gate, typed, path)
+        if (
+            rule_gate is not None
+            and op == "rename"
+            and isinstance(dst, PathSpec)
+            and isinstance(typed_dst, PathSpec)
+        ):
+            _judge(rule_gate, typed_dst, dst)
         if op == "rename" and isinstance(dst, PathSpec):
-            typed_dst = dst
-            dst = kwargs["dst"] = self._walked(dst, True)
-            if rule_gate is not None:
-                _judge(rule_gate, typed_dst, dst)
             # A rename re-anchors everything below its source while the
             # hides stay where they are written, so hidden content would
             # land at paths the session can see. Destroying hidden

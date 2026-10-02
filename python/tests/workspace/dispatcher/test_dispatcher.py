@@ -1321,3 +1321,49 @@ async def test_a_hidden_rename_endpoint_answers_before_a_rule_on_the_other():
     finally:
         reset_current_session(token)
         await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_rename_into_hidden_space_through_a_linked_parent_answers_first():
+    # Both endpoints are walked before either is judged: a destination
+    # whose linked parent leads into hidden space is missing, before a rule
+    # on the source can name it.
+    ws = await _linked_ws()
+    await ws.shell("mkdir -p /data/hid && ln -s /data/hid /data/halias")
+    session = SessionState(
+        session_id="hider", hidden_paths=HiddenPaths(paths=("/data/hid",))
+    )
+    token = set_current_session(session)
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        with pytest.raises(FileNotFoundError):
+            await ws.dispatch(
+                "rename",
+                _path("/data/real/secret"),
+                dst=_path("/data/halias/x"),
+                rule_gate=gate,
+            )
+        assert gate.asked == []
+    finally:
+        reset_current_session(token)
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_followed_op_is_judged_on_its_walked_spelling():
+    # A follow op whose parent is linked has three spellings: as handed
+    # in, walked, followed. A rule on the walked one, the link entry at its
+    # real place, holds.
+    ws = await _linked_ws()
+    await ws.shell(
+        "echo o > /data/other && ln -s /data/other /data/real/flink2"
+    )
+    try:
+        gate = _RefusingGate("/data/real/flink2")
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "read", _path("/data/alias/flink2"), rule_gate=gate
+            )
+        assert gate.asked == ["/data/alias/flink2", "/data/real/flink2"]
+    finally:
+        await ws.close()

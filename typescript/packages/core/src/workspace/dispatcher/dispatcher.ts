@@ -266,7 +266,7 @@ export class Dispatcher {
     const [issuer, stripped] = takeIssuer(kwargs)
     // A command's own dispatcher marks its ops with the gate the command
     // was admitted under (withDispatchRuleGuard); the door judges that
-    // gate on the paths it actually reaches, after its own walk, and
+    // gate on the path as handed in and the paths it reaches, after its own walk, and
     // never forwards the mark to an op.
     const [ruleGate, unmarked] = takeRuleGate(stripped)
     kwargs = unmarked
@@ -332,14 +332,19 @@ export class Dispatcher {
     // about the name is acted on. One that follows the final link is judged
     // below, once the follow has answered for hidden space.
     const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
-    if (ruleGate !== undefined && noFollow) judge(ruleGate, typed, path)
+    // Both rename endpoints are walked before either is judged, so a
+    // destination whose linked parent leads into hidden space answers as
+    // missing before a rule on the source can.
+    let renamedPair: [PathSpec, PathSpec] | null = null
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       const typedDst = dstArg
       const walkedDst = this.walked(dstArg, true)
       dstArg = walkedDst
       args = [walkedDst, ...(args ?? []).slice(1)]
-      if (ruleGate !== undefined) judge(ruleGate, typedDst, walkedDst)
+      renamedPair = [typedDst, walkedDst]
     }
+    if (ruleGate !== undefined && noFollow) judge(ruleGate, typed, path)
+    if (ruleGate !== undefined && renamedPair !== null) judge(ruleGate, ...renamedPair)
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
       // stay where they are written, so hidden content would land at

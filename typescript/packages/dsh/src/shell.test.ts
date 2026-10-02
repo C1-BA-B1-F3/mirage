@@ -558,6 +558,19 @@ describe('run', () => {
     expect((await (await first).result()).exitCode).toBe(0)
   })
 
+  it('never holds a call behind a seed in flight on the read-only twin', async () => {
+    const { shell } = await makeShell({}, { sessionId: 'agent' })
+    const { entered, open } = stall(shell, 'applyManagedEnv')
+    const readOnly = { mode: 'read-only', workspaceRoot: '/Users/somebody' } as const
+    const first = shell.execute(
+      shell.resolve({ command: 'true', dshEnv: { DSH_HOME: '/a' }, sandboxPolicy: readOnly }),
+    )
+    await entered
+    expect((await runOn(shell, shell.resolve({ command: 'echo ran' }))).stdout.text).toBe('ran\n')
+    open()
+    expect((await (await first).result()).exitCode).toBe(0)
+  })
+
   it('lands a seed cancelled mid-flight before the next call, never over it', async () => {
     const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
     const { entered, open } = stall(shell, 'applyManagedEnv')

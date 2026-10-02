@@ -469,7 +469,7 @@ export class MirageShellExecutor extends ShellExecutor {
   private readonly spillDir: string | undefined
   private sessionReady: Promise<void> | null = null
   private readOnlyReady: Promise<string> | null = null
-  private seeding: Promise<unknown> = Promise.resolve()
+  private readonly seeding = new Map<string, Promise<unknown>>()
   private issued = 0
   private readonly seeded = new Map<string, number>()
 
@@ -768,7 +768,8 @@ export class MirageShellExecutor extends ShellExecutor {
    * session binding, the workdir in this world, and its managed env.
    *
    * Seeding the env is the one step that writes, so it comes last and
-   * waits for any seed already running. Calls are numbered as they
+   * waits for any seed already running on the same session (the bound
+   * one and its read-only twin queue apart). Calls are numbered as they
    * arrive, and a seed is skipped once a later call has seeded the same
    * session, so the newest snapshot wins: a slow or abandoned preparation
    * never lands an old one over it, and a stall before the seed holds up
@@ -788,15 +789,19 @@ export class MirageShellExecutor extends ShellExecutor {
     const workdir = await this.worldWorkdir(spec)
     const managed = spec.dshEnv as Record<string, string> | undefined
     if (bound && sessionId !== undefined) {
+      const running = this.seeding.get(sessionId) ?? Promise.resolve()
       if (managed === undefined) {
-        await this.seeding
+        await running
       } else {
-        const seed = this.seeding.then(async () => {
+        const seed = running.then(async () => {
           if (ticket < (this.seeded.get(sessionId) ?? 0)) return
           await this.applyManagedEnv(ws, sessionId, managed)
           this.seeded.set(sessionId, ticket)
         })
-        this.seeding = seed.catch(() => undefined)
+        this.seeding.set(
+          sessionId,
+          seed.catch(() => undefined),
+        )
         await seed
       }
     }

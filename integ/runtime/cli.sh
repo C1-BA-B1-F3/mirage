@@ -273,6 +273,20 @@ run_host() {
   $cli config set port "$port" >/dev/null </dev/null
   $cli config set url "http://127.0.0.1:$port" >/dev/null </dev/null
 
+  # The CLI spawns its daemon on the first create and gives it 5 s to answer.
+  # On a busy runner the python daemon takes longer, and the lane's first
+  # case failed on that alone. One throwaway create starts it; a create that
+  # gave up still left the daemon starting, so wait for it to answer instead
+  # of spawning another.
+  write_world_yaml '{}' "$work"
+  $cli workspace create "$work/ws.yaml" --id rt-warm >/dev/null 2>&1 </dev/null || true
+  local tries
+  for tries in $(seq 1 60); do
+    $cli workspace list >/dev/null 2>&1 </dev/null && break
+    sleep 1
+  done
+  $cli workspace delete rt-warm >/dev/null 2>&1 </dev/null || true
+
   local file suite suite_json requires unmet
   for file in "$SUITE_DIR"/*.json; do
     suite_json=$(cat "$file")

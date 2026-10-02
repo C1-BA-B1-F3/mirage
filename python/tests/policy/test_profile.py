@@ -2541,6 +2541,57 @@ async def test_a_dispatched_op_meets_the_rule_through_a_linked_parent():
 
 
 @pytest.mark.asyncio
+async def test_a_rule_spelled_through_a_linked_parent_binds_a_dispatched_op():
+    # The door judges the path the command handed it as well as the one
+    # its walk reaches, so a rule written through a link holds for the
+    # command's own ops exactly as it holds for a named operand.
+    doc = {
+        "commands": {
+            "allow": ["sed", "cat", "ln", "echo", "mkdir"],
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {
+                        "sed": ["/data/dalias/secret"],
+                        "cat": ["/data/dalias/secret"],
+                    },
+                }
+            ],
+        }
+    }
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"spelled": doc},
+    )
+    ws.create_session("g", profile="spelled")
+    try:
+        await ws.shell(
+            "mkdir -p /data/real && echo s > /data/real/secret && "
+            "ln -s /data/real /data/dalias && echo o > /data/f"
+        )
+        assert await _line(
+            ws, "sed -n 'w /data/dalias/secret' /data/f", "g"
+        ) == (
+            4,
+            "",
+            "sed: couldn't open file /data/dalias/secret: Permission denied\n",
+        )
+        assert await _line(ws, "cat /data/dalias/secret", "g") == (
+            1,
+            "",
+            "cat: /data/dalias/secret: sealed\n",
+        )
+        assert (await ws.shell("cat /data/real/secret")).exit_code == 0
+        assert (
+            await (await ws.shell("cat /data/real/secret")).stdout_str()
+            == "s\n"
+        )
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
 async def test_a_dispatched_op_answers_missing_before_any_rule():
     # The door answers for the path it can actually reach first: a link
     # into hidden space, and a name behind a missing directory, are not

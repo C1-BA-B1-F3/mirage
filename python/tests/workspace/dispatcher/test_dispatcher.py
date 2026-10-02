@@ -1153,9 +1153,13 @@ async def test_a_marked_op_is_judged_on_the_path_the_door_reaches():
             )
         with pytest.raises(PermissionError):
             await ws.dispatch("read", _path("/data/flink"), rule_gate=gate)
+        # Each spelling once, in the order the door meets it: as handed
+        # in, walked, then followed.
         assert gate.asked == [
-            "/data/alias/secret".replace("alias", "real"),
+            "/data/alias/secret",
+            "/data/real/secret",
             "/data/real/other",
+            "/data/alias/secret",
             "/data/real/secret",
             "/data/flink",
             "/data/real/secret",

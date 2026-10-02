@@ -165,6 +165,20 @@ function takeRuleGate(
   return [gate as EntryGate, rest]
 }
 
+/**
+ * Ask a command's gate about each distinct spelling of the path an op
+ * reaches: as handed in, as walked, as followed, in the order the door met
+ * them.
+ */
+function judge(gate: EntryGate, ...paths: readonly PathSpec[]): void {
+  const seen = new Set<string>()
+  for (const spec of paths) {
+    if (seen.has(spec.virtual)) continue
+    seen.add(spec.virtual)
+    gate.check(spec.virtual)
+  }
+}
+
 /** The byte window a read asked for, whole file when it asked none. */
 function readWindow(kwargs: OpKwargs | undefined): [number, number | null] {
   return [
@@ -310,18 +324,21 @@ export class Dispatcher {
     // op facade, a runtime's os.symlink), so a link made, read or removed
     // under a linked directory lands in the directory the link names, not
     // under a name nothing else would look up.
+    const typed = path
     path = this.walked(path, HIDDEN_CREATE_OPS.has(opName))
-    // An op that acts on the name itself reaches the walked path, so that
-    // is what the command's rules judge, before anything about the name is
-    // acted on; one that follows the final link is judged below, once the
-    // follow has answered for hidden space.
+    // An op that acts on the name itself reaches the walked path; it is
+    // judged on that and on the spelling the command handed in (a rule
+    // written through a linked directory names the latter), before anything
+    // about the name is acted on. One that follows the final link is judged
+    // below, once the follow has answered for hidden space.
     const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
-    if (ruleGate !== undefined && noFollow) ruleGate.check(path.virtual)
+    if (ruleGate !== undefined && noFollow) judge(ruleGate, typed, path)
     if (opName === 'rename' && dstArg instanceof PathSpec) {
+      const typedDst = dstArg
       const walkedDst = this.walked(dstArg, true)
       dstArg = walkedDst
       args = [walkedDst, ...(args ?? []).slice(1)]
-      ruleGate?.check(walkedDst.virtual)
+      if (ruleGate !== undefined) judge(ruleGate, typedDst, walkedDst)
     }
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
@@ -375,10 +392,7 @@ export class Dispatcher {
         if (!pathAllowed(p.virtual)) throw hiddenRefusal(p.virtual, HIDDEN_CREATE_OPS.has(opName))
       }
     }
-    if (ruleGate !== undefined && !noFollow) {
-      ruleGate.check(path.virtual)
-      if (p.virtual !== path.virtual) ruleGate.check(p.virtual)
-    }
+    if (ruleGate !== undefined && !noFollow) judge(ruleGate, typed, path, p)
     if (XATTR_OPS.has(opName)) {
       return [await this.xattrOp(opName, p, kwargs ?? {}, report, issuer), new IOResult()]
     }

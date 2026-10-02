@@ -224,6 +224,21 @@ class _MountChannel:
             await self.invalidate(spec)
 
 
+def _judge(gate: EntryGate, *paths: PathSpec) -> None:
+    """Ask a command's gate about each distinct spelling of the path an
+    op reaches: as handed in, as walked, as followed.
+
+    Args:
+        gate (EntryGate): the gate the command was admitted under.
+        *paths (PathSpec): the spellings, in the order the door met them.
+    """
+    seen: set[str] = set()
+    for spec in paths:
+        if spec.virtual not in seen:
+            seen.add(spec.virtual)
+            gate.check(spec.virtual)
+
+
 class Dispatcher:
     """Route a single VFS op to its mount and keep the file cache + index
     consistent.
@@ -362,18 +377,22 @@ class Dispatcher:
         # os.symlink), so a link made, read or removed under a linked
         # directory lands in the directory the link names, not under a
         # name nothing else would look up.
+        typed = path
         path = self._walked(path, op in HIDDEN_CREATE_OPS)
-        # An op that acts on the name itself reaches the walked path, so
-        # that is what the command's rules judge, before anything about
-        # the name is acted on; one that follows the final link is judged
-        # below, once the follow has answered for hidden space.
+        # An op that acts on the name itself reaches the walked path; it
+        # is judged on that and on the spelling the command handed in (a
+        # rule written through a linked directory names the latter),
+        # before anything about the name is acted on. One that follows
+        # the final link is judged below, once the follow has answered
+        # for hidden space.
         no_follow = op in NO_FOLLOW_OPS or bool(kwargs.get("nofollow"))
         if rule_gate is not None and no_follow:
-            rule_gate.check(path.virtual)
+            _judge(rule_gate, typed, path)
         if op == "rename" and isinstance(dst, PathSpec):
+            typed_dst = dst
             dst = kwargs["dst"] = self._walked(dst, True)
             if rule_gate is not None:
-                rule_gate.check(dst.virtual)
+                _judge(rule_gate, typed_dst, dst)
             # A rename re-anchors everything below its source while the
             # hides stay where they are written, so hidden content would
             # land at paths the session can see. Destroying hidden
@@ -428,9 +447,7 @@ class Dispatcher:
                 if not path_allowed(path.virtual):
                     raise hidden_refusal(path.virtual, op in HIDDEN_CREATE_OPS)
         if rule_gate is not None and not no_follow:
-            rule_gate.check(walked.virtual)
-            if path.virtual != walked.virtual:
-                rule_gate.check(path.virtual)
+            _judge(rule_gate, typed, walked, path)
         if op in XATTR_OPS:
             return await self._xattr_op(op, path, kwargs, report), IOResult()
         mount = self._namespace.try_mount_for(path.virtual)

@@ -899,9 +899,13 @@ describe('a marked op is judged on the path the door reaches', () => {
       await expect(ws.dispatch('read', '/data/flink', [], { ruleGate: gate })).rejects.toThrow(
         'sealed',
       )
+      // Each spelling once, in the order the door meets it: as handed in,
+      // walked, then followed.
       expect(asked).toEqual([
+        '/data/alias/secret',
         '/data/real/secret',
         '/data/real/other',
+        '/data/alias/secret',
         '/data/real/secret',
         '/data/flink',
         '/data/real/secret',

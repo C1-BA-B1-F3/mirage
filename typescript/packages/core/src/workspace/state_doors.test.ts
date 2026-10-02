@@ -2632,6 +2632,44 @@ describe('a dispatched op meets the rule on the path the door reaches', () => {
     }
   })
 
+  // The door judges the path the command handed it as well as the one its
+  // walk reaches, so a rule written through a link holds for the command's
+  // own ops exactly as it holds for a named operand.
+  it('binds a rule spelled through a linked parent', async () => {
+    const doc = parseSessionProfile({
+      commands: {
+        allow: ['sed', 'cat', 'ln', 'echo', 'mkdir'],
+        deny: [
+          {
+            reason: 'sealed',
+            commands: { sed: ['/data/dalias/secret'], cat: ['/data/dalias/secret'] },
+          },
+        ],
+      },
+    })
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { spelled: doc } },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'spelled' })
+    await ws.shell(
+      'mkdir -p /data/real && echo s > /data/real/secret && ln -s /data/real /data/dalias && echo o > /data/f',
+    )
+    expect(await line(ws, "sed -n 'w /data/dalias/secret' /data/f")).toEqual([
+      4,
+      '',
+      "sed: couldn't open file /data/dalias/secret: Permission denied\n",
+    ])
+    expect(await line(ws, 'cat /data/dalias/secret')).toEqual([
+      1,
+      '',
+      'cat: /data/dalias/secret: sealed\n',
+    ])
+    expect(stdoutStr(await ws.shell('cat /data/real/secret'))).toBe('s\n')
+  })
+
   // The door answers for the path it can actually reach first: a link into
   // hidden space, and a name behind a missing directory, are not there, as
   // GNU reports them, whatever a rule says about the name.

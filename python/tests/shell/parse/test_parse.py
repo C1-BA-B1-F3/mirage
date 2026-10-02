@@ -27,7 +27,7 @@ from mirage.shell.helpers import (
     get_text,
     get_while_parts,
 )
-from mirage.shell.parse import join_continuations
+from mirage.shell.parse import join_continuations, source_offsets
 from mirage.shell.types import NodeType as NT
 
 
@@ -350,6 +350,29 @@ def test_quoted_heredoc_body_keeps_its_continuations():
 def test_unquoted_heredoc_body_joins_its_lines():
     root = parse("cat <<E | \\\ntr a b\na\\\nb $x\nE")
     assert root.text == b'cat <"ab $x\n" | tr a b\n'
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo A; \\\n fi",
+        "echo /api/$c/$id.json; fi",
+        "! echo A \\\n; fi",
+        "time echo A \\\n; fi",
+    ],
+    ids=["continuation", "rebrace", "bang", "time"],
+)
+def test_source_offsets_point_back_into_the_line_as_typed(command):
+    root = parse(command)
+    stack, names = [root], []
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        if node.type == "command_name" and node.text == b"fi":
+            names.append(node)
+    (fi,) = names
+    offsets = source_offsets(command, root)
+    assert offsets[fi.start_byte] == command.encode().rindex(b"fi")
 
 
 # tree-sitter-bash 0.25.1 drops a later unbraced `$var` out of its word

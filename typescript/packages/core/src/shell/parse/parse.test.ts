@@ -222,6 +222,26 @@ describe('$ reparse: later unbraced var cut off from its name', () => {
   })
 })
 
+describe('sourceOffsets', () => {
+  it.each([
+    ['continuation', 'echo A; \\\n fi'],
+    ['rebrace', 'echo /api/$c/$id.json; fi'],
+    ['bang', '! echo A \\\n; fi'],
+    ['time', 'time echo A \\\n; fi'],
+  ])('points a %s node back into the line as typed', (_label, command) => {
+    const root = parser.parse(command)
+    const names: TSNodeLike[] = []
+    const stack: TSNodeLike[] = [root]
+    for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+      stack.push(...node.children)
+      if (node.type === 'command_name' && node.text === 'fi') names.push(node)
+    }
+    expect(names).toHaveLength(1)
+    const offsets = parser.sourceOffsets(command, root)
+    expect(offsets[names[0]?.startIndex ?? -1]).toBe(command.lastIndexOf('fi'))
+  })
+})
+
 describe('joinContinuations', () => {
   it.each([
     // An odd-length trailing run ends in a live continuation.

@@ -28,6 +28,7 @@ import { type ByteSource, IOResult } from '../../io/types.ts'
 import { makeAbortError, mergeSignals } from '../abort.ts'
 import { CallStack } from '../../shell/call_stack.ts'
 import { literalText } from '../../shell/parse/names.ts'
+import type { ShellParser } from '../../shell/parse/index.ts'
 import { BASH_BUILTINS } from '../lookup/constants.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import {
@@ -700,13 +701,13 @@ export interface ExecuteNodeDeps {
    */
   handed?: HandOff
   /**
-   * Parse one line into a tree. Only alias expansion needs it: an alias
-   * rewrites the head word textually and the result is read as a fresh
-   * line, so a value holding a pipe is a pipe. Absent (a unit test
-   * driving the walker directly) means an alias definition is stored and
-   * printed but never expanded.
+   * The shell parser. Only alias expansion needs it: an alias rewrites the
+   * head word textually and the result is read as a fresh line, so a value
+   * holding a pipe is a pipe. Absent (a unit test driving the walker
+   * directly) means an alias definition is stored and printed but never
+   * expanded.
    */
-  reparse?: (line: string) => TSNodeLike
+  parser?: ShellParser
   /**
    * Console this node writes its output to as it is produced.
    * When set, the node emits and returns no stdout; when unset
@@ -990,7 +991,7 @@ async function executeNodeBody(
         deps.runtimeBindings,
         deps.routingDecision,
         deps.signal,
-        deps.reparse,
+        deps.parser,
         agentId,
         deps.handed,
         sink,

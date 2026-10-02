@@ -52,7 +52,7 @@ import {
   aliasCommandText,
   expandingAliases,
 } from '../executor/builtins/alias/index.ts'
-import { findSyntaxError, syntaxErrorMessage } from '../../shell/parse/index.ts'
+import { findSyntaxError, syntaxErrorMessage, type ShellParser } from '../../shell/parse/index.ts'
 import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import { guardIO, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import {
@@ -140,9 +140,9 @@ export async function executeCommand(
   runtimeBindings?: Record<string, Runtime>,
   routingDecision?: RouteDecision,
   signal?: AbortSignal,
-  // Parse one line into a tree; only alias expansion needs it. Absent
-  // means an alias is stored and printed but never expanded.
-  reparse?: (line: string) => TSNodeLike,
+  // The shell parser; only alias expansion needs it. Absent means an
+  // alias is stored and printed but never expanded.
+  parser?: ShellParser,
   // The agent the line is attributed to, which an approval request names.
   agentId = '',
   // The line's hand-off, which its gate claims on and runs on.
@@ -163,7 +163,7 @@ export async function executeCommand(
   // inside a function still means the function's argument.
   const headNode = nonPrefixParts[0]
   if (
-    reparse !== undefined &&
+    parser !== undefined &&
     Object.keys(session.aliases).length > 0 &&
     headNode?.type === NT.COMMAND_NAME &&
     headNode.namedChildren[0]?.type === NT.WORD
@@ -178,12 +178,16 @@ export async function executeCommand(
       const [rewritten, texts] = rewrite
       let at = (headNode.startIndex ?? 0) - base
       const line = source.slice(0, at) + rewritten
-      const ast = reparse(line)
+      const ast = parser.parse(line)
+      const offsets = parser.sourceOffsets(line, ast)
+      const parsedAt = (offset: number): number => offsets.findIndex((o) => o >= offset)
       const own = new Map<string, readonly [number, number]>()
       for (const [alias, text] of texts) {
-        own.set(alias, [at, at + text.length])
-        at += text.length
+        const end = at + text.length
+        own.set(alias, [parsedAt(at), parsedAt(end)])
+        at = end
       }
+      const reparse = (text: string): TSNodeLike => parser.parse(text)
       const offending = findSyntaxError(ast, reparse, expandingAliases(session), own)
       if (offending !== null) {
         const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))

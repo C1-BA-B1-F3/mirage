@@ -18,11 +18,11 @@ import { scanParameter } from '../parameter.ts'
 import { ARITH_OPEN_TOKEN, QUOTES, VERBATIM_TYPES } from './constants.ts'
 import { expansionSource } from './expansion.ts'
 import { heredocOperators, protectedSource } from './heredoc/index.ts'
-import { lowerTiming, wrapTiming, type TimingMark } from './timing.ts'
+import { PrefixNode, lowerTiming, wrapTiming, type TimingMark } from './timing.ts'
 import { delimiterEnd, discoverHeredocs } from './heredoc/reader.ts'
 import { dropChars, dropSourceChars, lowerHeredocs, rebaseSource } from './heredoc/lower.ts'
 import { HeredocNode } from './heredoc/node.ts'
-import type { ShellNode } from '../types.ts'
+import type { ShellNode, TSNodeLike } from '../types.ts'
 
 export interface ShellParserConfig {
   engineWasm: Uint8Array | ArrayBuffer
@@ -31,6 +31,8 @@ export interface ShellParserConfig {
 
 export interface ShellParser {
   parse(command: string): ShellNode
+  /** Where each char of the source `parse` read sits in `command`. */
+  sourceOffsets(command: string, root: TSNodeLike): readonly number[]
 }
 
 /**
@@ -397,6 +399,27 @@ function continuationIndices(parser: Parser, text: string): number[] {
   return dropped
 }
 
+/**
+ * Where each char of the source `parse` read sits in `command`. `parse`
+ * deletes line continuations and inserts text to repair the grammar, so a
+ * node's offsets index the source it read rather than the line as typed;
+ * indexed by one of them, this gives the char of `command` it came from, and
+ * an inserted char gives the char after it. Mirrors Python's source_offsets.
+ */
+function sourceOffsets(parser: Parser, command: string, root: TSNodeLike): readonly number[] {
+  if (root instanceof HeredocNode || root instanceof PrefixNode) return root.offsets
+  const source = dropSourceChars(
+    {
+      original: command,
+      source: command,
+      offsets: Array.from({ length: command.length + 1 }, (_, i) => i),
+      documents: [],
+    },
+    continuationIndices(parser, command),
+  )
+  return rebaseSource(source, source.source.slice(0, root.startIndex ?? 0) + root.text).offsets
+}
+
 /** The line as bash's reader hands it on, continuations removed. */
 export function joinContinuations(parser: Parser, command: string): string {
   return dropChars(command, continuationIndices(parser, command))
@@ -637,12 +660,15 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
       let input = heredocs?.source ?? joinContinuations(parser, command)
       let timingMarks: readonly TimingMark[] = []
       if (input.includes('time') || input.includes('!')) {
-        heredocs ??= {
-          original: input,
-          source: input,
-          offsets: Array.from({ length: input.length + 1 }, (_, i) => i),
-          documents: [],
-        }
+        heredocs ??= dropSourceChars(
+          {
+            original: command,
+            source: command,
+            offsets: Array.from({ length: command.length + 1 }, (_, i) => i),
+            documents: [],
+          },
+          continuationIndices(parser, command),
+        )
         ;[heredocs, timingMarks] = lowerTiming(parser, heredocs)
         input = heredocs.source
       }
@@ -685,6 +711,9 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
       )
       const mapped = new HeredocNode(root, mappedSource)
       return timingMarks.length === 0 ? mapped : wrapTiming(mapped, mappedSource, timingMarks)
+    },
+    sourceOffsets(command: string, root: TSNodeLike): readonly number[] {
+      return sourceOffsets(parser, command, root)
     },
   }
 }

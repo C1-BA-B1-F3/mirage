@@ -83,6 +83,9 @@ export class HeredocNode implements ShellNode {
       this.node.children.some((child) => child.type === '<' && child.startIndex === start),
     )?.[1]
   }
+  get offsets(): readonly number[] {
+    return this.source.offsets
+  }
   get sourceText(): string {
     if (this.node.parent === null) return this.source.original
     if (!this.source.documents.some(([start]) => this.startIndex <= start && start < this.endIndex))

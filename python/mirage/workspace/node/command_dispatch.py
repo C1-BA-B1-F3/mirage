@@ -14,6 +14,7 @@
 
 import asyncio
 import dataclasses
+from bisect import bisect_left
 from collections.abc import Awaitable, Callable
 from functools import partial
 from types import SimpleNamespace
@@ -42,7 +43,12 @@ from mirage.shell.helpers import (
     get_text,
     split_env_prefix,
 )
-from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
+from mirage.shell.parse import (
+    find_syntax_error,
+    parse,
+    source_offsets,
+    syntax_error_result,
+)
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import ProcessSubDirection
 from mirage.shell.variable import TempEnv, VarAttr
@@ -173,10 +179,15 @@ async def execute_command(
             at = head_node.start_byte - base
             line = source[:at].decode() + rewritten
             ast = parse(line)
+            offsets = source_offsets(line, ast)
             own: dict[str, tuple[int, int]] = {}
             for alias, text in texts:
-                own[alias] = (at, at + len(text.encode()))
-                at = own[alias][1]
+                end = at + len(text.encode())
+                own[alias] = (
+                    bisect_left(offsets, at),
+                    bisect_left(offsets, end),
+                )
+                at = end
             offending = find_syntax_error(ast, expanding_aliases(session), own)
             if offending is not None:
                 io = syntax_error_result(offending, ast)

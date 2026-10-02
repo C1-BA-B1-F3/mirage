@@ -36,7 +36,7 @@ from mirage.shell.parse.heredoc.lower import (
 from mirage.shell.parse.heredoc.node import HeredocNode
 from mirage.shell.parse.heredoc.reader import delimiter_end, discover_heredocs
 from mirage.shell.parse.heredoc.types import HeredocSource
-from mirage.shell.parse.timing import lower_timing, wrap_timing
+from mirage.shell.parse.timing import PrefixNode, lower_timing, wrap_timing
 from mirage.shell.types import TSNodeLike
 
 BASH_LANGUAGE = tree_sitter.Language(tree_sitter_bash.language())
@@ -424,6 +424,29 @@ def continuation_bytes(data: bytes) -> list[int]:
     return dropped
 
 
+def source_offsets(command: str, root: TSNodeLike) -> tuple[int, ...]:
+    """Where each byte of the source ``parse`` read sits in ``command``.
+
+    ``parse`` deletes line continuations and inserts bytes to repair the
+    grammar, so a node's offsets index the source it read rather than the
+    line as typed. Indexed by one of them, this gives the byte of
+    ``command`` it came from; an inserted byte gives the byte after it.
+
+    Args:
+        command (str): the line ``root`` was parsed from.
+        root (TSNodeLike): what ``parse(command)`` returned.
+    """
+    if isinstance(root, HeredocNode | PrefixNode):
+        return root.offsets
+    data = command.encode()
+    source = drop_source_bytes(
+        HeredocSource(data, data, tuple(range(len(data) + 1)), ()),
+        continuation_bytes(data),
+    )
+    repaired = source.source[: root.start_byte] + (root.text or b"")
+    return rebase_source(source, repaired).offsets
+
+
 def join_continuations(command: str) -> str:
     """The line as bash's reader hands it on, continuations removed.
 
@@ -687,7 +710,12 @@ def parse(command: str) -> TSNodeLike:
     timing_marks: list[tuple[int, str, bool, int, int]] = []
     if b"time" in data or b"!" in data:
         if source is None:
-            source = HeredocSource(data, data, tuple(range(len(data) + 1)), ())
+            source = drop_source_bytes(
+                HeredocSource(
+                    original, original, tuple(range(len(original) + 1)), ()
+                ),
+                continuation_bytes(original),
+            )
         source, timing_marks = lower_timing(TS_PARSER, source)
         data = source.source
     data = _statement_boundaries(data)

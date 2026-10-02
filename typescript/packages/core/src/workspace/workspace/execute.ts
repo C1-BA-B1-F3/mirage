@@ -522,7 +522,7 @@ async function runPreparedLine(
             // Alias expansion rewrites the head word and reads the result as a
             // fresh line, so it needs the same parser the line reader used. The
             // parser is already resolved by the time the tree runs.
-            reparse: (line: string) => parser.parse(line),
+            parser,
             ...(routingDecision !== null ? { routingDecision } : {}),
             ...(options.signal !== undefined ? { signal: options.signal } : {}),
             ...(options.sink !== undefined ? { sink: options.sink } : {}),

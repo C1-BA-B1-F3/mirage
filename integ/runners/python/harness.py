@@ -665,9 +665,10 @@ async def run_case(
 
 async def run_scenario(
     read_ws, mutate, mutate_line, steps: list[dict]
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, list[str]]:
     outs: list[str] = []
     errs: list[str] = []
+    notes: list[str] = []
     exit_code = 0
     for step in steps:
         if "mutate" in step:
@@ -678,10 +679,13 @@ async def run_scenario(
                 await mutate(spec["path"], spec["content"].encode())
             continue
         result = await read_ws.shell(step["command"])
-        outs.append(await result.stdout_str())
-        errs.append(await result.stderr_str())
+        raw_out = await result.materialize_stdout()
+        raw_err = await result.materialize_stderr()
+        outs.append(raw_out.decode(errors="replace"))
+        errs.append(raw_err.decode(errors="replace"))
+        notes += undecodable({"stdout": raw_out, "stderr": raw_err})
         exit_code = result.exit_code
-    return exit_code, "".join(outs), "".join(errs)
+    return exit_code, "".join(outs), "".join(errs), notes
 
 
 def compare(

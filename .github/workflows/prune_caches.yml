@@ -1,0 +1,42 @@
+name: Prune caches
+
+# CodeQL's default setup saves an overlay-base database to the Actions cache
+# for every push to main, about 510 MB for JavaScript and 175 MB for Python,
+# and a pull request only ever restores the newest one per language (it looks
+# them up by a key prefix without the commit). Left alone they hold most of
+# the repository's 10 GB and push out the uv and pnpm entries the test jobs
+# restore. The two newest per language stay, so a prune that lands while
+# CodeQL is saving a new one still leaves a complete one behind.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: prune-caches
+  cancel-in-progress: false
+
+jobs:
+  codeql-overlay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Keep the two newest CodeQL overlay databases per language
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The key ends in the commit, run id and attempt; what is left
+          # names the language and CodeQL version, newest first.
+          gh cache list --key codeql-overlay-base-database- \
+            --sort created_at --order desc --limit 100 --json id,key \
+            --jq '.[] | [.id, (.key | sub("-[0-9a-f]{40}-[0-9]+-[0-9]+$"; ""))] | @tsv' \
+            | awk -F'\t' '++seen[$2] > 2 { print $1 }' \
+            | while read -r id; do
+                echo "deleting cache $id"
+                gh cache delete "$id"
+              done

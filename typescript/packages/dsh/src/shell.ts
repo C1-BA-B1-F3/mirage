@@ -773,7 +773,8 @@ export class MirageShellExecutor extends ShellExecutor {
    * session, so the newest snapshot wins: a slow or abandoned preparation
    * never lands an old one over it, and a stall before the seed holds up
    * no other call. A call carrying no snapshot seeds nothing, so it
-   * never counts as the newest.
+   * never counts as the newest, but it still waits for the seeds already
+   * running, so its command never sees one half applied.
    *
    * @param spec the resolved spec being prepared.
    * @returns the workspace, session and workdir the command runs under.
@@ -786,14 +787,18 @@ export class MirageShellExecutor extends ShellExecutor {
     const bound = this.sessionId !== undefined
     const workdir = await this.worldWorkdir(spec)
     const managed = spec.dshEnv as Record<string, string> | undefined
-    if (bound && sessionId !== undefined && managed !== undefined) {
-      const seed = this.seeding.then(async () => {
-        if (ticket < (this.seeded.get(sessionId) ?? 0)) return
-        await this.applyManagedEnv(ws, sessionId, managed)
-        this.seeded.set(sessionId, ticket)
-      })
-      this.seeding = seed.catch(() => undefined)
-      await seed
+    if (bound && sessionId !== undefined) {
+      if (managed === undefined) {
+        await this.seeding
+      } else {
+        const seed = this.seeding.then(async () => {
+          if (ticket < (this.seeded.get(sessionId) ?? 0)) return
+          await this.applyManagedEnv(ws, sessionId, managed)
+          this.seeded.set(sessionId, ticket)
+        })
+        this.seeding = seed.catch(() => undefined)
+        await seed
+      }
     }
     return { ws, sessionId, bound, workdir }
   }

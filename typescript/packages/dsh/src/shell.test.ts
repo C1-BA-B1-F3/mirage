@@ -547,6 +547,17 @@ describe('run', () => {
     expect(ws.getSession('agent').env.DSH_HOME).toBe('/a')
   })
 
+  it('runs a call with no snapshot only after the seed in flight lands', async () => {
+    const { shell } = await makeShell({}, { sessionId: 'agent' })
+    const { entered, open } = stall(shell, 'applyManagedEnv')
+    const first = shell.execute(shell.resolve({ command: 'true', dshEnv: { DSH_HOME: '/a' } }))
+    await entered
+    const second = runOn(shell, shell.resolve({ command: 'echo "$DSH_HOME"' }))
+    setTimeout(open, 20)
+    expect((await second).stdout.text).toBe('/a\n')
+    expect((await (await first).result()).exitCode).toBe(0)
+  })
+
   it('lands a seed cancelled mid-flight before the next call, never over it', async () => {
     const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
     const { entered, open } = stall(shell, 'applyManagedEnv')

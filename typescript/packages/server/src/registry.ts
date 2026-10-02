@@ -35,6 +35,7 @@ export interface WorkspaceRegistryOptions {
 
 export class WorkspaceRegistry {
   private entries = new Map<string, WorkspaceEntry>()
+  private readonly removals = new Map<string, Promise<WorkspaceEntry>>()
   private readonly idleGraceSeconds: number
   private readonly onIdleExit: (() => void) | null
   private idleTimer: NodeJS.Timeout | null = null
@@ -78,16 +79,32 @@ export class WorkspaceRegistry {
    * `closeAll` (daemon shutdown) keeps them. The id stays registered
    * until the deletion is done, so a create under it is refused rather
    * than registering a workspace whose state this deletion would then
-   * remove; `cleanup` runs inside that window.
+   * remove; `cleanup` runs inside that window. An overlapping remove of
+   * the same id joins the deletion in flight, so it never unregisters a
+   * workspace created after it.
    */
   async remove(id: string, cleanup?: () => Promise<void>): Promise<WorkspaceEntry> {
-    const entry = this.entries.get(id)
-    if (entry === undefined) throw new Error(`workspace not found: ${id}`)
+    let removal = this.removals.get(id)
+    if (removal === undefined) {
+      const entry = this.entries.get(id)
+      if (entry === undefined) throw new Error(`workspace not found: ${id}`)
+      removal = this.drop(entry, cleanup)
+      this.removals.set(id, removal)
+    }
+    return removal
+  }
+
+  /** Run one deletion, releasing the id once it is done. */
+  private async drop(
+    entry: WorkspaceEntry,
+    cleanup?: () => Promise<void>,
+  ): Promise<WorkspaceEntry> {
     try {
       await entry.runner.stop({ delete: true })
       if (cleanup !== undefined) await cleanup()
     } finally {
-      this.entries.delete(id)
+      this.removals.delete(entry.id)
+      this.entries.delete(entry.id)
       if (this.entries.size === 0) this.startIdleTimer()
     }
     return entry

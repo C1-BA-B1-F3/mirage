@@ -27,9 +27,10 @@ from mirage.core.object_store.driver import (
 )
 from mirage.core.object_store.stat import make_stat
 from mirage.observe.context import record, start_op
-from mirage.types import PathSpec
+from mirage.types import FileStat, PathSpec
 from mirage.utils import key_prefix as kp
 from mirage.utils.errors import eexist, enoent, enotsup
+from mirage.utils.stat_view import is_dir
 
 
 async def _put(
@@ -166,8 +167,10 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
     return truncate
 
 
-async def _found(stat: StatFn[A], accessor: A, path_spec: PathSpec) -> bool:
-    """Whether the store holds `path_spec`, as a key or a prefix.
+async def _row(
+    stat: StatFn[A], accessor: A, path_spec: PathSpec
+) -> FileStat | None:
+    """What the store holds at `path_spec`, as a key or a prefix.
 
     Args:
         stat (StatFn): the store's stat.
@@ -175,10 +178,9 @@ async def _found(stat: StatFn[A], accessor: A, path_spec: PathSpec) -> bool:
         path_spec (PathSpec): the path asked about.
     """
     try:
-        await stat(accessor, path_spec, index=NULL_INDEX)
-    except (FileNotFoundError, NotADirectoryError):
-        return False
-    return True
+        return await stat(accessor, path_spec, index=NULL_INDEX)
+    except FileNotFoundError:
+        return None
 
 
 def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
@@ -193,11 +195,13 @@ def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
     async def mkdir(
         accessor: A, path_spec: PathSpec, parents: bool = False
     ) -> None:
-        if not parents and await _found(stat, accessor, path_spec):
-            # mkdir(2) refuses a name that exists, file or directory.
-            # Rewriting the marker answered success instead, and only the
-            # command builders check first: a guest, FUSE and ws.vfs reach
-            # the op directly, the same callers `make_rmdir` protects.
+        row = await _row(stat, accessor, path_spec)
+        if row is not None and not (parents and is_dir(row)):
+            # mkdir(2) refuses a name that exists, file or directory, and
+            # `mkdir -p` passes only a directory. Rewriting the marker
+            # answered success instead, and only the command builders
+            # check first: a guest, FUSE and ws.vfs reach the op directly,
+            # the same callers `make_rmdir` protects.
             raise eexist(path_spec)
         if not driver.markers_supported:
             # The store refuses the marker client-side (hf: create_dir is

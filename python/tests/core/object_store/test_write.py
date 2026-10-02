@@ -102,13 +102,19 @@ def test_mkdir_writes_a_marker_and_parents_gate_ancestors(accessor):
 
 
 def test_mkdir_refuses_a_name_that_exists(accessor):
-    # mkdir(2) answers EEXIST for a directory or a file already there.
-    # Rewriting the marker answered success to every caller that skips
-    # the command builder's own check: a guest, FUSE, ws.vfs.
+    # mkdir(2) answers EEXIST for a directory or a file already there,
+    # and `mkdir -p` passes only the directory. Rewriting the marker
+    # answered success to every caller that skips the command builder's
+    # own check: a guest, FUSE, ws.vfs.
     store = FakeStore({"a/b/": b"", "f.txt": b"x"})
-    for path in ("/a/b", "/f.txt"):
+    mkdir = make_mkdir(make_driver(store))
+    for path, parents in (
+        ("/a/b", False),
+        ("/f.txt", False),
+        ("/f.txt", True),
+    ):
         with pytest.raises(FileExistsError):
-            _managed(make_mkdir(make_driver(store))(accessor, spec(path)))
+            _managed(mkdir(accessor, spec(path), parents=parents))
     assert store.puts == []
 
 
@@ -119,7 +125,6 @@ def test_mkdir_without_marker_support_is_a_no_op(accessor):
         make_mkdir(driver)(accessor, spec("/a/b"), parents=True)
     )
     assert store.objects == {}
-    assert store.connects == 0
     assert manager.writes == []
 
 

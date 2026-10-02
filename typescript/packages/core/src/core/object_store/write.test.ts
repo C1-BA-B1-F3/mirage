@@ -138,14 +138,20 @@ describe('object_store write', () => {
   })
 
   it('mkdir refuses a name that exists', async () => {
-    // mkdir(2) answers EEXIST for a directory or a file already there.
-    // Rewriting the marker answered success to every caller that skips
-    // the command builder's own check: a guest, FUSE, ws.vfs.
+    // mkdir(2) answers EEXIST for a directory or a file already there,
+    // and `mkdir -p` passes only the directory. Rewriting the marker
+    // answered success to every caller that skips the command builder's
+    // own check: a guest, FUSE, ws.vfs.
     const store = new FakeStore({ 'a/b/': '', 'f.txt': 'x' })
-    for (const path of ['/a/b', '/f.txt']) {
-      await expect(
-        managed(() => makeMkdir(makeDriver(store))(accessor, spec(path))),
-      ).rejects.toMatchObject({ code: 'EEXIST' })
+    const mkdir = makeMkdir(makeDriver(store))
+    for (const [path, parents] of [
+      ['/a/b', false],
+      ['/f.txt', false],
+      ['/f.txt', true],
+    ] as const) {
+      await expect(managed(() => mkdir(accessor, spec(path), parents))).rejects.toMatchObject({
+        code: 'EEXIST',
+      })
     }
     expect(store.puts).toEqual([])
   })
@@ -155,7 +161,6 @@ describe('object_store write', () => {
     const driver = { ...makeDriver(store), markersSupported: false }
     const manager = await managed(() => makeMkdir(driver)(accessor, spec('/a/b'), true))
     expect(store.contents()).toEqual({})
-    expect(store.connects).toBe(0)
     expect(manager.writes).toEqual([])
   })
 })

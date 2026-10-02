@@ -58,6 +58,7 @@ class WorkspaceRegistry:
                 idle timer fires. Defaults to a fresh event.
         """
         self._entries: dict[str, WorkspaceEntry] = {}
+        self._removals: dict[str, asyncio.Task[WorkspaceEntry]] = {}
         self.idle_grace_seconds = idle_grace_seconds
         self.exit_event = (
             exit_event if exit_event is not None else asyncio.Event()
@@ -118,6 +119,8 @@ class WorkspaceRegistry:
         id stays registered until the deletion is done, so a create under
         it is refused rather than registering a workspace whose state this
         deletion would then remove; ``cleanup`` runs inside that window.
+        An overlapping remove of the same id joins the deletion in flight,
+        so it never unregisters a workspace created after it.
 
         Args:
             workspace_id (str): id to remove.
@@ -131,15 +134,34 @@ class WorkspaceRegistry:
         Raises:
             KeyError: ``workspace_id`` is not registered.
         """
-        if workspace_id not in self._entries:
-            raise KeyError(workspace_id)
-        entry = self._entries[workspace_id]
+        removal = self._removals.get(workspace_id)
+        if removal is None:
+            if workspace_id not in self._entries:
+                raise KeyError(workspace_id)
+            removal = asyncio.create_task(
+                self._remove(self._entries[workspace_id], cleanup)
+            )
+            self._removals[workspace_id] = removal
+        return await asyncio.shield(removal)
+
+    async def _remove(
+        self,
+        entry: WorkspaceEntry,
+        cleanup: Callable[[], Awaitable[None]] | None,
+    ) -> WorkspaceEntry:
+        """Run one deletion, releasing the id once it is done.
+
+        Args:
+            entry (WorkspaceEntry): the entry being deleted.
+            cleanup (Callable[[], Awaitable[None]] | None): see ``remove``.
+        """
         try:
             await entry.runner.stop(delete=True)
             if cleanup is not None:
                 await cleanup()
         finally:
-            self._entries.pop(workspace_id, None)
+            del self._removals[entry.id]
+            self._entries.pop(entry.id, None)
             if not self._entries:
                 self._start_idle_timer()
         return entry

@@ -12,13 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { enotsup } from '../../utils/errors.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import { invalidateAfterWrite, invalidateAncestors } from '../../cache/context.ts'
 import { record, startOp } from '../../observe/context.ts'
-import type { PathSpec } from '../../types.ts'
-import { eexist, enoent, isEnotdir, isMissingPath } from '../../utils/errors.ts'
+import type { FileStat, PathSpec } from '../../types.ts'
+import { eexist, enoent, enotsup, isMissingPath } from '../../utils/errors.ts'
 import * as kp from '../../utils/key_prefix.ts'
+import { isDir } from '../../utils/stat_view.ts'
 import type {
   MkdirFn,
   ObjectMeta,
@@ -127,17 +127,16 @@ export function makeTruncate<A extends Accessor, C>(
   }
 }
 
-/** Whether the store holds `path`, as a key or a prefix. */
-async function found<A extends Accessor>(
+/** What the store holds at `path`, as a key or a prefix. */
+async function rowAt<A extends Accessor>(
   stat: StatFn<A>,
   accessor: A,
   path: PathSpec,
-): Promise<boolean> {
+): Promise<FileStat | null> {
   try {
-    await stat(accessor, path)
-    return true
+    return await stat(accessor, path)
   } catch (err) {
-    if (isMissingPath(err) || isEnotdir(err)) return false
+    if (isMissingPath(err)) return null
     throw err
   }
 }
@@ -146,11 +145,13 @@ async function found<A extends Accessor>(
 export function makeMkdir<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>): MkdirFn<A> {
   const stat = makeStat(driver)
   return async function mkdir(accessor, path, parents = false) {
-    if (!parents && (await found(stat, accessor, path))) {
-      // mkdir(2) refuses a name that exists, file or directory.
-      // Rewriting the marker answered success instead, and only the
-      // command builders check first: a guest, FUSE and ws.vfs reach the
-      // op directly, the same callers `makeRmdir` protects.
+    const row = await rowAt(stat, accessor, path)
+    if (row !== null && !(parents && isDir(row))) {
+      // mkdir(2) refuses a name that exists, file or directory, and
+      // `mkdir -p` passes only a directory. Rewriting the marker answered
+      // success instead, and only the command builders check first: a
+      // guest, FUSE and ws.vfs reach the op directly, the same callers
+      // `makeRmdir` protects.
       throw eexist(path)
     }
     if (driver.markersSupported === false) {

@@ -129,20 +129,7 @@ def bad_substitution(text: str) -> bool:
     ):
         return False
     word = name[1:] if indirect else name
-    special = (
-        _DIGITS.fullmatch(name) is not None
-        or len(name) == 1
-        and name in _SPECIALS
-        or indirect
-        and len(name) == 2
-        and name[1] in _SPECIALS
-    )
-    if not (
-        special
-        or _DIGITS.fullmatch(word)
-        or _element(word)
-        or _IDENTIFIER.fullmatch(word)
-    ):
+    if not (word and _length_name(word)):
         return True
     return not substring and (c == "" or c not in _OPERATORS)
 

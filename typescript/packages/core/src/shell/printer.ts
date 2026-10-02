@@ -13,14 +13,19 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { decodeAnsiC } from './escapes.ts'
-import { getCaseItems, getForParts, getText } from './helpers.ts'
+import {
+  REDIRECT_NODE_TYPES,
+  getCaseItems,
+  getForParts,
+  getFunctionRedirects,
+  getText,
+} from './helpers.ts'
 import { BASH_KEYWORDS } from './parse/constants.ts'
 import { delimiterEnd } from './parse/heredoc/reader.ts'
 import type { Heredoc } from './parse/heredoc/types.ts'
 import { NodeType as NT, type TSNodeLike } from './types.ts'
 
 const INDENT = '    '
-const REDIRECTS: ReadonlySet<string> = new Set([NT.FILE_REDIRECT, NT.HEREDOC_REDIRECT])
 const CONTINUATION = /\\\n[ \t]*/g
 // A name bash would read as a reserved word is printed after `function`.
 const RESERVED: ReadonlySet<string> = new Set([
@@ -83,10 +88,6 @@ class Printer {
 
   definition(name: string, node: TSNodeLike, indent: string): string {
     const body = node.childForFieldName?.('body') ?? null
-    const redirects = node.namedChildren.filter((c) => REDIRECTS.has(c.type))
-    const outer = node.parent ?? null
-    if (outer?.type === NT.REDIRECTED_STATEMENT && outer.namedChildren[0]?.id === node.id)
-      redirects.push(...outer.namedChildren.slice(1).filter((c) => REDIRECTS.has(c.type)))
     const inner = indent + INDENT
     const text =
       body === null
@@ -96,7 +97,7 @@ class Printer {
           : this.command(body, inner)
     const keyword = indent !== '' || RESERVED.has(name)
     const head = `${keyword ? 'function ' : ''}${name} () \n`
-    return `${head}${indent}{ \n${inner}${text}\n${indent}}${this.redirects(redirects)}`
+    return `${head}${indent}{ \n${inner}${text}\n${indent}}${this.redirects(getFunctionRedirects(node))}`
   }
 
   /**
@@ -141,15 +142,16 @@ class Printer {
     const named = node.namedChildren
     if (kind === NT.REDIRECTED_STATEMENT) {
       const body = named[0]
-      if (body === undefined || REDIRECTS.has(body.type)) return this.redirects(named).trimStart()
-      const redirects = named.slice(1).filter((c) => REDIRECTS.has(c.type))
+      if (body === undefined || REDIRECT_NODE_TYPES.has(body.type))
+        return this.redirects(named).trimStart()
+      const redirects = named.slice(1).filter((c) => REDIRECT_NODE_TYPES.has(c.type))
       if (body.type === NT.FUNCTION_DEFINITION)
         return this.definition(getText(body.namedChildren[0] ?? body), body, indent)
       return this.command(body, indent) + this.redirects(redirects)
     }
     if (kind === NT.COMMAND) {
-      const words = named.filter((c) => !REDIRECTS.has(c.type)).map((c) => this.word(c))
-      return words.join(' ') + this.redirects(named.filter((c) => REDIRECTS.has(c.type)))
+      const words = named.filter((c) => !REDIRECT_NODE_TYPES.has(c.type)).map((c) => this.word(c))
+      return words.join(' ') + this.redirects(named.filter((c) => REDIRECT_NODE_TYPES.has(c.type)))
     }
     if (kind === NT.PIPELINE) return this.pipeline(node, indent)
     if (kind === NT.LIST) {
@@ -341,7 +343,7 @@ class Printer {
 
   redirects(nodes: readonly TSNodeLike[]): string {
     return nodes
-      .filter((n) => REDIRECTS.has(n.type))
+      .filter((n) => REDIRECT_NODE_TYPES.has(n.type))
       .map((n) => ` ${this.redirect(n)}`)
       .join('')
   }

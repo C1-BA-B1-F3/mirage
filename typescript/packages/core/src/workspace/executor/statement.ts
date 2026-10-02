@@ -179,12 +179,10 @@ export async function failedRead(
 ): Promise<void> {
   if (!(err instanceof Error) || (err as { code?: string }).code === undefined) throw err
   const cmdName = execNode?.command?.split(' ')[0] ?? ''
-  const existing = await materialize(io.stderr)
-  const added = formatFsError(cmdName, err, execNode?.paths ?? [])
-  const merged = new Uint8Array(existing.byteLength + added.byteLength)
-  merged.set(existing, 0)
-  merged.set(added, existing.byteLength)
-  io.stderr = merged
+  io.stderr = concat([
+    await materialize(io.stderr),
+    formatFsError(cmdName, err, execNode?.paths ?? []),
+  ])
   io.exitCode = readFailExitCode(cmdName, err)
 }
 

@@ -15,7 +15,6 @@
 import logging
 from itertools import groupby
 from operator import itemgetter
-from typing import Any
 
 from mirage.io import IOResult
 from mirage.io.async_line_iterator import SharedInput, share
@@ -41,7 +40,7 @@ from mirage.shell.descriptors import (
 from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import get_redirects
 from mirage.shell.types import NodeType as NT
-from mirage.shell.types import Redirect, RedirectKind
+from mirage.shell.types import Redirect, RedirectKind, TSNodeLike
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.exec.constants import (
@@ -56,7 +55,7 @@ from mirage.workspace.executor.builtins.exec.constants import (
 from mirage.workspace.executor.builtins.scope import _to_scope
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.executor.create import create_file, write_description
-from mirage.workspace.executor.statement import Written
+from mirage.workspace.executor.statement import Written, record_status
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
@@ -230,7 +229,12 @@ async def _install_descriptor(
                     SharedInput(await materialize(data) or b""),
                 )
         else:
-            await _open_target(dispatch, session, scope, redirect.append)
+            # Opened now, as bash opens it at `exec` time: truncating
+            # creates the file empty, appending only when it is not there,
+            # so `exec >> new; test -e new` succeeds with nothing written.
+            await create_file(
+                dispatch, session, scope, b"", append=redirect.append
+            )
             file = FileDescription(scope, append=redirect.append, opened=True)
             for claimed in [1, 2] if fd == FD_BOTH else [fd]:
                 _bind(
@@ -270,27 +274,6 @@ async def _roll_back(
         dispatch, session, partial, err, TO_STDERR
     )
     return _exec_failure(err_bytes, out)
-
-
-async def _open_target(
-    dispatch: DispatchFn, session: SessionState, scope: PathSpec, append: bool
-) -> bool:
-    """Open an `exec` redirect target, the way bash does at `exec` time.
-
-    Truncating creates the file empty; appending creates it only when it
-    is not already there, so an existing one keeps its bytes. Either way
-    the file exists before the next statement runs, which is what makes
-    `exec >> new; test -e new` succeed with nothing written. Returns
-    whether it was written, which is what marks the target opened.
-
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-        session (SessionState): the session holding the umask.
-        scope (PathSpec): the target.
-        append (bool): whether the redirect is `>>`.
-    """
-    await create_file(dispatch, session, scope, b"", append=append)
-    return True
 
 
 def _error_line(label: str, exc: OSError) -> bytes:
@@ -496,7 +479,7 @@ async def _route(
     return None, None, False
 
 
-def stdout_to_stderr(node: Any) -> bool:
+def _stdout_to_stderr(node: TSNodeLike) -> bool:
     """Whether a statement sends its own stdout to stderr (``>&2``).
 
     What tells a writer's failed write from a lost diagnostic under an
@@ -505,7 +488,7 @@ def stdout_to_stderr(node: Any) -> bool:
     its own status.
 
     Args:
-        node (Any): the statement's tree-sitter node.
+        node (TSNodeLike): the statement's tree-sitter node.
     """
     if node.type != NT.REDIRECTED_STATEMENT:
         return False
@@ -519,40 +502,45 @@ def stdout_to_stderr(node: Any) -> bool:
 
 
 async def divert_statement(
-    dispatch: DispatchFn,
+    dispatch: DispatchFn | None,
     session: SessionState,
     written: list[Written],
     io: IOResult,
+    statement: TSNodeLike,
     command: str,
-    stdout_diverted: bool = False,
 ) -> list[Written]:
     """Send one statement's output where the shell's `exec` bindings point.
 
-    Called after each top-level statement when an `exec` redirect is in
-    force: a stream bound to a file is appended to it (the first write
-    to each target having truncated it at `exec` time), one bound to
-    the other terminal stream crosses over (`exec 2>&1` puts stderr on
-    stdout), a closed one is dropped, and one bound to stdin fails with
-    bash's `write error: Bad file descriptor`, which is reported on
-    stderr through stderr's own binding and makes the statement's
-    status 1. An unwritable stderr fails only a statement whose own
-    output went there; a lost diagnostic leaves the status the command
-    earned. Returns what is left for the terminal, in the order it was
-    written.
+    Called after each statement of a shell's own loop; with no `exec`
+    redirect in force the output passes through. A stream bound to a
+    file is appended to it (the first write to each target having
+    truncated it at `exec` time), one bound to the other terminal
+    stream crosses over (`exec 2>&1` puts stderr on stdout), a closed
+    one is dropped, and one bound to stdin fails with bash's `write
+    error: Bad file descriptor`, which is reported on stderr through
+    stderr's own binding and makes the statement's status 1, which `$?`
+    shows. An unwritable stderr fails only a statement that sent its own
+    stdout there (``>&2``); a lost diagnostic leaves the status the
+    command earned. Returns what is left for the terminal, in the order
+    it was written.
 
     Args:
-        dispatch (DispatchFn): op dispatcher.
+        dispatch (DispatchFn | None): op dispatcher, None for a loop
+            that diverts nothing.
         session (SessionState): shell session state.
         written (list[Written]): the statement's output in order; what
             went to the terminal through a copy keeps its place.
         io (IOResult): the statement's result; its exit status is
             amended in place.
+        statement (TSNodeLike): the statement that wrote it.
         command (str): the statement's recorded line; its first word
             names the writer in a write error.
-        stdout_diverted (bool): the statement sent its own stdout to
-            stderr (``>&2``), so an unwritable stderr is the writer's
-            failure.
     """
+    if dispatch is None or (
+        session.exec_stdout is None and session.exec_stderr is None
+    ):
+        return written
+    earned = io.exit_code
     rest: list[Written] = []
     failed = unwritable = False
     for (channel, kept), run in groupby(written, key=itemgetter(0, 2)):
@@ -570,7 +558,7 @@ async def divert_statement(
         ).encode()
         io.exit_code = 1
         await _routed(dispatch, session, Channel.STDERR, line, rest)
-    elif unwritable and stdout_diverted and io.exit_code == 0:
+    elif unwritable and io.exit_code == 0 and _stdout_to_stderr(statement):
         # The statement's own output was what could not be written, so
         # the write error is its failure (bash's `echo hi >&2` under
         # `exec 2>&0` reports 1). A diagnostic that could not be
@@ -578,6 +566,8 @@ async def divert_statement(
         # after `-exec nosuch`, ls keeps its 2 and cat its 1, since the
         # failed write is of a message, not of the work.
         io.exit_code = 1
+    if io.exit_code != earned:
+        record_status(session, io.exit_code)
     return rest
 
 
@@ -630,7 +620,6 @@ async def _append(
     scope = _to_scope(target)
     try:
         await dispatch("append", scope, data=data)
-        session._exec_opened.add(target)
     except FS_ERRORS as exc:
         logger.debug("exec write failed for %s: %s", target, exc)
 

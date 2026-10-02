@@ -958,11 +958,12 @@ export function getFunctionName(node: TSNodeLike): string {
  * body is one statement: the group under them. Mirrors Python's
  * get_function_body.
  */
-export function getFunctionBody(node: TSNodeLike): TSNodeLike[] | null {
-  const body =
-    node.childForFieldName?.('body') ??
-    node.namedChildren.find((c) => c.type === NT.COMPOUND_STATEMENT)
-  if (body === undefined) return null
+/**
+ * The redirects a function definition carries: its own, and those of a
+ * statement it is the body of (`f() { ...; } >o 2>&1`, whose second
+ * redirect tree-sitter hangs on a redirected_statement around it).
+ */
+export function getFunctionRedirects(node: TSNodeLike): TSNodeLike[] {
   const redirects = node.namedChildren.filter((c) => REDIRECT_NODE_TYPES.has(c.type))
   const outer = node.parent
   if (
@@ -972,6 +973,15 @@ export function getFunctionBody(node: TSNodeLike): TSNodeLike[] | null {
   ) {
     redirects.push(...outer.namedChildren.slice(1).filter((c) => REDIRECT_NODE_TYPES.has(c.type)))
   }
+  return redirects
+}
+
+export function getFunctionBody(node: TSNodeLike): TSNodeLike[] | null {
+  const body =
+    node.childForFieldName?.('body') ??
+    node.namedChildren.find((c) => c.type === NT.COMPOUND_STATEMENT)
+  if (body === undefined) return null
+  const redirects = getFunctionRedirects(node)
   if (redirects.length === 0) {
     return body.type === NT.COMPOUND_STATEMENT ? [...body.namedChildren] : [body]
   }

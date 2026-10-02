@@ -575,10 +575,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "{ echo out; echo err >&2; } |& sort; ({ echo o1; echo e1 >&2; echo o2; echo e2 >&2; } 2>&1 | cat; f() { echo fo; echo fe >&2; } 2>&1; f | cat; bash -c 'echo bo; echo be >&2' 2>&1 | cat; for i in 1 2; do { echo a$i; break; } > /data/rbrk; done; cat /data/rbrk; rm /data/rbrk)",
+      "command": "{ echo out; echo err >&2; } |& sort; ({ echo o1; echo e1 >&2; echo o2; echo e2 >&2; } 2>&1 | cat; f() { echo fo; echo fe >&2; } 2>&1; f | cat; bash -c 'echo bo; echo be >&2' 2>&1 | cat; for i in 1 2; do { echo a$i; break; } > /data/rbrk; done; cat /data/rbrk; rm /data/rbrk; g() { echo go; echo ge >&2; } >/data/rfo 2>&1; g; cat /data/rfo; rm /data/rfo)",
       "expect": {
         "exit": 0,
-        "stdout": "err\nout\no1\ne1\no2\ne2\nfo\nfe\nbo\nbe\na1\n",
+        "stdout": "err\nout\no1\ne1\no2\ne2\nfo\nfe\nbo\nbe\na1\ngo\nge\n",
         "stderr": ""
       }
     },

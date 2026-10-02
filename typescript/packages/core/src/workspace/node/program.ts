@@ -14,6 +14,7 @@
 
 import { CommandTimeoutError } from '../../commands/errors.ts'
 import { isControlFlowError } from '../workspace/failure.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -25,13 +26,12 @@ import { pipelineTransparent } from '../../shell/node_kind.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import { fd0Binding, recordStatus, statementStdin } from '../executor/statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
-import { readFailExitCode } from '../../commands/spec/usage.ts'
-import { formatFsError, isFsError } from '../../utils/errors.ts'
+import { isFsError } from '../../utils/errors.ts'
 import { ReturnSignal } from '../../shell/errors.ts'
 import { BreakSignal, ContinueSignal } from '../executor/control.ts'
-import { divertStatement, stdoutToStderr } from '../executor/builtins/exec/index.ts'
+import { divertStatement } from '../executor/builtins/exec/index.ts'
 import { type ExecuteNodeFn, handleBackground } from '../executor/jobs.ts'
-import { land, statementOutput } from '../executor/statement.ts'
+import { failedRead, land, statementOutput } from '../executor/statement.ts'
 import { ENCLOSING, Recorder, type StreamOwner } from '../../shell/descriptors.ts'
 import type { JobConsole } from '../../shell/console/index.ts'
 import type { Decisions } from '../../policy/decisions.ts'
@@ -287,62 +287,39 @@ async function runProgram(
         }
         throw err
       }
-      let drainErr: string | null = null
-      // Only a filesystem failure reads its code off the command; anything
-      // else keeps the catch-all 1, so the two arms below do not share the
-      // assignment.
-      let drainExit = 1
       try {
         stdout = await materialize(s)
       } catch (err) {
         if (isControlFlowError(err) || err instanceof CommandTimeoutError) throw err
-        // Lazy reads can fail on the first pull (e.g. a backend size guard);
-        // surface that as a failed statement, not a crash. Filesystem
-        // errors format as a GNU coreutils line, respelling the path as
-        // typed via the operands the leaf node carries, mirroring the
-        // eager executor chokepoint.
-        if (isFsError(err)) {
-          const cmdName = execNode.command?.split(' ')[0] ?? ''
-          drainErr = new TextDecoder().decode(formatFsError(cmdName, err, execNode.paths))
-          drainExit = readFailExitCode(cmdName, err)
-        } else {
-          drainErr = `${err instanceof Error ? err.message : String(err)}\n`
+        // Lazy reads can fail on the first pull (e.g. a backend size guard),
+        // which is the command's failure, not a crash.
+        if (isFsError(err)) await failedRead(ioResult, err, execNode)
+        else {
+          ioResult.stderr = concat([
+            await materialize(ioResult.stderr),
+            new TextEncoder().encode(`${err instanceof Error ? err.message : String(err)}\n`),
+          ])
+          ioResult.exitCode = 1
         }
+        execNode.exitCode = ioResult.exitCode
         stdout = null
-      }
-      if (drainErr !== null) {
-        const existing = await materialize(ioResult.stderr)
-        const added = new TextEncoder().encode(drainErr)
-        const merged = new Uint8Array(existing.byteLength + added.byteLength)
-        merged.set(existing, 0)
-        merged.set(added, existing.byteLength)
-        ioResult.stderr = merged
-        ioResult.exitCode = drainExit
-        execNode.exitCode = drainExit
       }
       recordStatus(session, ioResult.exitCode, pipelineTransparent(child))
       io = ioResult
       lastExec = execNode
       i += 1
-      let written = await statementOutput(recorder, stdout, io, own, sink)
-      stdout = null
       // An `exec` redirect sends the shell's own output to a file: every
       // statement after the `exec` diverts here, so nothing bubbles to the
       // terminal and stderr lands in its own target.
-      if (dispatch !== undefined && (session.execStdout !== null || session.execStderr !== null)) {
-        const beforeDivert = io.exitCode
-        written = await divertStatement(
-          dispatch,
-          session,
-          written,
-          io,
-          lastExec.command ?? '',
-          stdoutToStderr(child),
-        )
-        // A write the binding refused is the statement's failure, which
-        // `$?` has to show.
-        if (io.exitCode !== beforeDivert) recordStatus(session, io.exitCode)
-      }
+      const written = await divertStatement(
+        dispatch,
+        session,
+        await statementOutput(recorder, stdout, io, own, sink),
+        io,
+        child,
+        lastExec.command ?? '',
+      )
+      stdout = null
       mergedIo = await land(written, sink, allStdout, mergedIo)
     }
 

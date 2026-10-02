@@ -66,7 +66,6 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "exec_stdin",
     "exec_stdin_unreadable",
     "exec_stdin_identity",
-    "_exec_opened",
     "_getopts_pos",
     "_getopts_optind",
 )
@@ -128,7 +127,6 @@ CHILD_SHELL_FIELDS: tuple[str, ...] = (
     "exec_stdin",
     "exec_stdin_unreadable",
     "exec_stdin_identity",
-    "_exec_opened",
     "_getopts_pos",
     "_getopts_optind",
     "_random_state",

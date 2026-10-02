@@ -61,11 +61,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf '9\\n' | select sx in aa bb; do echo got:${sx:-none}; break; done",
+      "command": "printf '9\\n' | select sx in aa bb; do echo got:${sx:-none}; break; done; select x in a b; do echo got=$x; [ -n \"$x\" ] && break; done <<< $'\\n3\\n2'; (readonly REPLY; select x in a; do echo body; done <<< 1; echo rc=$?); (readonly x; select x in a; do echo body; done <<< 1; echo rc=$?)",
       "expect": {
         "exit": 0,
-        "stdout": "got:none\n",
-        "stderr": "1) aa\n2) bb\n#? "
+        "stdout": "got:none\ngot=\ngot=b\n\nrc=1\nrc=1\n",
+        "stderr": "1) aa\n2) bb\n#? 1) a\n2) b\n#? 1) a\n2) b\n#? #? 1) a\n#? bash: REPLY: readonly variable\n1) a\n#? bash: x: readonly variable\n"
       }
     },
     {

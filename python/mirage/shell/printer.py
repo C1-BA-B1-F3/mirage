@@ -16,7 +16,13 @@ import re
 from collections.abc import Sequence
 
 from mirage.shell.escapes import decode_ansi_c
-from mirage.shell.helpers import get_case_items, get_for_parts, get_text
+from mirage.shell.helpers import (
+    REDIRECT_NODE_TYPES,
+    get_case_items,
+    get_for_parts,
+    get_function_redirects,
+    get_text,
+)
 from mirage.shell.parse.constants import BASH_KEYWORDS
 from mirage.shell.parse.heredoc.reader import delimiter_end
 from mirage.shell.parse.heredoc.types import Heredoc
@@ -24,7 +30,6 @@ from mirage.shell.types import FunctionBody, TSNodeLike
 from mirage.shell.types import NodeType as NT
 
 _INDENT = "    "
-_REDIRECTS = (NT.FILE_REDIRECT, NT.HEREDOC_REDIRECT)
 _CONTINUATION = re.compile(r"\\\n[ \t]*")
 # A name bash would read as a reserved word is printed after `function`.
 _RESERVED = BASH_KEYWORDS | {"!", "{", "}", "[[", "]]", "time", "coproc"}
@@ -74,16 +79,6 @@ class _Printer:
 
     def definition(self, name: str, node: TSNodeLike, indent: str) -> str:
         body = node.child_by_field_name("body")
-        redirects = [c for c in node.named_children if c.type in _REDIRECTS]
-        outer = node.parent
-        if (
-            outer is not None
-            and outer.type == NT.REDIRECTED_STATEMENT
-            and outer.named_children[0].id == node.id
-        ):
-            redirects += [
-                c for c in outer.named_children[1:] if c.type in _REDIRECTS
-            ]
         inner = indent + _INDENT
         if body is not None and body.type == NT.COMPOUND_STATEMENT:
             text = self.statements(body.children, inner, False)
@@ -100,7 +95,7 @@ class _Printer:
             + "\n"
             + indent
             + "}"
-            + self.redirects(redirects)
+            + self.redirects(get_function_redirects(node))
         )
 
     def statements(
@@ -171,10 +166,12 @@ class _Printer:
         kind = node.type
         if kind == NT.REDIRECTED_STATEMENT:
             body = node.named_children[0]
-            if body.type in _REDIRECTS:
+            if body.type in REDIRECT_NODE_TYPES:
                 return self.redirects(node.named_children).lstrip()
             redirects = [
-                c for c in node.named_children[1:] if c.type in _REDIRECTS
+                c
+                for c in node.named_children[1:]
+                if c.type in REDIRECT_NODE_TYPES
             ]
             if body.type == NT.FUNCTION_DEFINITION:
                 return self.definition(
@@ -185,10 +182,10 @@ class _Printer:
             words = [
                 self.word(c)
                 for c in node.named_children
-                if c.type not in _REDIRECTS
+                if c.type not in REDIRECT_NODE_TYPES
             ]
             redirects = [
-                c for c in node.named_children if c.type in _REDIRECTS
+                c for c in node.named_children if c.type in REDIRECT_NODE_TYPES
             ]
             return " ".join(words) + self.redirects(redirects)
         if kind == NT.PIPELINE:
@@ -460,7 +457,9 @@ class _Printer:
 
     def redirects(self, nodes: Sequence[TSNodeLike]) -> str:
         return "".join(
-            " " + self.redirect(n) for n in nodes if n.type in _REDIRECTS
+            " " + self.redirect(n)
+            for n in nodes
+            if n.type in REDIRECT_NODE_TYPES
         )
 
     def redirect(self, node: TSNodeLike) -> str:

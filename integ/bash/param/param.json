@@ -3053,11 +3053,11 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "(: ${}); (: ${.}); (: ${pb3.b}); (: ${1a}); (: ${pb3:}); (: ${#pb3 b}); (: ${#pb3-x}); (: ${!pb3 b}); (: ${pb3;b}); (: ${pb3[1]x}); (: ${pb3*}); set -- p1 p2; pb3=hello; echo ${#} ${!#} ${@:2} ${pb3-x} ${#pb3} ${pb3:1:2}",
+      "command": "(: ${}); (: ${.}); (: ${pb3.b}); (: ${1a}); (: ${pb3:}); (: ${#pb3 b}); (: ${#pb3-x}); (: ${!pb3 b}); (: ${pb3;b}); (: ${pb3[1]x}); (: ${pb3*}); (: ${ pb3}); (: ${pb3 b}); (: ${pb3 }); (: ${%pb3}); (: ${-pb3}); (: ${$pb3}); (: ${#%}); (: ${#!x}); (: ${!$}); (: ${pb3[]}); (: ${@pb3}); (: ${pb3\\ b}); (: ${pb3\"b\"}); set -- p1 p2; pb3=hello; echo ${#} ${!#} ${@:2} ${pb3-x} ${#pb3} ${pb3:1:2}; (: ${_} ${10} ${00} ${-} ${?} ${##} ${#-} ${#pb3[@]} ${!pb3} ${!pb3*} ${!pb3[@]} ${pb3:-} ${pb3::} ${pb3: } ${pb3@Q} ${@:1} ${pb3-b c}); echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "2 p2 p2 hello 5 el\n",
-        "stderr": "bash: ${}: bad substitution\nbash: ${.}: bad substitution\nbash: ${pb3.b}: bad substitution\nbash: ${1a}: bad substitution\nbash: ${pb3:}: bad substitution\nbash: ${#pb3 b}: bad substitution\nbash: ${#pb3-x}: bad substitution\nbash: ${!pb3 b}: bad substitution\nbash: ${pb3;b}: bad substitution\nbash: ${pb3[1]x}: bad substitution\nbash: ${pb3*}: bad substitution\n"
+        "stdout": "2 p2 p2 hello 5 el\nrc=0\n",
+        "stderr": "bash: ${}: bad substitution\nbash: ${.}: bad substitution\nbash: ${pb3.b}: bad substitution\nbash: ${1a}: bad substitution\nbash: ${pb3:}: bad substitution\nbash: ${#pb3 b}: bad substitution\nbash: ${#pb3-x}: bad substitution\nbash: ${!pb3 b}: bad substitution\nbash: ${pb3;b}: bad substitution\nbash: ${pb3[1]x}: bad substitution\nbash: ${pb3*}: bad substitution\nbash: ${ pb3}: bad substitution\nbash: ${pb3 b}: bad substitution\nbash: ${pb3 }: bad substitution\nbash: ${%pb3}: bad substitution\nbash: ${-pb3}: bad substitution\nbash: ${$pb3}: bad substitution\nbash: ${#%}: bad substitution\nbash: ${#!x}: bad substitution\nbash: ${!$}: bad substitution\nbash: ${pb3[]}: bad substitution\nbash: ${@pb3}: bad substitution\nbash: ${pb3\\ b}: bad substitution\nbash: ${pb3\"b\"}: bad substitution\n"
       }
     }
   ]

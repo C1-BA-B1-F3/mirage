@@ -17,13 +17,11 @@ from mirage.workspace.executor.builtins.exec.exec import (
     divert_statement,
     handle_exec_command,
     install_exec_redirects,
-    stdout_to_stderr,
 )
 
 __all__ = [
     "CLOSED",
     "divert_statement",
-    "stdout_to_stderr",
     "handle_exec_command",
     "install_exec_redirects",
 ]

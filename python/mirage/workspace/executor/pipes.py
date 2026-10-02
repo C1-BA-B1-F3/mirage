@@ -44,10 +44,7 @@ from mirage.shell.job_table import JobTable
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
-from mirage.workspace.executor.builtins.exec import (
-    divert_statement,
-    stdout_to_stderr,
-)
+from mirage.workspace.executor.builtins.exec import divert_statement
 from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.jobs import handle_background, pump
 from mirage.workspace.executor.statement import (
@@ -460,24 +457,16 @@ async def handle_subshell(
             stdout = await finish_statement(
                 stdout, io, session, child, last_exec
             )
-            written = await statement_output(
-                recorder, stdout, io, session.terminal, sink
+            written = await divert_statement(
+                dispatch,
+                session,
+                await statement_output(
+                    recorder, stdout, io, session.terminal, sink
+                ),
+                io,
+                child,
+                last_exec.command or "",
             )
-            if dispatch is not None and (
-                session.exec_stdout is not None
-                or session.exec_stderr is not None
-            ):
-                before_divert = io.exit_code
-                written = await divert_statement(
-                    dispatch,
-                    session,
-                    written,
-                    io,
-                    last_exec.command or "",
-                    stdout_to_stderr(child),
-                )
-                if io.exit_code != before_divert:
-                    record_status(session, io.exit_code)
             merged_io = await land(written, sink, all_stdout, merged_io)
             merged_io = await merged_io.merge(io)
             if (

@@ -14,7 +14,6 @@
 
 from typing import Any
 
-from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize
 from mirage.policy.decisions import Decisions
@@ -26,14 +25,11 @@ from mirage.shell.errors import ExitSignal, ReturnSignal
 from mirage.shell.helpers import get_text
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import NodeType as NT
-from mirage.utils.errors import format_fs_error
-from mirage.workspace.executor.builtins.exec import (
-    divert_statement,
-    stdout_to_stderr,
-)
-from mirage.workspace.executor.control import BreakSignal, ContinueSignal
+from mirage.workspace.executor.builtins.exec import divert_statement
+from mirage.workspace.executor.control import UNWINDING
 from mirage.workspace.executor.jobs import handle_background
 from mirage.workspace.executor.statement import (
+    failed_read,
     fd0_binding,
     land,
     record_status,
@@ -223,9 +219,9 @@ async def _run_program(
                 stdout, io, last_exec = await recurse(
                     child, session, child_stdin, call_stack, sink=recorder
                 )
-            except ExitSignal as sig:
-                # exit (or a fatal expansion error) ends the line: keep
-                # what earlier statements produced, drop the rest.
+            except UNWINDING as sig:
+                if isinstance(sig, ReturnSignal) and session.source_depth <= 0:
+                    raise
                 merged_io = await land(
                     await statement_output(
                         recorder, None, IOResult(), own, sink
@@ -236,116 +232,75 @@ async def _run_program(
                 )
                 if sig.stdout:
                     all_stdout.append(sig.stdout)
-                sig_io = IOResult(
-                    exit_code=sig.exit_code, stderr=sig.stderr or None
-                )
-                merged_io = await merged_io.merge(sig_io)
-                merged_io.exit_code = sig.exit_code
-                record_status(session, sig.exit_code)
-                last_exec = ExecutionNode(
-                    command="exit", exit_code=sig.exit_code, stderr=sig.stderr
-                )
-                break
-            except ReturnSignal as sig:
-                # `return` inside a sourced file ends the source; the
-                # file's status becomes the return's. Anywhere else the
-                # signal belongs to an enclosing function call.
-                if session.source_depth <= 0:
-                    raise
-                merged_io = await land(
-                    await statement_output(
-                        recorder, None, IOResult(), own, sink
-                    ),
-                    sink,
-                    all_stdout,
-                    merged_io,
-                )
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                if sig.stderr:
+                if isinstance(sig, ExitSignal):
+                    # exit (or a fatal expansion error) ends the line:
+                    # keep what earlier statements produced, drop the
+                    # rest.
                     merged_io = await merged_io.merge(
-                        IOResult(stderr=sig.stderr)
+                        IOResult(
+                            exit_code=sig.exit_code, stderr=sig.stderr or None
+                        )
                     )
+                    last_exec = ExecutionNode(
+                        command="exit",
+                        exit_code=sig.exit_code,
+                        stderr=sig.stderr,
+                    )
+                elif isinstance(sig, ReturnSignal):
+                    # `return` inside a sourced file ends the source; the
+                    # file's status becomes the return's. Anywhere else
+                    # the signal belongs to an enclosing function call.
+                    if sig.stderr:
+                        merged_io = await merged_io.merge(
+                            IOResult(stderr=sig.stderr)
+                        )
+                    last_exec = ExecutionNode(
+                        command="return", exit_code=sig.exit_code
+                    )
+                else:
+                    # break/continue with a level beyond the loop nesting
+                    # ends every enclosing loop and execution continues
+                    # with the next statement, like bash (which clamps
+                    # the level to the actual depth).
+                    merged_io = await merged_io.merge(sig.io)
+                    record_status(session, sig.io.exit_code)
+                    i += 1
+                    continue
                 merged_io.exit_code = sig.exit_code
                 record_status(session, sig.exit_code)
-                last_exec = ExecutionNode(
-                    command="return", exit_code=sig.exit_code
-                )
                 break
-            except (BreakSignal, ContinueSignal) as sig:
-                # break/continue with a level beyond the loop nesting
-                # ends every enclosing loop and execution continues
-                # with the next statement, like bash (which clamps the
-                # level to the actual depth).
-                merged_io = await land(
-                    await statement_output(
-                        recorder, None, IOResult(), own, sink
-                    ),
-                    sink,
-                    all_stdout,
-                    merged_io,
-                )
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                record_status(session, sig.io.exit_code)
-                i += 1
-                continue
             finally:
                 ENCLOSING.reset(enclosing)
             # Materialize stdout so lazy exit codes (e.g. from
             # exit_on_empty in grep) are finalized before $? is set.
-            drain_err: bytes | None = None
-            # Only a filesystem failure reads its code off the command;
-            # anything else keeps the catch-all 1, so the two arms below
-            # do not share the assignment.
-            drain_exit = 1
             try:
                 stdout = await materialize(stdout)
             except OSError as exc:
                 # Lazy reads (head/tail opening the stream mid-pipeline) can
-                # fail on the first pull; format as a GNU coreutils line,
-                # respelling the path as typed via the operands the leaf
-                # node carries, mirroring the eager executor chokepoint.
-                cmd_name = (
-                    last_exec.command.split()[0] if last_exec.command else ""
-                )
-                drain_err = format_fs_error(cmd_name, exc, last_exec.paths)
-                drain_exit = read_fail_exit(cmd_name, exc)
+                # fail on the first pull, which is the command's failure.
+                await failed_read(io, exc, last_exec)
                 stdout = None
             except Exception as exc:
-                drain_err = f"{exc}\n".encode()
-                stdout = None
-            if drain_err is not None:
                 existing = await materialize(io.stderr) or b""
-                io.stderr = existing + drain_err
-                io.exit_code = drain_exit
+                io.stderr = existing + f"{exc}\n".encode()
+                io.exit_code = 1
+                stdout = None
             record_status(
                 session, io.exit_code, transparent=pipeline_transparent(child)
             )
             i += 1
-            written = await statement_output(recorder, stdout, io, own, sink)
-            stdout = None
             # An `exec` redirect sends the shell's own output to a file:
             # every statement after the `exec` diverts here, so nothing
             # bubbles to the terminal and stderr lands in its own target.
-            if dispatch is not None and (
-                session.exec_stdout is not None
-                or session.exec_stderr is not None
-            ):
-                before_divert = io.exit_code
-                written = await divert_statement(
-                    dispatch,
-                    session,
-                    written,
-                    io,
-                    last_exec.command or "",
-                    stdout_to_stderr(child),
-                )
-                if io.exit_code != before_divert:
-                    # A write the binding refused is the statement's
-                    # failure, which `$?` has to show.
-                    record_status(session, io.exit_code)
+            written = await divert_statement(
+                dispatch,
+                session,
+                await statement_output(recorder, stdout, io, own, sink),
+                io,
+                child,
+                last_exec.command or "",
+            )
+            stdout = None
             merged_io = await land(written, sink, all_stdout, merged_io)
         if stdout is not None:
             all_stdout.append(stdout)

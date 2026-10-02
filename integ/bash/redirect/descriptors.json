@@ -701,10 +701,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "( echo abcdef >/data/f; exec 3<>/data/f; exec 4<&3; read -u3 -N2 x; printf XY >&4; read -u3 rest; echo $x:$rest; cat /data/f )",
+      "command": "( echo abcdef >/data/f; exec 3<>/data/f; exec 4<&3; read -u3 -N2 x; printf XY >&4; read -u3 rest; echo $x:$rest; cat /data/f; exec 5<>/data/fnew; test -e /data/fnew && echo made; exec 5>&-; rm /data/fnew; (exec 1<>/data/f; echo XY); cat /data/f; (exec 0<>/data/f; read -n 1 c; echo Z >&0; echo got=$c); cat /data/f )",
       "expect": {
         "exit": 0,
-        "stdout": "ab:ef\nabXYef\n",
+        "stdout": "ab:ef\nabXYef\nmade\nXY\nYef\ngot=X\nXZ\nYef\n",
         "stderr": ""
       },
       "note": "Pinned on Debian stable-slim: Bash 5.2.37; UTF-8 reads use C.UTF-8."

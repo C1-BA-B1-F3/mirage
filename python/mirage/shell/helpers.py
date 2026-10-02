@@ -1016,6 +1016,31 @@ def get_function_name(node: TSNodeLike) -> str:
     return get_text(node.named_children[0])
 
 
+def get_function_redirects(node: TSNodeLike) -> list[TSNodeLike]:
+    """The redirects a function definition carries: its own, and those of
+    a statement it is the body of (``f() { ...; } >o 2>&1``, whose second
+    redirect tree-sitter hangs on a redirected_statement around it).
+
+    Args:
+        node (TSNodeLike): the function_definition node.
+    """
+    redirects = [
+        c for c in node.named_children if c.type in REDIRECT_NODE_TYPES
+    ]
+    outer = node.parent
+    if (
+        outer is not None
+        and outer.type == NT.REDIRECTED_STATEMENT
+        and outer.named_children[0].id == node.id
+    ):
+        redirects += [
+            c
+            for c in outer.named_children[1:]
+            if c.type in REDIRECT_NODE_TYPES
+        ]
+    return redirects
+
+
 def get_function_body(node: TSNodeLike) -> FunctionBody:
     """Get function body commands.
 
@@ -1032,20 +1057,7 @@ def get_function_body(node: TSNodeLike) -> FunctionBody:
     body = node.child_by_field_name("body")
     if body is None:
         raise ValueError("function definition has no body")
-    redirects = [
-        c for c in node.named_children if c.type in REDIRECT_NODE_TYPES
-    ]
-    outer = node.parent
-    if (
-        outer is not None
-        and outer.type == NT.REDIRECTED_STATEMENT
-        and outer.named_children[0].id == node.id
-    ):
-        redirects += [
-            c
-            for c in outer.named_children[1:]
-            if c.type in REDIRECT_NODE_TYPES
-        ]
+    redirects = get_function_redirects(node)
     if not redirects:
         return (
             list(body.named_children)

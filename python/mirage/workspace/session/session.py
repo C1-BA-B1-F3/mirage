@@ -405,11 +405,10 @@ class SessionState:
     # and stdin point after a bare `exec > file` / `exec 2> file` /
     # `exec < file`. None is the terminal (the workspace's own output);
     # `""` is a closed descriptor (`exec >&-`), whose writes are
-    # dropped. `_exec_opened` names the targets already truncated, so a
-    # later statement appends rather than re-truncating. `exec_stdin`
-    # is the one descriptor an `exec <` opened: every statement after
-    # it reads on from where the one before stopped, across lines and
-    # into a child shell, which shares it as bash's fork shares fd 0.
+    # dropped. `exec_stdin` is the one descriptor an `exec <` opened:
+    # every statement after it reads on from where the one before
+    # stopped, across lines and into a child shell, which shares it as
+    # bash's fork shares fd 0.
     # `exec_stdout_input` and `exec_stderr_input` are the read end a
     # stream holds after `exec 1<f` or `exec 1<&0`, which a dup shares
     # the offset of.
@@ -428,7 +427,6 @@ class SessionState:
     # stdout) or is refused (`0: Bad file descriptor`); None for the
     # read end itself.
     exec_stdin_identity: str | None = None
-    _exec_opened: set[str] = field(default_factory=set, repr=False)
     _parse_seq: int = field(default=0, repr=False)
     _parse_current: int = field(default=0, repr=False)
     # The owner of this session's terminal streams, which an `exec` copy

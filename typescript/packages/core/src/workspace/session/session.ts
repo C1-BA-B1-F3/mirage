@@ -83,7 +83,6 @@ export interface ChildShellState {
   execStdin: SharedInput | null
   execStdinUnreadable: boolean
   execStdinIdentity: string | null
-  execOpened: Set<string>
   randomState: number | null
   randomSeed: string | null
   randomLast: number
@@ -502,9 +501,8 @@ export class SessionState {
   umask = 0o022
   // `exec` redirect-only state: where the shell's own stdout, stderr and
   // stdin point after a bare `exec > file`. Null is the terminal; `""`
-  // is a closed descriptor whose writes drop; `execOpened` names targets
-  // already truncated so a later statement appends. `execStdin` is the
-  // one descriptor an `exec <` opened: every statement after it reads on
+  // is a closed descriptor whose writes drop. `execStdin` is the one
+  // descriptor an `exec <` opened: every statement after it reads on
   // from where the one before stopped, across lines and into a child
   // shell, which shares it as bash's fork shares fd 0. `execStdoutInput`
   // and `execStderrInput` are the read end a stream holds after `exec
@@ -523,7 +521,6 @@ export class SessionState {
   // from fd 0 copies that (`exec 2<&0` then writes to stdout) or is
   // refused (`0: Bad file descriptor`); null for the read end itself.
   execStdinIdentity: string | null = null
-  execOpened = new Set<string>()
   localFrames: Map<string, ShellVar | null>[] = []
   // The caller's `RANDOM` marker for every frame that shadows the name,
   // innermost last: a local `RANDOM` is an ordinary variable for the
@@ -671,7 +668,6 @@ export class SessionState {
     forked.execStdin = this.execStdin
     forked.execStdinUnreadable = this.execStdinUnreadable
     forked.execStdinIdentity = this.execStdinIdentity
-    forked.execOpened = new Set(this.execOpened)
     return forked
   }
 
@@ -765,7 +761,6 @@ export class SessionState {
       execStdin: this.execStdin,
       execStdinUnreadable: this.execStdinUnreadable,
       execStdinIdentity: this.execStdinIdentity,
-      execOpened: new Set(this.execOpened),
       randomState: this.randomState,
       randomSeed: this.randomSeed,
       randomLast: this.randomLast,
@@ -817,7 +812,6 @@ export class SessionState {
     this.randomSeed = state.randomSeed
     this.randomLast = state.randomLast
     this.pipeStatus = state.pipeStatus
-    this.execOpened = state.execOpened
   }
 
   /**

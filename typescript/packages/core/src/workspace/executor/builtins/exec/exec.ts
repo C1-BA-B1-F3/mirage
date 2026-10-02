@@ -25,7 +25,7 @@ import {
   unsupportedDescriptor,
 } from '../../../../shell/descriptors.ts'
 import { Channel } from '../../../../shell/console/index.ts'
-import type { Written } from '../../statement.ts'
+import { recordStatus, type Written } from '../../statement.ts'
 import { ExitSignal } from '../../../../shell/errors.ts'
 import { type Redirect, RedirectKind } from '../../../../shell/types.ts'
 import { fsStrerror, isFsError, isMissingPath } from '../../../../utils/errors.ts'
@@ -335,7 +335,10 @@ async function installDescriptor(
         bind(session, fd, OPEN_FOR_READ_WRITE + scope.virtual, false, file.source)
       } else bind(session, fd, OPEN_FOR_READING + scope.virtual, false, new SharedInput(bytes))
     } else {
-      await openTarget(dispatch, session, scope, redirect.append)
+      // Opened now, as bash opens it at `exec` time: truncating creates the
+      // file empty, appending only when it is not there, so `exec >> new;
+      // test -e new` succeeds with nothing written.
+      await createFile(dispatch, session, scope, new Uint8Array(), redirect.append)
       const file = new FileDescription(scope, redirect.append)
       file.opened = true
       for (const claimed of fd === FD_BOTH ? [1, 2] : [fd])
@@ -349,56 +352,44 @@ async function installDescriptor(
 }
 
 /**
- * Open an `exec` redirect target, the way bash does at `exec` time:
- * truncating creates the file empty, appending creates it only when it
- * is not already there so an existing one keeps its bytes. Either way
- * the file exists before the next statement runs, which is what makes
- * `exec >> new; test -e new` succeed with nothing written. Returns
- * whether it was written, which is what marks the target opened.
- */
-async function openTarget(
-  dispatch: DispatchFn,
-  session: SessionState,
-  scope: PathSpec,
-  append: boolean,
-): Promise<boolean> {
-  await createFile(dispatch, session, scope, new Uint8Array(), append)
-  return true
-}
-
-/**
  * Whether a statement sends its own stdout to stderr (`>&2`): what tells
  * a writer's failed write from a lost diagnostic under an unwritable
  * stderr. bash's `echo hi >&2` reports 1 when the write fails, while a
  * program whose diagnostic could not be delivered keeps its own status.
  */
-export function stdoutToStderr(node: TSNodeLike): boolean {
+function stdoutToStderr(node: TSNodeLike): boolean {
   if (node.type !== NT.REDIRECTED_STATEMENT) return false
   const [, redirects] = getRedirects(node)
   return redirects.some((r) => r.target === FD_STDERR && (r.fd === FD_STDOUT || r.fd === FD_BOTH))
 }
 
 /**
- * Send one statement's output where the shell's `exec` bindings point. A
+ * Send one statement's output where the shell's `exec` bindings point.
+ * Called after each statement of a shell's own loop; with no `exec`
+ * redirect in force (or no dispatcher) the output passes through. A
  * stream bound to a file is appended to it (the first write to each
  * target having truncated it at `exec` time), one bound to the other
  * terminal stream crosses over (`exec 2>&1` puts stderr on stdout), a
  * closed one is dropped, and one bound to stdin fails with bash's `write
  * error: Bad file descriptor`, which is reported on stderr through
- * stderr's own binding and makes the statement's status 1. `command` is
- * the statement's recorded line; its first word names the writer in a
- * write error. `written` is the statement's output in order; what went to
- * the terminal through a copy keeps its place. Returns what is left for the
- * terminal, in the order it was written. Mirrors Python's divert_statement.
+ * stderr's own binding and makes the statement's status 1, which `$?`
+ * shows. `command` is the statement's recorded line; its first word names
+ * the writer in a write error. `written` is the statement's output in
+ * order; what went to the terminal through a copy keeps its place. Returns
+ * what is left for the terminal, in the order it was written. Mirrors
+ * Python's divert_statement.
  */
 export async function divertStatement(
-  dispatch: DispatchFn,
+  dispatch: DispatchFn | undefined,
   session: SessionState,
   written: readonly Written[],
   io: IOResult,
+  statement: TSNodeLike,
   command: string,
-  stdoutDiverted = false,
-): Promise<Written[]> {
+): Promise<readonly Written[]> {
+  if (dispatch === undefined || (session.execStdout === null && session.execStderr === null))
+    return written
+  const earned = io.exitCode
   const rest: Written[] = []
   let failed = false
   let unwritable = false
@@ -415,7 +406,7 @@ export async function divertStatement(
     io.exitCode = 1
     const line = new TextEncoder().encode(`${name}: write error: Bad file descriptor\n`)
     await routed(dispatch, session, Channel.STDERR, line, rest)
-  } else if (unwritable && stdoutDiverted && io.exitCode === 0) {
+  } else if (unwritable && io.exitCode === 0 && stdoutToStderr(statement)) {
     // The statement's own output was what could not be written, so the write
     // error is its failure (bash's `echo hi >&2` under `exec 2>&0` reports
     // 1). A diagnostic that could not be delivered leaves the status alone:
@@ -423,6 +414,7 @@ export async function divertStatement(
     // 1, since the failed write is of a message, not of the work.
     io.exitCode = 1
   }
+  if (io.exitCode !== earned) recordStatus(session, io.exitCode)
   return rest
 }
 
@@ -472,7 +464,6 @@ async function appendTo(
   const scope = toScope(target)
   try {
     await dispatch('append', scope, [data])
-    session.execOpened.add(target)
   } catch (err) {
     if (!isFsError(err)) throw err
   }

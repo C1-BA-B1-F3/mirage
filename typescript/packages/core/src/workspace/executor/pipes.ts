@@ -20,7 +20,7 @@ import { asyncChain, closeQuietly, discardIo, discardStreams } from '../../io/st
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
-import { divertStatement, stdoutToStderr } from './builtins/exec/index.ts'
+import { divertStatement } from './builtins/exec/index.ts'
 import {
   carryStatus,
   fd0Binding,
@@ -470,19 +470,14 @@ export async function handleSubshell(
         break
       }
       stdout = await finishStatement(stdout, io, session, child, childExec)
-      let written = await statementOutput(recorder, stdout, io, session.terminal, sink)
-      if (dispatch !== undefined && (session.execStdout !== null || session.execStderr !== null)) {
-        const beforeDivert = io.exitCode
-        written = await divertStatement(
-          dispatch,
-          session,
-          written,
-          io,
-          childExec.command ?? '',
-          stdoutToStderr(child),
-        )
-        if (io.exitCode !== beforeDivert) recordStatus(session, io.exitCode)
-      }
+      const written = await divertStatement(
+        dispatch,
+        session,
+        await statementOutput(recorder, stdout, io, session.terminal, sink),
+        io,
+        child,
+        childExec.command ?? '',
+      )
       mergedIo = await land(written, sink, allStdout, mergedIo)
       mergedIo = await mergedIo.merge(io)
       lastExec = childExec

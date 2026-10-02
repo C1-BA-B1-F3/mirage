@@ -14,7 +14,7 @@
 
 import pytest
 
-from mirage.shell.parameter import bad_substitution, scan_parameter
+from mirage.shell.parameter import scan_parameter
 
 
 @pytest.mark.parametrize(
@@ -82,70 +82,3 @@ def test_parameter_boundaries(reference, name, suffix, prefix):
 )
 def test_nonreferences_and_complex_expansions_are_not_consumed(reference):
     assert scan_parameter(reference, 0) is None
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "${}",
-        "${ a}",
-        "${a b}",
-        "${a }",
-        "${1a}",
-        "${.}",
-        "${a.b}",
-        "${%a}",
-        "${-a}",
-        "${$a}",
-        "${a:}",
-        "${a*}",
-        "${#a b}",
-        "${#a-x}",
-        "${#%}",
-        "${#!x}",
-        "${!a b}",
-        "${!$}",
-        "${a[]}",
-        "${a[1]x}",
-        "${@a}",
-        "${a;b}",
-        "${a\\ b}",
-        '${a"b"}',
-    ],
-)
-def test_bad_substitution_refuses_what_bash_refuses(text):
-    assert bad_substitution(text)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "${a}",
-        "${_}",
-        "${10}",
-        "${00}",
-        "${-}",
-        "${?}",
-        "${#}",
-        "${##}",
-        "${#-}",
-        "${#a}",
-        "${#a[@]}",
-        "${##a}",
-        "${#:-x}",
-        "${!a}",
-        "${!#}",
-        "${!a*}",
-        "${!a[@]}",
-        "${a:-}",
-        "${a::}",
-        "${a: }",
-        "${a@Q}",
-        "${a~}",
-        "${a[x y]}",
-        "${@:1}",
-        "${a-b c}",
-    ],
-)
-def test_bad_substitution_passes_what_bash_reads(text):
-    assert not bad_substitution(text)

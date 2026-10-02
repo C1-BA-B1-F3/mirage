@@ -24,40 +24,6 @@ async def _ws() -> Workspace:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "line",
-    [
-        "echo x >&3",
-        "echo x 2>&3",
-        "cat <&3",
-    ],
-)
-async def test_unopened_descriptor_is_refused_and_touches_nothing(line):
-    ws = await _ws()
-    io = await ws.shell(f"{line}; echo code=$?")
-    assert await io.stderr_str() == "3: Bad file descriptor\n"
-    assert await io.stdout_str() == "code=1\n"
-    listing = await ws.shell("ls /data")
-    assert await listing.stdout_str() == "a.txt\n"
-
-
-@pytest.mark.asyncio
-async def test_bad_descriptor_short_circuits_like_a_shell_error():
-    ws = await _ws()
-    io = await ws.shell("echo x >&3 && echo and || echo or")
-    assert await io.stdout_str() == "or\n"
-
-
-@pytest.mark.asyncio
-async def test_exec_closes_only_the_numbered_descriptor():
-    ws = await _ws()
-    ws.create_session("s")
-    await ws.shell("exec 3>&-", session_id="s")
-    io = await ws.shell("echo still", session_id="s")
-    assert await io.stdout_str() == "still\n"
-
-
-@pytest.mark.asyncio
 async def test_closed_stdout_drops_output_and_reports_the_write():
     ws = await _ws()
     io = await ws.shell("echo x >&-; echo code=$?")

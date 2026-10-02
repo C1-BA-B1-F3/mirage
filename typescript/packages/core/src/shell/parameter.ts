@@ -115,11 +115,7 @@ export function badSubstitution(text: string): boolean {
   )
     return false
   const word = indirect ? name.slice(1) : name
-  const special =
-    DIGITS.test(name) ||
-    (name.length === 1 && SPECIALS.includes(name)) ||
-    (indirect && name.length === 2 && SPECIALS.includes(second))
-  if (!(special || DIGITS.test(word) || element(word) || IDENTIFIER.test(word))) return true
+  if (word === '' || !lengthName(word)) return true
   return !substring && (c === '' || !OPERATORS.includes(c))
 }
 

@@ -355,20 +355,22 @@ export class MountCore {
    * Land write runs on the mount, one pwrite each, in order. A pwrite keeps
    * every stored byte the handle did not write, so nothing is read through
    * the door first: a session that may write a file and not read it writes
-   * through FUSE, as through a write-only descriptor. Each run leaves `runs`
-   * once it lands, so after a failure `runs` holds only what did not land
-   * and a retry never replays a run over bytes another writer has since put
-   * there. A run that fails still invalidates what the core holds, since
-   * the runs before it have landed.
+   * through FUSE, as through a write-only descriptor. The runs that landed
+   * leave `runs` in one step, so after a failure `runs` holds only what did
+   * not land and a retry never replays a run over bytes another writer has
+   * since put there. A run that fails still invalidates what the core holds,
+   * since the runs before it have landed.
    */
   private async applyWrites(path: string, runs: [number, Uint8Array][]): Promise<void> {
     const target = this.resolve(path)
+    let landed = 0
     try {
-      for (const [offset, data] of [...runs]) {
+      for (const [offset, data] of runs) {
         await this.op(() => this.ops.pwrite(target, data, offset))
-        runs.shift()
+        landed += 1
       }
     } finally {
+      runs.splice(0, landed)
       await this.changed(path)
     }
   }

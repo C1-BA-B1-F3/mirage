@@ -464,23 +464,25 @@ class MountCore:
         A pwrite keeps every stored byte the handle did not write, so
         nothing is read through the door first: a session that may write
         a file and not read it writes through FUSE, as through a
-        write-only descriptor. Each run leaves ``runs`` once it lands, so
-        after a failure ``runs`` holds only what did not land and a retry
-        never replays a run over bytes another writer has since put
-        there. A run that fails still invalidates what the core holds,
-        since the runs before it have landed.
+        write-only descriptor. The runs that landed leave ``runs`` in one
+        step, so after a failure ``runs`` holds only what did not land
+        and a retry never replays a run over bytes another writer has
+        since put there. A run that fails still invalidates what the core
+        holds, since the runs before it have landed.
 
         Args:
             path (str): mount path being written.
-            runs (WriteBuf): (offset, payload) runs, emptied as they land.
+            runs (WriteBuf): (offset, payload) runs; the landed ones are
+                removed.
         """
         target = self.resolve(path)
+        landed = 0
         try:
-            while runs:
-                offset, data = runs[0]
+            for offset, data in runs:
                 self._run(self._ops.pwrite(target, data, offset))
-                del runs[0]
+                landed += 1
         finally:
+            del runs[:landed]
             self._changed(path)
 
     def write(

@@ -18,6 +18,8 @@
         <img src="https://img.shields.io/badge/license-Apache--2.0-0C0C0C?labelColor=F0ECE2" /></a>
     <a href="https://discord.gg/u8BPQ65KsS" alt="Discord">
         <img src="https://img.shields.io/badge/discord-join-0C0C0C?labelColor=F0ECE2&logo=discord&logoColor=0C0C0C" /></a>
+    <a href="docs/images/wechat-qr-code.jpg" aria-label="WeChat community">
+        <img src="https://img.shields.io/badge/wechat-join-0C0C0C?labelColor=F0ECE2&logo=wechat&logoColor=0C0C0C" alt="WeChat community" /></a>
     <br/>
     <a href="https://docs.mirage.strukto.ai/python/quickstart" alt="Python docs">
         <img src="https://img.shields.io/badge/python-docs-0C0C0C?labelColor=F0ECE2&logo=python&logoColor=0C0C0C" alt="Python docs"></a>

@@ -185,7 +185,9 @@ def _make_pwrite(fn: OpFn) -> OpFn:
     return pwrite
 
 
-def _make_emulated_pwrite(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
+def _make_emulated_pwrite(
+    read_bytes: OpFn, write_bytes: OpFn, stat: OpFn
+) -> OpFn:
 
     async def pwrite(
         accessor: Accessor,
@@ -201,6 +203,22 @@ def _make_emulated_pwrite(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
         # writes at an offset, as pwrite(2) on a write-only descriptor
         # does. It takes the caller's index for the reason append does.
         offset = _expect_offset(offset, path)
+        if not data:
+            # A zero-length pwrite(2) on an existing file changes nothing
+            # and must not read the file back: a concurrent writer's update
+            # between this stat and a would-be write would be clobbered by
+            # the stale contents. A zero-length pwrite on a missing file
+            # creates an empty file (pwrite(2) with O_CREAT semantics).
+            try:
+                found = await stat(accessor, path, index)
+            except FileNotFoundError:
+                await write_bytes(accessor, path, data)
+                return
+            if found.type == FileType.DIRECTORY:
+                raise IsADirectoryError(
+                    errno.EISDIR, os.strerror(errno.EISDIR), path.virtual
+                )
+            return
         try:
             existing = await read_bytes(accessor, path, index)
         except FileNotFoundError:
@@ -439,7 +457,7 @@ def make_generic_ops(
             ops,
             vfs_names,
             "pwrite",
-            _make_emulated_pwrite(table.read_bytes, table.write),
+            _make_emulated_pwrite(table.read_bytes, table.write, table.stat),
             True,
             None,
             skip,

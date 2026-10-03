@@ -409,6 +409,38 @@ async def test_a_flush_that_fails_after_a_run_landed_still_refreshes():
 
 
 @pytest.mark.asyncio
+async def test_a_flush_retry_replays_only_the_runs_after_the_failure():
+    # https://github.com/strukto-ai/mirage/issues/1419
+    # When a flush fails after some writeRuns landed, the retry must not
+    # replay the runs that already landed: a concurrent writer's newer
+    # bytes at those offsets would be overwritten by the stale contents.
+    vfs = RAMVFS()
+    ws = Workspace({"/": vfs}, mode=MountMode.WRITE)
+    await ws.shell("printf abcdefgh > /f")
+    failing = _SecondPwriteFails(ws.vfs)
+    core = MountCore(failing)
+    fh = core.open("/f", os.O_WRONLY)
+    core.write("/f", b"X", 0, fh)
+    core.write("/f", b"Y", 5, fh)
+    with pytest.raises(PermissionError):
+        core.flush("/f", fh)
+    # The first run (offset 0, "X") landed; the second (offset 5, "Y")
+    # failed. A concurrent writer updates the byte at offset 5.
+    await ws.shell("printf Z | dd of=/f bs=1 seek=5 conv=notrunc 2>/dev/null")
+    # Retry: only the failed run should be replayed, not the landed one.
+    # The failed run overwrites the concurrent writer's byte at offset 5
+    # (expected: that run still needs to land), but the landed run at
+    # offset 0 must not be replayed — otherwise a concurrent write at
+    # offset 0 would be clobbered.
+    core.flush("/f", fh)
+    stored = core._run(core._ops.read("/f", raw=True))
+    assert stored == b"XbcdeYgh"
+    # The first run was not replayed: only 3 pwrite calls total (initial
+    # flush: 1 success + 1 failure; retry: 1 success).
+    assert failing.calls == 3
+
+
+@pytest.mark.asyncio
 async def test_buffered_write_flush_lands_in_the_stored_bytes():
     # A mount that renders this extension must not get the rendering
     # written over the file on a partial write.

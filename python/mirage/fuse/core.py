@@ -60,6 +60,20 @@ class Handle:
     chunked: ChunkedHandle | None = None
 
 
+class _PartialWriteError(Exception):
+    """A run in a buffered write failed after earlier runs landed.
+
+    Args:
+        applied: number of merged runs that were applied successfully.
+        cause: the original exception the failing run raised.
+    """
+
+    def __init__(self, applied: int, cause: BaseException):
+        super().__init__(str(cause))
+        self.applied = applied
+        self.cause = cause
+
+
 class MountCore:
     """Protocol-neutral mount logic shared by every kernel adapter.
 
@@ -470,11 +484,21 @@ class MountCore:
         Args:
             path (str): mount path being written.
             writes (WriteBuf): (offset, payload) pairs in arrival order.
+
+        Raises:
+            _PartialWriteError: a run failed after earlier runs landed.
+                The error carries the number of applied runs; the caller
+                filters the buffer so a retry replays only the rest.
         """
         target = self.resolve(path)
+        runs = write_runs(writes)
+        applied = 0
         try:
-            for offset, data in write_runs(writes):
+            for offset, data in runs:
                 self._run(self._ops.pwrite(target, data, offset))
+                applied += 1
+        except Exception as err:
+            raise _PartialWriteError(applied, err) from err
         finally:
             self._changed(path)
 
@@ -663,8 +687,25 @@ class MountCore:
         ctx = self._ctx(fh)
         if ctx is None or not ctx.write_buf:
             return
-        self._apply_writes(ctx.path, ctx.write_buf)
-        ctx.write_buf = []
+        try:
+            self._apply_writes(ctx.path, ctx.write_buf)
+            ctx.write_buf = []
+        except _PartialWriteError as err:
+            # A run failed: only the runs from the failure onward still
+            # need to land. Keep every caller write at or beyond the last
+            # applied run's end; earlier ones already landed.
+            runs = write_runs(ctx.write_buf)
+            done_through = (
+                runs[err.applied - 1][0] + len(runs[err.applied - 1][1])
+                if err.applied
+                else 0
+            )
+            ctx.write_buf = [
+                (offset, data)
+                for offset, data in ctx.write_buf
+                if offset >= done_through
+            ]
+            raise err.cause
 
     def open(self, path: str, flags: int = 0) -> int:
         """Open a path, hydrating it when its size is unknown.
@@ -794,8 +835,25 @@ class MountCore:
         key = self.identity(path)
         for ctx in self._handles.values():
             if ctx.key == key and ctx.write_buf:
-                self._apply_writes(ctx.path, ctx.write_buf)
-                ctx.write_buf = []
+                try:
+                    self._apply_writes(ctx.path, ctx.write_buf)
+                    ctx.write_buf = []
+                except _PartialWriteError as err:
+                    # A run failed: only the runs from the failure onward
+                    # still need to land; earlier ones already landed.
+                    runs = write_runs(ctx.write_buf)
+                    done_through = (
+                        runs[err.applied - 1][0]
+                        + len(runs[err.applied - 1][1])
+                        if err.applied
+                        else 0
+                    )
+                    ctx.write_buf = [
+                        (offset, data)
+                        for offset, data in ctx.write_buf
+                        if offset >= done_through
+                    ]
+                    raise err.cause
         self._run(self._ops.truncate(self.resolve(path), length))
         self._changed(path)
 

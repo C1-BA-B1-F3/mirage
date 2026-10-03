@@ -29,6 +29,18 @@ import type { SessionState } from '@struktoai/mirage-core/workspace/session/sess
 import { errnoError } from './errors.ts'
 import { isMacosMetadata } from './platform/macos.ts'
 
+/** A run in a buffered write failed after earlier runs landed. */
+class PartialWriteError extends Error {
+  readonly applied: number
+  readonly underlying: unknown
+
+  constructor(applied: number, underlying: unknown) {
+    super(String(underlying))
+    this.applied = applied
+    this.underlying = underlying
+  }
+}
+
 export interface FuseAttr {
   mtime: Date
   atime: Date
@@ -360,10 +372,15 @@ export class MountCore {
    */
   private async applyWrites(path: string, writes: [number, Uint8Array][]): Promise<void> {
     const target = this.resolve(path)
+    const runs = writeRuns(writes)
+    let applied = 0
     try {
-      for (const [offset, data] of writeRuns(writes)) {
+      for (const [offset, data] of runs) {
         await this.op(() => this.ops.pwrite(target, data, offset))
+        applied += 1
       }
+    } catch (err) {
+      throw new PartialWriteError(applied, err)
     } finally {
       await this.changed(path)
     }
@@ -620,6 +637,21 @@ export class MountCore {
     try {
       await this.applyWrites(ctx.path, writes)
     } catch (err) {
+      // Only the runs from the failure onward still need to land; runs
+      // before it already landed, and replaying them could overwrite a
+      // concurrent writer's newer bytes at those offsets.
+      if (err instanceof PartialWriteError) {
+        const runs = writeRuns(writes)
+        const lastApplied = err.applied > 0 ? runs[err.applied - 1] : undefined
+        const doneThrough = lastApplied
+          ? lastApplied[0] + lastApplied[1].length
+          : 0
+        ctx.writeBuf = [
+          ...writes.filter(([offset]) => offset >= doneThrough),
+          ...ctx.writeBuf,
+        ]
+        throw err.underlying
+      }
       ctx.writeBuf = [...writes, ...ctx.writeBuf]
       throw err
     }

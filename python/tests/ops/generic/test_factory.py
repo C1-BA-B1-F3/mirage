@@ -176,6 +176,31 @@ async def test_emulated_empty_append_stats_instead_of_rewriting():
 
 
 @pytest.mark.asyncio
+async def test_emulated_empty_pwrite_stats_instead_of_rewriting():
+    # https://github.com/strukto-ai/mirage/issues/1419
+    # A zero-length pwrite on an existing file must make no read and no
+    # write call; on a missing file it creates the empty file.
+    table = make_table(write=AsyncMock())
+    table.stat.side_effect = [
+        FileStat(name="a.txt", type=FileType.FILE),
+        FileNotFoundError(),
+        FileStat(name="a.txt", type=FileType.DIRECTORY),
+    ]
+    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    acc = NOOPAccessor()
+    await op.fn(acc, PATH, b"", 0, index=NULL_INDEX)
+    table.stat.assert_awaited_once_with(acc, PATH, NULL_INDEX)
+    table.write.assert_not_awaited()
+    table.read_bytes.assert_not_awaited()
+    await op.fn(acc, PATH, b"", 0)
+    table.write.assert_awaited_once_with(acc, PATH, b"")
+    table.read_bytes.assert_not_awaited()
+    with pytest.raises(IsADirectoryError):
+        await op.fn(acc, PATH, b"", 0)
+    assert table.write.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_native_append_skips_emulation_and_overrides_still_win():
     table = make_table(write=AsyncMock(), append=AsyncMock())
     ops = make_generic_ops("x", table)

@@ -229,6 +229,21 @@ export function makeGenericOps<A extends Accessor>(
       async (accessor, path, args, kwargs) => {
         const data = extractWriteData(args)
         const offset = expectOffset(args[1], path)
+        // A zero-length pwrite(2) on an existing file changes nothing and
+        // must not read the file back: a concurrent writer's update between
+        // this stat and a would-be write would be clobbered by the stale
+        // contents. A zero-length pwrite on a missing file creates an empty
+        // file (pwrite(2) with O_CREAT semantics).
+        if (data.length === 0) {
+          try {
+            const found = await table.stat(asA(accessor), path, kwargs.index)
+            if (found instanceof FileStat && found.type === FileType.DIRECTORY) throw eisdir(path)
+            return
+          } catch (error) {
+            if (!isMissingPath(error)) throw error
+            return write(asA(accessor), path, data)
+          }
+        }
         // The read is this op's own, below the door that judged it a write:
         // a session that may write a file and not read it still writes at
         // an offset, as pwrite(2) on a write-only descriptor does. It takes

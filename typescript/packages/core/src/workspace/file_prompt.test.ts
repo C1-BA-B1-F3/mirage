@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { MountMode } from '../types.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
+import { SharePointVFS } from '../vfs/sharepoint/sharepoint.ts'
 import { Workspace } from './workspace/workspace.ts'
 
 describe('filePrompt', () => {
@@ -36,5 +37,14 @@ describe('filePrompt', () => {
     expect(sections.get('/data')).toContain('Mode: read-only; writes are refused.')
     expect(sections.get('/scratch')).toContain('Mode: read-write.')
     expect(sections.get('/')).toContain('Mode: read-write; programs can run.')
+  })
+
+  it('keeps literal braces', () => {
+    const ws = new Workspace(
+      { '/sp': [new SharePointVFS({ accessToken: 'tok' }), MountMode.READ] },
+      { mode: MountMode.READ },
+    )
+    expect(ws.filePrompt).toContain('/{site_name}/{library_name}/{path_to_file}')
+    expect(ws.filePrompt).not.toContain('{prefix}')
   })
 })

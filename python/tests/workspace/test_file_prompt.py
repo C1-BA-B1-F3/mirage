@@ -15,6 +15,7 @@
 from mirage.types import MountMode
 from mirage.vfs.gdocs import GDocsConfig, GDocsVFS
 from mirage.vfs.ram import RAMVFS
+from mirage.vfs.sharepoint import SharePointConfig, SharePointVFS
 from mirage.vfs.slack import SlackConfig, SlackVFS
 from mirage.workspace import Workspace
 
@@ -61,6 +62,17 @@ def test_file_prompt_substitutes_prefix_in_write_prompt():
     )
     prompt = ws.file_prompt
     assert "/home/zecheng/gdocs/owned/<file>.gdoc.json" in prompt
+    assert "{prefix}" not in prompt
+
+
+def test_file_prompt_keeps_literal_braces():
+    sharepoint = SharePointVFS(SharePointConfig(access_token="tok"))
+    ws = Workspace(
+        {"/sp": (sharepoint, MountMode.READ)},
+        mode=MountMode.READ,
+    )
+    prompt = ws.file_prompt
+    assert "/{site_name}/{library_name}/{path_to_file}" in prompt
     assert "{prefix}" not in prompt
 
 

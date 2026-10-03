@@ -20,8 +20,8 @@ def _fake_mount(monkeypatch):
     )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
-        "mirage.workspace.fuse.resolve_fusermount_binary",
-        lambda: "/usr/bin/fusermount3",
+        "mirage.workspace.fuse.unmount_with_fusermount",
+        lambda _mountpoint: None,
     )
 
 

@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import io
+import os
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -25,8 +27,10 @@ from mirage.fuse.mount import (
     _await_ready,
     _prepare_mountpoint,
     _run_fuse,
+    is_mounted,
     load_fuse,
     resolve_fusermount_binary,
+    unmount_with_fusermount,
 )
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -234,3 +238,33 @@ def test_resolve_fusermount_binary_falls_back_to_fusermount3(monkeypatch):
 def test_resolve_fusermount_binary_returns_none_when_missing(monkeypatch):
     monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
     assert resolve_fusermount_binary() is None
+
+
+def test_is_mounted_reads_the_kernel_mount_table(monkeypatch, tmp_path):
+    parent = os.path.realpath(tmp_path)
+    table = (
+        "proc /proc proc rw 0 0\n"
+        f"mirage {parent}/my\\040mount fuse.mirage rw 0 0\n"
+    ).encode()
+    monkeypatch.setattr(
+        "mirage.fuse.mount.open",
+        lambda *_args, **_kwargs: io.BytesIO(table),
+        raising=False,
+    )
+    assert is_mounted(str(tmp_path / "my mount"))
+    assert not is_mounted(str(tmp_path / "other"))
+
+
+def test_unmount_with_fusermount_raises_while_mounted_without_helper(
+    monkeypatch,
+):
+    monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: True)
+    with pytest.raises(FileNotFoundError, match="fusermount3"):
+        unmount_with_fusermount("/mnt/m")
+
+
+def test_unmount_with_fusermount_skips_a_mount_already_gone(monkeypatch):
+    monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: False)
+    unmount_with_fusermount("/mnt/m")

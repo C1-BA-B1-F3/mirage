@@ -12,11 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { execFileSync, execSync } from 'node:child_process'
+import { execFile, execFileSync, execSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { accessSync, constants as fsConstants, mkdirSync, mkdtempSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  constants as fsConstants,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, delimiter, join } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { MountBackend } from '@struktoai/mirage-core/types'
 import type { SessionState } from '@struktoai/mirage-core/workspace/session/session'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
@@ -67,11 +75,13 @@ interface FuseInstance {
   _fuseOptions?: () => string
 }
 
-type FuseConstructor = new (
+type FuseConstructor = (new (
   mountpoint: string,
   ops: Record<string, unknown>,
   options?: Record<string, unknown>,
-) => FuseInstance
+) => FuseInstance) & {
+  unmount: (mountpoint: string, cb: (err: Error | null) => void) => void
+}
 
 /**
  * Append raw libfuse options to the mount option string.
@@ -143,10 +153,16 @@ async function loadFuse(): Promise<FuseConstructor> {
   if (typeof Fuse !== 'function') {
     throw new Error('@zkochan/fuse-native did not export a constructor')
   }
+  if (process.platform === 'linux') Fuse.unmount = unmountWithFusermount
   return Fuse
 }
 
-/** Locate the platform FUSE unmount helper (mirrors Python's resolve_fusermount_binary). */
+/**
+ * Locate the platform FUSE unmount helper (mirrors Python's resolve_fusermount_binary).
+ * The fuse3 package ships only `fusermount3` on Fedora, RHEL, Amazon Linux 2023,
+ * openSUSE and Alpine. Debian and Ubuntu add a `fusermount` symlink, so CI on
+ * Ubuntu never exercises the fallback.
+ */
 function resolveFusermountBinary(): string | null {
   const pathEnv = process.env.PATH ?? ''
   for (const name of ['fusermount', 'fusermount3']) {
@@ -158,12 +174,53 @@ function resolveFusermountBinary(): string | null {
           return candidate
         }
       } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code
-        if (code !== 'ENOENT' && code !== 'ENOTDIR' && code !== 'EACCES') throw err
+        if ((err as NodeJS.ErrnoException).code === undefined) throw err
       }
     }
   }
   return null
+}
+
+/**
+ * Whether the kernel's mount table lists `mountpoint` (mirrors Python's
+ * is_mounted). Reads /proc/self/mounts rather than stat'ing the path, which
+ * would call into the very FUSE server being released.
+ */
+export function isMounted(mountpoint: string): boolean {
+  const path = resolve(mountpoint)
+  const target = join(realpathSync(dirname(path)), basename(path))
+  return readFileSync('/proc/self/mounts', 'utf8')
+    .split('\n')
+    .some(
+      (line) =>
+        (line.split(' ')[1] ?? '').replace(/\\([0-7]{3})/g, (_match, octal: string) =>
+          String.fromCharCode(parseInt(octal, 8)),
+        ) === target,
+    )
+}
+
+/**
+ * Release a Linux FUSE mount with fusermount or fusermount3 (mirrors Python's
+ * unmount_with_fusermount). Installed as fuse-native's static unmount, which
+ * shells out to a hardcoded `fusermount -uz` and, on any error, skips the
+ * native cleanup that lets node exit. A mount already released from outside
+ * counts as unmounted.
+ */
+export function unmountWithFusermount(mountpoint: string, cb: (err: Error | null) => void): void {
+  const binary = resolveFusermountBinary()
+  if (binary === null) {
+    cb(
+      isMounted(mountpoint)
+        ? new Error(
+            `cannot unmount ${mountpoint}: neither 'fusermount' nor 'fusermount3' is on PATH`,
+          )
+        : null,
+    )
+    return
+  }
+  execFile(binary, ['-uz', mountpoint], (err) => {
+    cb(err !== null && isMounted(mountpoint) ? err : null)
+  })
 }
 
 /** Fallback unmount via platform tools — mirrors Python's SIGINT handler. */

@@ -25,7 +25,7 @@ from mirage.fuse.backend import (
     check_mountpoint,
     prepare_backend,
 )
-from mirage.fuse.mount import mount_background, resolve_fusermount_binary
+from mirage.fuse.mount import mount_background, unmount_with_fusermount
 from mirage.ops import Ops
 from mirage.workspace.session.session import SessionState
 
@@ -112,15 +112,7 @@ class FuseManager:
             # serving process exits.
             pass
         else:
-            binary = resolve_fusermount_binary()
-            if binary is None:
-                raise FileNotFoundError(
-                    f"cannot unmount {self._mountpoint}: neither "
-                    "'fusermount' nor 'fusermount3' is on PATH"
-                )
-            subprocess.run(
-                [binary, "-u", self._mountpoint], capture_output=True
-            )
+            unmount_with_fusermount(self._mountpoint)
         # An FSKit /Volumes entry is created and removed by the system, and
         # is not ours to rmdir (nor could we: /Volumes is root-owned).
         if self._owns_mountpoint and not self._mountpoint.startswith(

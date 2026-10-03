@@ -32,11 +32,64 @@ from mirage.workspace.session.session import SessionState
 def resolve_fusermount_binary() -> str | None:
     """Locate the platform FUSE unmount helper.
 
-    Returns the absolute path to ``fusermount`` or ``fusermount3``, preferring
-    the legacy name for backwards compatibility. Returns ``None`` when neither
-    is on ``PATH`` (callers should treat unmount as best-effort).
+    The fuse3 package ships only ``fusermount3`` on Fedora, RHEL, Amazon
+    Linux 2023, openSUSE and Alpine. Debian and Ubuntu add a ``fusermount``
+    symlink, so CI on Ubuntu never exercises the fallback.
+
+    Returns:
+        str | None: the path to ``fusermount``, else to ``fusermount3``, or
+            None when neither is on PATH.
     """
     return shutil.which("fusermount") or shutil.which("fusermount3")
+
+
+def is_mounted(mountpoint: str) -> bool:
+    """Whether the kernel's mount table lists ``mountpoint``.
+
+    Reads /proc/self/mounts rather than stat'ing the path, which would call
+    into the very FUSE server being released.
+
+    Args:
+        mountpoint (str): the path to look up.
+
+    Returns:
+        bool: True while a mount sits at ``mountpoint``.
+    """
+    path = os.path.abspath(mountpoint)
+    target = os.fsencode(
+        os.path.join(
+            os.path.realpath(os.path.dirname(path)), os.path.basename(path)
+        )
+    )
+    with open("/proc/self/mounts", "rb") as fh:
+        return any(
+            line.split(b" ")[1].decode("unicode_escape").encode("latin-1")
+            == target
+            for line in fh
+        )
+
+
+def unmount_with_fusermount(mountpoint: str) -> None:
+    """Release a Linux FUSE mount with fusermount or fusermount3.
+
+    A mount already released from outside needs no helper and counts as
+    unmounted.
+
+    Args:
+        mountpoint (str): the mounted path.
+
+    Raises:
+        FileNotFoundError: neither helper is on PATH and the path is still
+            mounted.
+    """
+    binary = resolve_fusermount_binary()
+    if binary is not None:
+        subprocess.run([binary, "-u", mountpoint], capture_output=True)
+    elif is_mounted(mountpoint):
+        raise FileNotFoundError(
+            f"cannot unmount {mountpoint}: neither 'fusermount' nor "
+            "'fusermount3' is on PATH"
+        )
 
 
 def load_fuse() -> Any:

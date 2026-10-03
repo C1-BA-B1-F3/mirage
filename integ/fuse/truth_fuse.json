@@ -28,5 +28,6 @@
   "session_kernel_listing": "pub.txt",
   "session_kernel_hidden_absent": true,
   "session_kernel_create_under_hidden_absent": true,
-  "session_kernel_write_refused": true
+  "session_kernel_write_refused": true,
+  "external_unmount_remounts": true
 }

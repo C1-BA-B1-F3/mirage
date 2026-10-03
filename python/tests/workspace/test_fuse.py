@@ -15,6 +15,7 @@
 import subprocess
 import sys
 import tempfile
+from unittest.mock import Mock
 
 import pytest
 
@@ -31,8 +32,8 @@ def _fake_mount(monkeypatch):
     )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
-        "mirage.workspace.fuse.resolve_fusermount_binary",
-        lambda: "/usr/bin/fusermount3",
+        "mirage.workspace.fuse.unmount_with_fusermount",
+        lambda _mountpoint: None,
     )
 
 
@@ -78,18 +79,17 @@ class TestFuseManager:
         assert not generated.exists()
         assert fm.mountpoint is None
 
-    def test_unmount_without_helper_raises_and_keeps_mountpoint(
-        self, monkeypatch, tmp_path
-    ):
+    def test_unmount_failure_keeps_mountpoint(self, monkeypatch, tmp_path):
         _fake_mount(monkeypatch)
         ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
         fm = FuseManager()
         fm.setup(ws._ops, prefix="/a/", mountpoint=str(tmp_path))
         monkeypatch.setattr(sys, "platform", "linux")
         monkeypatch.setattr(
-            "mirage.workspace.fuse.resolve_fusermount_binary", lambda: None
+            "mirage.workspace.fuse.unmount_with_fusermount",
+            Mock(side_effect=FileNotFoundError("cannot unmount")),
         )
 
-        with pytest.raises(FileNotFoundError, match="fusermount3"):
+        with pytest.raises(FileNotFoundError, match="cannot unmount"):
             fm.unmount()
         assert fm.mountpoint == str(tmp_path)

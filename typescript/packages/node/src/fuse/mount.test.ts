@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   appendDirectIO,
   appendMountOptions,
+  canonicalMountpoint,
   driverHint,
   forceUnmount,
   unmountWithFusermount,
@@ -199,6 +200,15 @@ describe('forceUnmount', () => {
   it('runs nothing when neither helper is on PATH', () => {
     unmountOnLinux([helperDir([])])
     expect(execFileSync).not.toHaveBeenCalled()
+  })
+})
+
+describe('canonicalMountpoint', () => {
+  it('resolves a symlinked parent', () => {
+    const real = helperDir([])
+    const parent = helperDir([])
+    symlinkSync(real, join(parent, 'link'))
+    expect(canonicalMountpoint(join(parent, 'link', 'mp'))).toBe(join(realpathSync(real), 'mp'))
   })
 })
 

@@ -25,7 +25,11 @@ from mirage.fuse.backend import (
     check_mountpoint,
     prepare_backend,
 )
-from mirage.fuse.mount import mount_background, unmount_with_fusermount
+from mirage.fuse.mount import (
+    canonical_mountpoint,
+    mount_background,
+    unmount_with_fusermount,
+)
 from mirage.ops import Ops
 from mirage.workspace.session.session import SessionState
 
@@ -33,6 +37,8 @@ from mirage.workspace.session.session import SessionState
 class FuseManager:
     def __init__(self) -> None:
         self._mountpoint: str | None = None
+        # The path the kernel's mount table records, resolved at mount time.
+        self._kernel_mountpoint: str | None = None
         self._thread: Thread | None = None
         # True only for tempfile mountpoints Mirage created and may delete.
         self._owns_mountpoint: bool = False
@@ -90,6 +96,7 @@ class FuseManager:
             else:
                 self._mountpoint = tempfile.mkdtemp(prefix="mirage-")
             self._owns_mountpoint = True
+        self._kernel_mountpoint = canonical_mountpoint(self._mountpoint)
         self._thread = mount_background(
             ops,
             self._mountpoint,
@@ -100,7 +107,7 @@ class FuseManager:
         return self._mountpoint
 
     def unmount(self) -> None:
-        if not self._mountpoint:
+        if not self._mountpoint or self._kernel_mountpoint is None:
             return
         if sys.platform == "darwin":
             subprocess.run(
@@ -112,7 +119,7 @@ class FuseManager:
             # serving process exits.
             pass
         else:
-            unmount_with_fusermount(self._mountpoint)
+            unmount_with_fusermount(self._kernel_mountpoint)
         # An FSKit /Volumes entry is created and removed by the system, and
         # is not ours to rmdir (nor could we: /Volumes is root-owned).
         if self._owns_mountpoint and not self._mountpoint.startswith(
@@ -126,6 +133,7 @@ class FuseManager:
                 # non-empty or busy mountpoint: leave it for the caller/admin
                 pass
         self._mountpoint = None
+        self._kernel_mountpoint = None
         self._owns_mountpoint = False
 
     def close(self) -> None:

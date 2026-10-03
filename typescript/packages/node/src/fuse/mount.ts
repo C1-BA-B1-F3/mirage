@@ -182,27 +182,29 @@ export function resolveFusermountBinary(): string | null {
 }
 
 /**
+ * The path the kernel's mount table records for `mountpoint` (mirrors
+ * Python's canonical_mountpoint). Resolve it at mount time: a parent or
+ * symlink removed later no longer resolves to where the mount sits.
+ */
+export function canonicalMountpoint(mountpoint: string): string {
+  const path = resolve(mountpoint)
+  return join(realpathSync(dirname(path)), basename(path))
+}
+
+/**
  * Whether the kernel's mount table lists `mountpoint` (mirrors Python's
  * is_mounted). Reads /proc/self/mounts rather than stat'ing the path, which
- * would call into the very FUSE server being released. A parent that no
- * longer resolves compares as written, like Python's non-strict realpath.
+ * would call into the very FUSE server being released. The path is compared
+ * as given: pass the one canonicalMountpoint returned at mount time.
  */
 export function isMounted(mountpoint: string): boolean {
-  const path = resolve(mountpoint)
-  let parent = dirname(path)
-  try {
-    parent = realpathSync(parent)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === undefined) throw err
-  }
-  const target = join(parent, basename(path))
   return readFileSync('/proc/self/mounts', 'utf8')
     .split('\n')
     .some(
       (line) =>
         (line.split(' ')[1] ?? '').replace(/\\([0-7]{3})/g, (_match, octal: string) =>
           String.fromCharCode(parseInt(octal, 8)),
-        ) === target,
+        ) === mountpoint,
     )
 }
 
@@ -302,7 +304,14 @@ export async function mount(ws: Workspace, options: MountOptions = {}): Promise<
     ...(autoUnmount ? { autoUnmount: true } : {}),
     ...(options.fuseOptions ?? {}),
   }
-  const fuse = new Fuse(mountpoint, mfs.ops(), fuseOpts)
+  // fuse-native hands this path to unmountWithFusermount, which looks it up
+  // in the mount table, so Linux mounts at the path resolved now, while
+  // every parent still exists.
+  const fuse = new Fuse(
+    process.platform === 'linux' ? canonicalMountpoint(mountpoint) : mountpoint,
+    mfs.ops(),
+    fuseOpts,
+  )
   if (isFskit) {
     // Issue #82's verified recipe: backend=fskit + volname, direct_io
     // omitted (FSKit has no direct_io; reads are driven by reported size,

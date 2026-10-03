@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -93,3 +94,27 @@ class TestFuseManager:
         with pytest.raises(FileNotFoundError, match="cannot unmount"):
             fm.unmount()
         assert fm.mountpoint == str(tmp_path)
+
+    def test_unmount_uses_the_path_resolved_at_mount(
+        self, monkeypatch, tmp_path
+    ):
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real)
+        _fake_mount(monkeypatch)
+        ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
+        fm = FuseManager()
+        fm.setup(ws._ops, prefix="/a/", mountpoint=str(link / "mp"))
+        link.unlink()
+        monkeypatch.setattr(sys, "platform", "linux")
+        unmount = Mock()
+        monkeypatch.setattr(
+            "mirage.workspace.fuse.unmount_with_fusermount", unmount
+        )
+
+        fm.unmount()
+
+        unmount.assert_called_once_with(
+            os.path.join(os.path.realpath(real), "mp")
+        )

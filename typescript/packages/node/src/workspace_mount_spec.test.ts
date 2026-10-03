@@ -173,4 +173,26 @@ describe('Workspace Mount spec (per-mount fuse, without a real mount)', () => {
 
     await ws.close()
   })
+
+  it('removeFuseMount keeps a mount added while it was unmounting', async () => {
+    let release = (): void => undefined
+    mocks.mount.mockResolvedValueOnce({
+      mountpoint: '/tmp/mp-a',
+      ownsMountpoint: false,
+      unmount: () =>
+        new Promise<void>((done) => {
+          release = done
+        }),
+    })
+    const ws = new Workspace({ '/a': new RAMVFS() })
+    await ws.addFuseMount('/a', '/tmp/mp-a')
+
+    const removing = ws.removeFuseMount('/a')
+    await ws.addFuseMount('/a', '/tmp/mp-a2')
+    release()
+    await removing
+    expect(ws.fuseMountpoints).toEqual({ '/a': '/tmp/mp-a2' })
+
+    await ws.close()
+  })
 })

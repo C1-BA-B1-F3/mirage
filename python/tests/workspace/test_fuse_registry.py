@@ -86,3 +86,21 @@ def test_failed_removal_keeps_entry_for_a_retry(monkeypatch):
         assert ws.fuse_mountpoints == {"/a/": "/tmp/mp-a"}
         ws.remove_fuse_mount("/a/")
         assert ws.fuse_mountpoints == {}
+
+
+def test_removal_keeps_a_mount_added_while_unmounting(monkeypatch):
+    _fake_mount(monkeypatch)
+    with _ws() as ws:
+        ws.add_fuse_mount("/a/", "/tmp/mp-a")
+        monkeypatch.setattr(sys, "platform", "linux")
+        unmount = Mock(
+            side_effect=lambda _mountpoint: ws.add_fuse_mount(
+                "/a/", "/tmp/mp-a2"
+            )
+        )
+        monkeypatch.setattr(
+            "mirage.workspace.fuse.unmount_with_fusermount", unmount
+        )
+        ws.remove_fuse_mount("/a/")
+        unmount.side_effect = None
+        assert ws.fuse_mountpoints == {"/a/": "/tmp/mp-a2"}

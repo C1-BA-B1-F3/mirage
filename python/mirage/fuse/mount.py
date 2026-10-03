@@ -43,24 +43,38 @@ def resolve_fusermount_binary() -> str | None:
     return shutil.which("fusermount") or shutil.which("fusermount3")
 
 
+def canonical_mountpoint(mountpoint: str) -> str:
+    """The path the kernel's mount table records for ``mountpoint``.
+
+    Resolve it at mount time: a parent or symlink removed later no longer
+    resolves to where the mount sits.
+
+    Args:
+        mountpoint (str): the path as the caller gave it.
+
+    Returns:
+        str: the absolute path with its parent fully resolved.
+    """
+    path = os.path.abspath(mountpoint)
+    return os.path.join(
+        os.path.realpath(os.path.dirname(path)), os.path.basename(path)
+    )
+
+
 def is_mounted(mountpoint: str) -> bool:
     """Whether the kernel's mount table lists ``mountpoint``.
 
     Reads /proc/self/mounts rather than stat'ing the path, which would call
-    into the very FUSE server being released.
+    into the very FUSE server being released. The path is compared as
+    given: pass the one canonical_mountpoint returned at mount time.
 
     Args:
-        mountpoint (str): the path to look up.
+        mountpoint (str): the canonical path to look up.
 
     Returns:
         bool: True while a mount sits at ``mountpoint``.
     """
-    path = os.path.abspath(mountpoint)
-    target = os.fsencode(
-        os.path.join(
-            os.path.realpath(os.path.dirname(path)), os.path.basename(path)
-        )
-    )
+    target = os.fsencode(mountpoint)
     with open("/proc/self/mounts", "rb") as fh:
         return any(
             line.split(b" ")[1].decode("unicode_escape").encode("latin-1")
@@ -76,7 +90,8 @@ def unmount_with_fusermount(mountpoint: str) -> None:
     already released from outside needs no helper and counts as unmounted.
 
     Args:
-        mountpoint (str): the mounted path.
+        mountpoint (str): the mounted path, as canonical_mountpoint
+            returned it at mount time.
 
     Raises:
         FileNotFoundError: neither helper is on PATH and the path is still

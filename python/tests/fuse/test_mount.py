@@ -27,6 +27,7 @@ from mirage.fuse.mount import (
     _await_ready,
     _prepare_mountpoint,
     _run_fuse,
+    canonical_mountpoint,
     is_mounted,
     load_fuse,
     resolve_fusermount_binary,
@@ -240,19 +241,27 @@ def test_resolve_fusermount_binary_returns_none_when_missing(monkeypatch):
     assert resolve_fusermount_binary() is None
 
 
-def test_is_mounted_reads_the_kernel_mount_table(monkeypatch, tmp_path):
-    parent = os.path.realpath(tmp_path)
+def test_is_mounted_reads_the_kernel_mount_table(monkeypatch):
     table = (
-        "proc /proc proc rw 0 0\n"
-        f"mirage {parent}/my\\040mount fuse.mirage rw 0 0\n"
-    ).encode()
+        b"proc /proc proc rw 0 0\n"
+        b"mirage /mnt/my\\040mount fuse.mirage rw 0 0\n"
+    )
     monkeypatch.setattr(
         "mirage.fuse.mount.open",
         lambda *_args, **_kwargs: io.BytesIO(table),
         raising=False,
     )
-    assert is_mounted(str(tmp_path / "my mount"))
-    assert not is_mounted(str(tmp_path / "other"))
+    assert is_mounted("/mnt/my mount")
+    assert not is_mounted("/mnt/other")
+
+
+def test_canonical_mountpoint_resolves_a_symlinked_parent(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "link").symlink_to(real)
+    assert canonical_mountpoint(str(tmp_path / "link" / "mp")) == (
+        os.path.join(os.path.realpath(real), "mp")
+    )
 
 
 def test_unmount_with_fusermount_raises_while_mounted_without_helper(

@@ -91,6 +91,8 @@ class KernelMounts:
         manager = self._managers.get(key)
         if manager is not None:
             manager.unmount()
+            if self._managers.get(key) is not manager:
+                return
         self._managers.pop(key, None)
         self._mountpoints.pop(key, None)
 

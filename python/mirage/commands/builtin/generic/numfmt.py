@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from decimal import ROUND_HALF_EVEN, ROUND_UP, Context, Decimal
 
 from mirage.commands.builtin.utils.lines import split_lines
@@ -257,6 +258,7 @@ async def numfmt(
     suffix: str = "",
     grouping: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
+    convert: Callable[[str, str, str, str, bool], str]
     if texts:
         fields, convert = list(texts), _convert_field
     else:

@@ -53,7 +53,7 @@ _INT_MAX = 2**31 - 1
 _INTMAX_MAX = 2**63 - 1
 _INTMAX_MIN = -(2**63)
 
-# Where the sub-minimum side of `-w` and `-l` switches from the ERANGE
+# Where the sub-minimum side of `-w` switches from the ERANGE
 # wording to the EOVERFLOW one, measured by bisection on coreutils 9.4 /
 # glibc 2.39 / x86-64: `-w -1073741824` is ERANGE and `-w -1073741825`
 # is EOVERFLOW, deterministically and whatever else the line carries.
@@ -61,10 +61,10 @@ _INTMAX_MIN = -(2**63)
 # as an unexplained gnulib artifact of that platform rather than a rule
 # with a reason; it is the value here most likely to move elsewhere.
 #
-# It belongs to `-w` and `-l` ALONE. `-v` and `-i` switch at the type
-# boundary instead (`-i -9223372036854775808` numbers happily and only
-# `-9223372036854775809` is refused), so they carry _INTMAX_MIN here and
-# the ERANGE clause is unreachable for them.
+# It belongs to `-w` ALONE (GNU 9.7 reads `-l` unsigned). `-v` and `-i`
+# switch at the type boundary instead (`-i -9223372036854775808` numbers
+# happily and only `-9223372036854775809` is refused), so they carry
+# _INTMAX_MIN here and the ERANGE clause is unreachable for them.
 _WIDTH_OVERFLOW_LOW = -(2**30)
 
 
@@ -84,7 +84,11 @@ class NlFlags:
 
 
 def _number_error(
-    label: str, raw: str | None, low: int, high: int, overflow_low: int
+    label: str,
+    raw: str | None,
+    low: int,
+    high: int | None,
+    overflow_low: int | None,
 ) -> str | None:
     """GNU ``nl``'s refusal for one of its four numeric options.
 

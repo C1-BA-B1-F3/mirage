@@ -453,7 +453,7 @@ FRESH_BUDGET = [
     ("x=(/gh/*/*.txt); echo ${x[@]}", (1, 0, 0)),
     ("f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f", (1, 0, 0)),
     ("select f in /gh/*/*.txt; do break; done <<< 1 2>/dev/null", (1, 0, 0)),
-    ("cp /gh/*/a.txt /r/", (1, 0, 3)),
+    ("cp /gh/d1/*.txt /r/", (1, 0, 3)),
 ]
 
 

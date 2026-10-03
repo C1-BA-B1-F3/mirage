@@ -259,7 +259,7 @@ const INT_MAX = 2n ** 31n - 1n
 const INTMAX_MAX = 2n ** 63n - 1n
 const INTMAX_MIN = -(2n ** 63n)
 
-// Where the sub-minimum side of -w and -l switches from the ERANGE wording to
+// Where the sub-minimum side of -w switches from the ERANGE wording to
 // the EOVERFLOW one, measured by bisection on coreutils 9.4 / glibc 2.39 /
 // x86-64: `-w -1073741824` is ERANGE and `-w -1073741825` is EOVERFLOW,
 // deterministically and whatever else the line carries. -2**30 matches no
@@ -267,8 +267,8 @@ const INTMAX_MIN = -(2n ** 63n)
 // gnulib artifact of that platform rather than a rule with a reason; it is
 // the value here most likely to move elsewhere.
 //
-// It belongs to -w and -l ALONE. -v and -i switch at the type boundary
-// instead (`-i -9223372036854775808` numbers happily and only
+// It belongs to -w ALONE (GNU 9.7 reads -l unsigned). -v and -i switch at
+// the type boundary instead (`-i -9223372036854775808` numbers happily and only
 // -9223372036854775809 is refused), so they carry INTMAX_MIN here and the
 // ERANGE clause is unreachable for them.
 const WIDTH_OVERFLOW_LOW = -(2n ** 30n)
@@ -293,9 +293,10 @@ const WIDTH_OVERFLOW_LOW = -(2n ** 30n)
 // The ranges differ per option and split the four two ways. `-v` and `-i`
 // take the whole signed range, so GNU numbers from a negative start and counts
 // up, `-i -2` genuinely decrements, and zero is legal; neither ever produces
-// the ERANGE clause, because their overflowLow IS their low. `-w` and `-l`
-// must be at least 1, and `-w` additionally tops out at INT_MAX where `-l`
-// tops out at INTMAX_MAX. All four spell a leading `+` the way GNU does, as a
+// the ERANGE clause, because their overflowLow IS their low. `-w` must be at
+// least 1 and tops out at INT_MAX. `-l` is unsigned in GNU 9.7: any value from
+// 0 up is taken, a huge one clamped, and a negative one is out of range
+// however large. All four spell a leading `+` the way GNU does, as a
 // sign on an otherwise unsigned value.
 function numberError(
   label: string,

@@ -408,7 +408,7 @@
       ]
     },
     {
-      "id": "nl_l_zero_is_out_of_range",
+      "id": "nl_l_zero_is_accepted",
       "seq": 601711,
       "targets": [
         "ram",
@@ -436,9 +436,9 @@
       ],
       "command": "printf 'x\\n' | nl -l 0",
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "nl: invalid line number of blank lines: '0': Numerical result out of range\n"
+        "exit": 0,
+        "stdout": "     1\tx\n",
+        "stderr": ""
       },
       "flags": [
         "l"
@@ -2824,7 +2824,7 @@
       ]
     },
     {
-      "id": "nl_l_past_intmax_is_too_large_for_the_type",
+      "id": "nl_l_past_intmax_is_accepted",
       "seq": 602262,
       "targets": [
         "ram",
@@ -2852,9 +2852,9 @@
       ],
       "command": "printf 'x\\n' | nl -l 9223372036854775808",
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "nl: invalid line number of blank lines: '9223372036854775808': Value too large for defined data type\n"
+        "exit": 0,
+        "stdout": "     1\tx\n",
+        "stderr": ""
       },
       "flags": [
         "l"

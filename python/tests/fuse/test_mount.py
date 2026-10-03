@@ -26,6 +26,7 @@ from mirage.fuse.mount import (
     _prepare_mountpoint,
     _run_fuse,
     load_fuse,
+    resolve_fusermount_binary,
 )
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -205,3 +206,31 @@ def test_load_fuse_installs_macfuse_extensions(monkeypatch):
     )
     assert load_fuse() is module
     install.assert_called_once_with(module)
+
+
+def test_resolve_fusermount_binary_prefers_legacy(monkeypatch):
+    # https://github.com/strukto-ai/mirage/issues/1422
+    # fusermount-only systems keep working; fusermount3-only systems
+    # (Amazon Linux 2023) get the fallback instead of FileNotFoundError.
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which",
+        lambda name: {
+            "fusermount": "/usr/bin/fusermount",
+            "fusermount3": "/usr/bin/fusermount3",
+        }.get(name),
+    )
+    assert resolve_fusermount_binary() == "/usr/bin/fusermount"
+
+
+def test_resolve_fusermount_binary_falls_back_to_fusermount3(monkeypatch):
+    # https://github.com/strukto-ai/mirage/issues/1422
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which",
+        lambda name: {"fusermount3": "/usr/bin/fusermount3"}.get(name),
+    )
+    assert resolve_fusermount_binary() == "/usr/bin/fusermount3"
+
+
+def test_resolve_fusermount_binary_returns_none_when_missing(monkeypatch):
+    monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
+    assert resolve_fusermount_binary() is None

@@ -12,11 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  statSync,
+  accessSync,
+  constants as fsConstants,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, delimiter, join } from 'node:path'
 import { MountBackend } from '@struktoai/mirage-core/types'
 import type { SessionState } from '@struktoai/mirage-core/workspace/session/session'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
@@ -146,13 +153,35 @@ async function loadFuse(): Promise<FuseConstructor> {
   return Fuse
 }
 
+/** Locate the platform FUSE unmount helper (mirrors Python's resolve_fusermount_binary). */
+function resolveFusermountBinary(): string | null {
+  const pathEnv = process.env.PATH ?? ''
+  for (const name of ['fusermount', 'fusermount3']) {
+    for (const dir of pathEnv.split(delimiter)) {
+      const candidate = join(dir, name)
+      try {
+        if (existsSync(candidate) && statSync(candidate).isFile()) {
+          accessSync(candidate, fsConstants.X_OK)
+          return candidate
+        }
+      } catch {
+        // not usable; keep searching
+      }
+    }
+  }
+  return null
+}
+
 /** Fallback unmount via platform tools — mirrors Python's SIGINT handler. */
 export function forceUnmount(mountpoint: string): void {
   try {
     if (process.platform === 'darwin') {
       execSync(`diskutil unmount force ${JSON.stringify(mountpoint)}`, { stdio: 'ignore' })
     } else {
-      execSync(`fusermount -u ${JSON.stringify(mountpoint)}`, { stdio: 'ignore' })
+      const binary = resolveFusermountBinary()
+      if (binary !== null) {
+        execFileSync(binary, ['-u', mountpoint], { stdio: 'ignore' })
+      }
     }
   } catch {
     // best-effort; caller already tried the clean path

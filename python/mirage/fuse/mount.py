@@ -14,6 +14,7 @@
 
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -26,6 +27,16 @@ from mirage.fuse.fs import MirageFS
 from mirage.ops import Ops
 from mirage.types import JsonValue
 from mirage.workspace.session.session import SessionState
+
+
+def resolve_fusermount_binary() -> str | None:
+    """Locate the platform FUSE unmount helper.
+
+    Returns the absolute path to ``fusermount`` or ``fusermount3``, preferring
+    the legacy name for backwards compatibility. Returns ``None`` when neither
+    is on ``PATH`` (callers should treat unmount as best-effort).
+    """
+    return shutil.which("fusermount") or shutil.which("fusermount3")
 
 
 def load_fuse() -> Any:
@@ -208,7 +219,7 @@ def mount(
             # serving process exits.
             pass
         else:
-            subprocess.run(
-                ["fusermount", "-u", mountpoint], capture_output=True
-            )
+            binary = resolve_fusermount_binary()
+            if binary is not None:
+                subprocess.run([binary, "-u", mountpoint], capture_output=True)
         t.join(timeout=5)

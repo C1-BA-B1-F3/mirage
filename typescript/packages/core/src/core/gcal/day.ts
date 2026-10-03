@@ -17,6 +17,10 @@ import type { JsonValue } from '../../types.ts'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const DEFAULT_TZ = 'UTC'
 export const WINDOW_AHEAD_DAYS = 90
+// A Monday, so the 7-day buckets tiled from it are ISO weeks.
+const BUCKET_EPOCH = '1970-01-05'
+const FIRST_DAY = '0001-01-01'
+export const SPAN_SEP = '--'
 
 const DAY_MS = 86_400_000
 
@@ -132,27 +136,80 @@ function rfc3339(instant: number, tz: string): string {
 }
 
 /**
- * The RFC3339 timeMin/timeMax pair covering one local day.
+ * The RFC3339 timeMin/timeMax pair covering local days from one day.
  *
- * Computed as consecutive local midnights rather than start + 24h: a local
- * day is 23 or 25 hours on the two DST transitions each year, and adding a
- * fixed day would drop or double an hour of events.
+ * Computed as local midnights rather than start + 24h: a local day is 23 or
+ * 25 hours on the two DST transitions each year, and adding a fixed day
+ * would drop or double an hour of events.
  */
-export function dayBounds(day: string, tz: string): [string, string] {
+export function dayBounds(day: string, tz: string, days = 1): [string, string] {
   const start = localMidnight(day, tz)
-  const next = localMidnight(shiftDay(day, 1), tz)
+  const next = localMidnight(shiftDay(day, days), tz)
   return [rfc3339(start, tz), rfc3339(next, tz)]
+}
+
+/**
+ * The first day of the bucket that holds a day.
+ *
+ * Buckets tile a fixed grid from `BUCKET_EPOCH` rather than one centred on
+ * today, so a directory name means the same days whenever it is listed. The
+ * first bucket of the calendar era is cut short at `0001-01-01` instead of
+ * starting before it.
+ */
+export function bucketStart(day: string, size: number): string {
+  const days = (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${BUCKET_EPOCH}T00:00:00Z`)) / DAY_MS
+  const start = shiftDay(day, -(((days % size) + size) % size))
+  return start < FIRST_DAY ? FIRST_DAY : start
+}
+
+/**
+ * The directory name of the bucket opening on a day.
+ *
+ * A one-day bucket is spelled as the day, which keeps the default tree as it
+ * was; a longer one names its first and last day, so the name says which
+ * days it holds without the reader knowing the mount's size.
+ */
+export function bucketName(start: string, size: number): string {
+  return size === 1 ? start : `${start}${SPAN_SEP}${shiftDay(start, size - 1)}`
+}
+
+/**
+ * Whether a name is shaped like a bucket: a real day or a span of two.
+ *
+ * Shape only: whether the bucket lies on a mount's grid depends on that
+ * mount's size, which `parseBucket` checks.
+ */
+export function validBucket(name: string): boolean {
+  const at = name.indexOf(SPAN_SEP)
+  if (at === -1) return validDay(name)
+  return validDay(name.slice(0, at)) && validDay(name.slice(at + SPAN_SEP.length))
+}
+
+/**
+ * The first day of the bucket a name spells on a mount's grid, or null.
+ *
+ * Each bucket has exactly one spelling per mount: a span off the grid, of
+ * the wrong length, or a bare day on a multi-day mount spells none.
+ */
+export function parseBucket(name: string, size: number): string | null {
+  if (!validBucket(name)) return null
+  const at = name.indexOf(SPAN_SEP)
+  const start = at === -1 ? name : name.slice(0, at)
+  if (bucketStart(start, size) !== start || bucketName(start, size) !== name) return null
+  return start
 }
 
 /**
  * Default listing: all past events, with a finite future horizon.
  *
- * The horizon, `WINDOW_AHEAD_DAYS` past today, is what keeps a recurring
- * event without an end from expanding forever.
+ * The horizon, the end of the bucket holding the day `WINDOW_AHEAD_DAYS`
+ * past today, is what keeps a recurring event without an end from expanding
+ * forever; ending on a bucket edge decides the last bucket on all of its
+ * days.
  */
-export function windowBounds(today: string, tz: string): [null, string] {
-  const hi = shiftDay(today, WINDOW_AHEAD_DAYS)
-  return [null, dayBounds(hi, tz)[1]]
+export function windowBounds(today: string, tz: string, size = 1): [null, string] {
+  const last = bucketStart(shiftDay(today, WINDOW_AHEAD_DAYS), size)
+  return [null, dayBounds(last, tz, size)[1]]
 }
 
 /**

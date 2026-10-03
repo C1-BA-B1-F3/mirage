@@ -465,6 +465,66 @@ for (const backend of ['ram', 'redis']) {
         ])
       })
 
+      function peer(): IndexCacheStore {
+        return backend === 'ram'
+          ? store
+          : new RedisIndexCacheStore({
+              ...(REDIS_URL === undefined ? {} : { url: REDIS_URL }),
+              keyPrefix,
+              ttl: 1,
+            })
+      }
+
+      it('stamps every folder a seed writes with its version', async () => {
+        const future = new Date(Date.now() + 3_600_000)
+        store.seed(
+          new Map([
+            ['/repo/a', entry()],
+            ['/repo/sub', folder('sub')],
+            ['/repo/sub/b', entry('b')],
+          ]),
+          new Map([
+            ['/repo', ['/repo/a', '/repo/sub']],
+            ['/repo/sub', ['/repo/sub/b']],
+          ]),
+          future,
+          'v1',
+        )
+        await store.close()
+        store = peer()
+        expect((await store.listDir('/repo')).version).toBe('v1')
+        expect((await store.listDir('/repo/sub')).version).toBe('v1')
+      })
+
+      it('clears the version on an unversioned re-list', async () => {
+        await store.setDir('/dir', [['a', entry()]], undefined, { version: 'v1' })
+        expect((await store.listDir('/dir')).version).toBe('v1')
+        await store.setDir('/dir', [['a', entry()]])
+        const listing = await store.listDir('/dir')
+        expect(listing.entries).toEqual(['/dir/a'])
+        expect(listing.version).toBeNull()
+      })
+
+      it('never lets a partial listing inherit the version', async () => {
+        await store.setDir('/dir', [['a', entry()]], undefined, { version: 'v1' })
+        await store.setPartialDir('/dir', [['b', entry('b')]])
+        const listing = await store.listDir('/dir')
+        expect(listing.partialEntries).toEqual(['/dir/b'])
+        expect(listing.version).toBeNull()
+      })
+
+      it('clears the version on an unversioned seed', async () => {
+        const future = new Date(Date.now() + 3_600_000)
+        const rows = new Map([['/dir/a', entry()]])
+        const children = new Map([['/dir', ['/dir/a']]])
+        store.seed(rows, children, future, 'v1')
+        expect((await store.listDir('/dir')).version).toBe('v1')
+        store.seed(rows, children, future, null)
+        const listing = await store.listDir('/dir')
+        expect(listing.entries).toEqual(['/dir/a'])
+        expect(listing.version).toBeNull()
+      })
+
       it('keeps rows only put wrote', async () => {
         await store.put('/dir/p', entry('p'))
         await store.setDir('/dir', [['a', entry()]])

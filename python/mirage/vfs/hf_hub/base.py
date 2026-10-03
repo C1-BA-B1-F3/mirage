@@ -20,6 +20,7 @@ from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.hf_hub.watch import build_delta_hook
 from mirage.ops.hf_hub import OPS as HF_OPS
 from mirage.ops.registry import RegisteredOp
+from mirage.types import ListingVersion
 from mirage.vfs.base import BaseVFS
 from mirage.watch.base import DeltaHook
 
@@ -55,6 +56,13 @@ class HfHubVFS(BaseVFS, Generic[A]):
     index_ttl: float = 86_400
     supports_snapshot: bool = True
     read_revalidatable: bool = True
+    # One version covers every listing: the head commit the revision
+    # resolves to, asked with `revision/{rev}?expand[]=sha`, and the tree
+    # is walked at that commit so the rows and the version agree. A
+    # full-sha revision is checked the same way and never pinned: a branch
+    # or tag named like it could take the name, and mirage does not assume
+    # which one the Hub resolves.
+    listing_version: ListingVersion = ListingVersion.MOUNT
 
     def __init__(self, config: Any) -> None:
         super().__init__()

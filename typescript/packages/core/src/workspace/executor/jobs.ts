@@ -614,7 +614,10 @@ export function handleDisown(
 
 /**
  * Foreground a background job: print its command line, then block on it
- * and adopt its output and exit code.
+ * and adopt its output and exit code. With no operand it takes the newest
+ * running job, which is bash's current job; when none runs, it takes the
+ * newest finished one, since a job can end before `fg` runs and its output
+ * is still waiting to be adopted, as `fg %N` would.
  */
 export async function handleFg(
   jobTable: JobTable,
@@ -628,8 +631,7 @@ export async function handleFg(
   const jobs = jobTable.listJobs(sid)
   let jobId: number
   if (parts.length <= 1) {
-    const running = jobs.filter((j) => j.status === JobStatus.RUNNING)
-    const current = running[running.length - 1]
+    const current = jobs.filter((j) => j.status === JobStatus.RUNNING).at(-1) ?? jobs.at(-1)
     if (current === undefined) {
       const err = new TextEncoder().encode('bash: fg: current: no such job\n')
       return [

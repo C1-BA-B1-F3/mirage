@@ -18,14 +18,35 @@ from mirage.accessor.github import GitHubAccessor
 from mirage.commands.builtin.github import COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.github.config import GitHubConfig
+from mirage.core.github.constants import COMMIT_SHA
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.core.github.watch import build_delta_hook
 from mirage.ops.github import OPS as GITHUB_VFS_OPS
 from mirage.ops.registry import RegisteredOp
-from mirage.types import VFSName
+from mirage.types import ListingVersion, VFSName
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.github.prompt import PROMPT
 from mirage.watch.base import DeltaHook
+
+
+def _pin_of(ref: str | None) -> str | None:
+    """The commit a ref pins every listing at, when it names one outright.
+
+    Only a full 40- or 64-hex string can be a commit. GitHub answers shas in
+    lowercase, so the pin is lowercased to compare with what it stores.
+    Listings are stored at the head their tree answered, so a ref is served
+    unchecked only when its listing was fetched at that sha. github.com
+    refuses a branch or tag named with 40 or 64 hex characters (HTTP 422),
+    so such a ref always names a commit, which cannot move; a GitHub
+    Enterprise host behind ``base_url`` is assumed to refuse them too.
+
+    Args:
+        ref (str | None): the mount's effective ref.
+    """
+    if ref is None:
+        return None
+    lowered = ref.lower()
+    return lowered if COMMIT_SHA.fullmatch(lowered) else None
 
 
 class GitHubVFS(BaseVFS):
@@ -39,6 +60,10 @@ class GitHubVFS(BaseVFS):
     # stat and a read both stamp the content-addressed blob sha.
     supports_snapshot: bool = True
     read_revalidatable: bool = True
+    # One version covers every listing: the head commit the ref resolves
+    # to, which the tree response names as its top-level sha and the root
+    # stat answers with one shallow request.
+    listing_version: ListingVersion = ListingVersion.MOUNT
     # An API-backed tree that changes rarely; a day-long index spares the
     # provider a full re-walk every 10 minutes. Mirrors the TypeScript
     # VFS.
@@ -115,6 +140,7 @@ class GitHubVFS(BaseVFS):
             truncated=truncated,
         )
         super().__init__()
+        self.listings_pin = _pin_of(ref)
 
     def ops(self) -> list[RegisteredOp]:
         return GITHUB_VFS_OPS

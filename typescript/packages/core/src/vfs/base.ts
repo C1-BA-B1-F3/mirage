@@ -19,7 +19,7 @@ import type { RegisteredCommand } from '../commands/config.ts'
 import { makeGenericOps } from '../ops/generic/factory.ts'
 import type { RegisteredOp } from '../ops/registry.ts'
 import type { CapacityResult } from '../types.ts'
-import { CapacityState } from '../types.ts'
+import { CapacityState, ListingVersion } from '../types.ts'
 import type { DeltaHook } from '../watch/base.ts'
 import { VFSAdapter } from './adapter.ts'
 
@@ -248,6 +248,30 @@ export class BaseVFS<A extends Accessor = Accessor> {
    * Mirrors Python's `BaseVFS.read_revalidatable`.
    */
   readonly readRevalidatable: boolean = false
+  /**
+   * What a `read: fresh` mount checks a cached listing against before it
+   * lists again: nothing (NONE, the default), one version for the whole mount
+   * answered by a stat of its root (MOUNT), or each folder's own version
+   * answered by a stat of that folder (FOLDER). A declarer stores with each
+   * listing it writes a version no newer than its rows: taken from the same
+   * response (github's tree names its head), or read first and the rows then
+   * read at it or after it (hf walks the tree at the commit its revision
+   * request answered; disk stats a folder before it scans), so a change in
+   * between leaves the stored version behind and the next check re-lists.
+   * Its `stat` must answer the same kind of token: node's
+   * listing_version.test.ts holds each one to that.
+   *
+   * Mirrors Python's `BaseVFS.listing_version`.
+   */
+  readonly listingVersion: ListingVersion = ListingVersion.NONE
+  /**
+   * The version every listing of this mount is pinned at, when its ref names
+   * a commit outright (github's full-sha ref; see `pinOf` in
+   * vfs/github/github.ts for why that cannot move). A stored listing whose
+   * version equals it is served without a check. It depends on the mount's config, so
+   * an instance sets it; null pins nothing.
+   */
+  readonly listingsPin: string | null = null
   /**
    * The backend handle every core function on the tables takes. A driver
    * built from a table takes it from its options; a builtin declares and

@@ -54,6 +54,17 @@ constructing the VFS never blocks on the network. For repos with
 
 The GitHub VFS uses `IndexCacheStore` with SHA-based fingerprinting. Content is content-addressed - if the SHA matches, the content is identical.
 
+Under `read: fresh`, a cached listing is checked against the head commit
+the `ref` resolves to: one small check per command (a shallow
+`git/trees/{ref}`), after which every cached listing of the mount at that
+commit is served. A mount whose `ref` is a full 40- or 64-hex commit sha
+serves its cached listings with no request: github.com refuses a branch or
+tag named with 40 or 64 hex characters, so such a ref always names a commit
+(a GitHub Enterprise host is assumed to do the same). A repository whose recursive
+tree comes back truncated stores no version, so each folder is re-listed
+once per command. See
+[listings under `fresh`](/home/cache#listings-under-fresh).
+
 ## Example
 
 ```python

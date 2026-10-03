@@ -12,11 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { chmodSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, statSync } from 'node:fs'
 import { chmod, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CapacityState, FileType, PathSpec, VFSName } from '@struktoai/mirage-core/types'
+import { VFSConfigError } from '@struktoai/mirage-core/vfs/errors'
 import { ops } from '@struktoai/mirage-core/test-utils'
 import { copy as copyCore } from '../../core/disk/copy.ts'
 import { size as duSize } from '../../core/disk/du/index.ts'
@@ -336,5 +337,15 @@ describe('DiskVFS — shared host-link contract', () => {
     } finally {
       await chmod(join(root, 'root/lib'), 0o700)
     }
+  })
+})
+
+describe('DiskVFS — folder versions knob', () => {
+  it.each(['no', 1, null])('folderVersions must be a boolean (%s)', (value) => {
+    const fresh = join(root, 'never-made')
+    expect(() => new DiskVFS({ root: fresh, folderVersions: value as unknown as boolean })).toThrow(
+      new VFSConfigError('disk: folder_versions: must be a boolean'),
+    )
+    expect(existsSync(fresh)).toBe(false)
   })
 })

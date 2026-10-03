@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
+import { ListingCheckStore } from '@struktoai/mirage-core/cache/index/ram'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { FileStat, FileType } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
@@ -20,7 +21,9 @@ import { enoent } from '@struktoai/mirage-core/utils/errors'
 import { contentTypeForPath } from '@struktoai/mirage-core/utils/filetype'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
+import { HfHubError } from './client.ts'
 import { dirStatEntry, keyOf, lookupRetrying, pointLookup, refusalsDenied } from './lookup.ts'
+import { headCommit, mountVersion } from './repo.ts'
 import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
@@ -63,7 +66,13 @@ export async function stat(
 ): Promise<FileStat> {
   const prefix = mountPrefixOf(pathSpec.virtual, pathSpec.vfsPath)
   const rel = stripSlash(pathSpec.mountPath)
-  if (rel === '') return new FileStat({ name: '/', type: FileType.DIRECTORY })
+  if (rel === '') {
+    return new FileStat({
+      name: '/',
+      type: FileType.DIRECTORY,
+      fingerprint: await rootVersion(accessor, index),
+    })
+  }
   const key = keyOf(prefix, rel)
   // A probe through a throwaway index asks for this one path; everything else
   // answers from the mount's listing, loading it if need be.
@@ -78,4 +87,32 @@ export async function stat(
   // which is what a listing at the key proves.
   if (found.children !== null) return statOf(dirStatEntry(key))
   throw enoent(pathSpec.virtual)
+}
+
+/**
+ * The version of the whole mount: the head commit its revision is at.
+ *
+ * Only the gate's `ListingCheckStore` asks for it, with one small request.
+ * Every other index (the mount's own, an undefined index) names no version
+ * and reads nothing, neither the index nor the Hub, so a getattr of the root
+ * never pays a check or a store round trip: nothing reads a root fingerprint
+ * off a mount-view stat. Nothing here refills the index or loads the tree: a
+ * refused head names no version rather than falling into a lookup.
+ *
+ * Mirrors Python's `_root_version`.
+ */
+async function rootVersion(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore | undefined,
+): Promise<string | null> {
+  if (!(index instanceof ListingCheckStore)) return null
+  try {
+    return mountVersion(await headCommit(accessor), accessor.keyPrefix)
+  } catch (err) {
+    // A Hub that refuses the head gives no answer about the version; a
+    // transport failure or anything else propagates.
+    if (!(err instanceof HfHubError)) throw err
+    console.warn(`head of ${accessor.repoId} not answered: ${String(err)}`)
+    return null
+  }
 }

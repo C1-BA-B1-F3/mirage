@@ -119,10 +119,12 @@ describe('hf_hub under read: fresh', () => {
       // file, or walking again to recover.
       await out(w, 'cat /m/a.txt')
       const walks = fake.count('tree')
+      const heads = fake.count('revision')
       const listed = DEC.decode(await out(w, 'find /m -type f'))
       expect(listed.split(/\s+/).filter(Boolean)).toEqual(['/m/a.txt', '/m/d/b.txt'])
-      // find, a new command, re-checks the listing once under fresh.
-      expect(fake.count('tree')).toBe(walks + 1)
+      // find, a new command, re-checks the listing once under fresh: one head
+      // check against its version, and no walk (Task 1.3).
+      expect([fake.count('revision') - heads, fake.count('tree') - walks]).toEqual([1, 0])
     } finally {
       await w.close()
     }
@@ -284,27 +286,28 @@ describe('hf_hub snapshot pins', () => {
 // and the cache door reuse the routing probe's answer. Cross-mount cp skips
 // routing's probe, so
 // only the cache door asks, and its stat re-checks the listing its path
-// resolves through, which fresh does once per command: one tree walk (Task
-// 1.3 makes it cheaper).
-const WARM: [string, number, number][] = [
-  ['cat /m/a.txt', 1, 0],
-  ['cat /m/a.txt | head -c 1', 1, 0],
-  ['cp /m/a.txt /r/a.txt', 1, 1],
+// resolves through, which fresh does once per command: one head check
+// against the listing's version, where it was a whole tree walk (Task 1.3).
+const WARM: [string, number, number, number][] = [
+  ['cat /m/a.txt', 1, 0, 0],
+  ['cat /m/a.txt | head -c 1', 1, 0, 0],
+  ['cp /m/a.txt /r/a.txt', 1, 0, 1],
 ]
 
 describe('hf_hub warm read cost', () => {
-  it.each(WARM)('%s costs one path per probe', async (command, posts, walks) => {
+  it.each(WARM)('%s costs one path per probe', async (command, posts, walks, heads) => {
     const fake = await hub({ 'a.txt': OLD })
     const w = ws(await vfsOf(fake))
     try {
       await out(w, 'cat /m/a.txt')
       fake.log.length = 0
       await out(w, command)
-      expect([fake.count('paths_info'), fake.count('tree'), fake.count('resolve')]).toEqual([
-        posts,
-        walks,
-        0,
-      ])
+      expect([
+        fake.count('paths_info'),
+        fake.count('tree'),
+        fake.count('resolve'),
+        fake.count('revision'),
+      ]).toEqual([posts, walks, 0, heads])
     } finally {
       await w.close()
     }
@@ -317,7 +320,10 @@ describe('hf_hub warm read cost', () => {
       await out(w, 'stat -c %s /m/a.txt')
       await out(w, 'stat -c %s /m/a.txt')
       await out(w, 'ls /m')
-      expect([fake.count('tree'), fake.count('paths_info')]).toEqual([1, 0])
+      // The fill resolves the head it walks the tree at (Task 1.3).
+      expect([fake.count('tree'), fake.count('paths_info'), fake.count('revision')]).toEqual([
+        1, 0, 1,
+      ])
     } finally {
       await w.close()
     }

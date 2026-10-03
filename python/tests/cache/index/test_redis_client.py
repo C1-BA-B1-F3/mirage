@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -13,6 +14,7 @@ from redis.asyncio import Redis
 
 from mirage.cache.index import redis as redis_index
 from mirage.cache.index.config import IndexEntry, LookupStatus
+from mirage.cache.index.constants import CHILDREN_PREFIX, ENTRY_PREFIX
 from mirage.cache.index.redis import RedisIndexCacheStore
 
 
@@ -788,6 +790,52 @@ end}
     assert calls >= 4
     assert (await store.get("/d/0")).entry is None
     assert (await store.get("/d/399")).entry is None
+
+
+def _row(name: str) -> tuple[str, IndexEntry]:
+    return name, IndexEntry(id=name, name=name, resource_type="file")
+
+
+@pytest.mark.asyncio
+async def test_a_versioned_listing_missing_a_child_row_is_served(
+    rolling_client,
+):
+    # Redis eviction can drop a row while its listing survives. The store
+    # serves the listing as written; the reader that finds a listed name
+    # with no row refills on demand.
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    await store.set_dir("/d", [_row("a"), _row("b")], version="v1")
+    await client.delete(f"{prefix}{ENTRY_PREFIX}/d/b")
+    listing = await store.list_dir("/d")
+    assert listing.entries == ["/d/a", "/d/b"]
+    assert listing.version == "v1"
+
+
+@pytest.mark.asyncio
+async def test_an_empty_versioned_listing_is_served(rolling_client):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    await store.set_dir("/e", [], version="v1")
+    listing = await store.list_dir("/e")
+    assert listing.entries == []
+    assert listing.version == "v1"
+
+
+@pytest.mark.asyncio
+async def test_a_row_without_a_version_key_reads_as_unversioned(
+    rolling_client,
+):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    await store.set_dir("/d", [_row("a")])
+    key = f"{prefix}{CHILDREN_PREFIX}/d"
+    row = json.loads(await client.get(key))
+    row.pop("version", None)
+    await client.set(key, json.dumps(row))
+    listing = await store.list_dir("/d")
+    assert listing.entries == ["/d/a"]
+    assert listing.version is None
 
 
 def test_the_two_inline_lua_copies_are_byte_identical():

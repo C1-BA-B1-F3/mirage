@@ -59,6 +59,21 @@ export function dirOid(path: string): string {
 
 type Row = Record<string, unknown>
 
+export function commitSha(
+  segment: string,
+  repoId: string,
+  files: ReadonlyMap<string, Uint8Array>,
+): string {
+  const rows = [...files].map(([path, data]) => `${path}\0${blobOid(data)}`).sort(compareCodePoints)
+  return createHash('sha1')
+    .update(`commit ${segment}\0${repoId}\n${rows.join('\n')}`)
+    .digest('hex')
+}
+
+function sha40(rev: string): string | null {
+  return /^[0-9a-fA-F]{40}$/.test(rev) ? rev.toLowerCase() : null
+}
+
 function dirRow(path: string): Row {
   return { type: 'directory', oid: dirOid(path), size: 0, path }
 }
@@ -81,6 +96,14 @@ function dirRow(path: string): Row {
  * uploadedAt}`, the CDN's strong ETag is the xet hash whatever `xet` says, and
  * a range starting at or past EOF is 416 with no ETag. A bucket's `etags`
  * override is sent verbatim, and `NO_ETAG` omits the header.
+ *
+ * `/revision/{rev}` answers the repo object with the head commit as its `sha`,
+ * derived per repo from the files at request time, so a test that edits
+ * `files()` directly moves it; `expand[]=sha` trims the answer to
+ * `{_id, id, sha}`. Every head the fake answers is remembered with the files
+ * it named, and tree and paths-info at that sha serve them; a 40-hex rev the
+ * fake never answered is 404 RevisionNotFound. Any other rev reads the
+ * current files.
  */
 export class FakeHub {
   /** `${api segment}|${repo id}` to path to bytes. */
@@ -92,7 +115,14 @@ export class FakeHub {
   readonly etags = new Map<string, string>()
   /** Route name to the [status, error code] it answers. */
   readonly fail = new Map<string, [number, string]>()
-  readonly log: [string, string][] = []
+  /** `[route, path, rev, query]` of every request, rev and query '' where the route has none. */
+  readonly log: [string, string, string, string][] = []
+  /** Commit sha to the files it named. */
+  readonly history = new Map<string, Map<string, Uint8Array>>()
+  /** Extra revision names, 40-hex or not, that read the current files as `main` does. */
+  readonly branches = new Set<string>()
+  /** Run after each revision answer is built, to land a commit before the tree. */
+  afterRevision: (() => void) | null = null
   readonly posts: { contentType: string; body: string }[] = []
   /** Bucket route name to the `Authorization` header of each request, '' if none. */
   readonly auth = new Map<string, string[]>()
@@ -115,6 +145,10 @@ export class FakeHub {
 
   count(route: string): number {
     return this.log.filter(([name]) => name === route).length
+  }
+
+  head(segment = 'models', repoId = 'acme/widget'): string {
+    return commitSha(segment, repoId, this.files(segment, repoId))
   }
 
   row(path: string, served: Uint8Array): Row {
@@ -175,12 +209,17 @@ export class FakeHub {
       this.bucketCdn(parts, req, res)
       return
     }
+    const query = decodeURIComponent(url.search.slice(1))
     if (parts[0] === 'api' && parts[4] === 'tree') {
-      this.tree(parts, res)
+      this.tree(parts, query, res)
       return
     }
     if (parts[0] === 'api' && parts[4] === 'paths-info' && req.method === 'POST') {
-      await this.pathsInfo(parts, req, res)
+      await this.pathsInfo(parts, query, req, res)
+      return
+    }
+    if (parts[0] === 'api' && parts[4] === 'revision') {
+      this.revision(parts, url, query, res)
       return
     }
     if (parts[0] === 'cdn') {
@@ -190,7 +229,7 @@ export class FakeHub {
     const seg = parts[0] === 'datasets' || parts[0] === 'spaces' ? parts[0] : 'models'
     const rest = seg === 'models' ? parts : parts.slice(1)
     if (rest[2] === 'resolve') {
-      this.resolve(seg, rest, res)
+      this.resolve(seg, rest, query, res)
       return
     }
     error(res, 404, '', 'no route')
@@ -200,15 +239,52 @@ export class FakeHub {
     return this.repos.get(`${seg}|${ns ?? ''}/${name ?? ''}`)
   }
 
-  private tree(parts: string[], res: ServerResponse): void {
-    const prefix = stripSlash(parts.slice(6).join('/'))
-    this.log.push(['tree', prefix])
-    if (this.refused('tree', res)) return
+  private at(parts: string[], res: ServerResponse): Map<string, Uint8Array> | null {
     const files = this.repo(parts[1] ?? '', parts[2], parts[3])
     if (files === undefined) {
       error(res, 404, 'RepoNotFound', 'Repository not found')
+      return null
+    }
+    const rev = parts[5] ?? ''
+    const current = new Map(files)
+    const head = commitSha(parts[1] ?? '', `${parts[2] ?? ''}/${parts[3] ?? ''}`, current)
+    if (!this.history.has(head)) this.history.set(head, current)
+    const sha = sha40(rev)
+    if (sha === null || sha === head || this.branches.has(rev)) return current
+    const old = this.history.get(sha)
+    if (old !== undefined) return old
+    error(res, 404, 'RevisionNotFound', `Invalid rev id: ${rev}`)
+    return null
+  }
+
+  private revision(parts: string[], url: URL, query: string, res: ServerResponse): void {
+    this.log.push(['revision', '', parts[5] ?? '', query])
+    if (this.refused('revision', res)) return
+    const files = this.at(parts, res)
+    if (files === null) return
+    const repoId = `${parts[2] ?? ''}/${parts[3] ?? ''}`
+    const full: Record<string, unknown> = {
+      _id: createHash('sha1').update(repoId).digest('hex').slice(0, 24),
+      id: repoId,
+      sha: commitSha(parts[1] ?? '', repoId, files),
+      siblings: [...files.keys()].sort(compareCodePoints).map((rfilename) => ({ rfilename })),
+    }
+    this.afterRevision?.()
+    const expand = url.searchParams.getAll('expand[]')
+    if (expand.length === 0) {
+      json(res, 200, full)
       return
     }
+    const keep = new Set(['_id', 'id', ...expand])
+    json(res, 200, Object.fromEntries(Object.entries(full).filter(([key]) => keep.has(key))))
+  }
+
+  private tree(parts: string[], query: string, res: ServerResponse): void {
+    const prefix = stripSlash(parts.slice(6).join('/'))
+    this.log.push(['tree', prefix, parts[5] ?? '', query])
+    if (this.refused('tree', res)) return
+    const files = this.at(parts, res)
+    if (files === null) return
     const under = prefix === '' ? '' : `${prefix}/`
     const rows = [...files].filter(([p]) => p.startsWith(under)).map(([p, d]) => this.row(p, d))
     if (prefix !== '' && rows.length === 0) {
@@ -225,6 +301,7 @@ export class FakeHub {
 
   private async pathsInfo(
     parts: string[],
+    query: string,
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
@@ -233,17 +310,14 @@ export class FakeHub {
     const body = Buffer.concat(chunks).toString()
     const kind = req.headers['content-type'] ?? ''
     this.posts.push({ contentType: kind, body })
-    this.log.push(['paths_info', body])
+    this.log.push(['paths_info', body, parts[5] ?? '', query])
     if (this.refused('paths_info', res)) return
     if (!kind.includes('json')) {
       json(res, 400, { error: INVALID_PATHS })
       return
     }
-    const files = this.repo(parts[1] ?? '', parts[2], parts[3])
-    if (files === undefined) {
-      error(res, 404, 'RepoNotFound', 'Repository not found')
-      return
-    }
+    const files = this.at(parts, res)
+    if (files === null) return
     const rows: Row[] = []
     for (const path of (JSON.parse(body) as { paths?: string[] }).paths ?? []) {
       const data = files.get(path)
@@ -254,10 +328,10 @@ export class FakeHub {
     json(res, 200, rows)
   }
 
-  private resolve(seg: string, rest: string[], res: ServerResponse): void {
+  private resolve(seg: string, rest: string[], query: string, res: ServerResponse): void {
     const [ns, name] = rest
     const path = rest.slice(4).join('/')
-    this.log.push(['resolve', path])
+    this.log.push(['resolve', path, rest[3] ?? '', query])
     if (this.refused('resolve', res)) return
     const data = this.repo(seg, ns, name)?.get(path)
     if (data === undefined) {
@@ -289,7 +363,7 @@ export class FakeHub {
     const body = Buffer.concat(chunks).toString()
     const kind = req.headers['content-type'] ?? ''
     this.posts.push({ contentType: kind, body })
-    this.log.push(['bucket_paths_info', body])
+    this.log.push(['bucket_paths_info', body, '', ''])
     this.heard('bucket_paths_info', req)
     if (this.refused('bucket_paths_info', res)) return
     if (!kind.includes('json')) {
@@ -324,7 +398,7 @@ export class FakeHub {
     const [, ns, name] = parts
     const rest = parts.slice(4)
     const path = rest.join('/')
-    this.log.push(['bucket_resolve', path])
+    this.log.push(['bucket_resolve', path, '', ''])
     this.heard('bucket_resolve', req)
     if (this.refused('bucket_resolve', res)) return
     const data = this.repo(BUCKETS, ns, name)?.get(path)
@@ -433,9 +507,15 @@ export class ExpiredOnArrival extends RAMIndexCacheStore {
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
+    version: string | null = null,
   ): void {
     const live = [...children].filter(([path]) => path === this.live)
-    super.seed(entries, new Map([...children].filter(([path]) => path !== this.live)), new Date(0))
-    super.seed(new Map(), new Map(live), expiresAt)
+    super.seed(
+      entries,
+      new Map([...children].filter(([path]) => path !== this.live)),
+      new Date(0),
+      version,
+    )
+    super.seed(new Map(), new Map(live), expiresAt, version)
   }
 }

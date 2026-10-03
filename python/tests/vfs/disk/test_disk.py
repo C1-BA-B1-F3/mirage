@@ -12,26 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.resolve import get_extension
+import pytest
+
+from mirage.vfs.disk import DiskVFS
+from mirage.vfs.errors import VFSConfigError
 
 
-def test_get_extension_gdoc():
-    assert get_extension("folder/My Doc.gdoc.json") == ".gdoc.json"
-
-
-def test_get_extension_gsheet():
-    assert get_extension("folder/My Sheet.gsheet.json") == ".gsheet.json"
-
-
-def test_get_extension_gslide():
-    assert get_extension("slides/My Slides.gslide.json") == ".gslide.json"
-
-
-def test_get_extension_regular():
-    assert get_extension("photo.png") == ".png"
-    assert get_extension("data/file.parquet") == ".parquet"
-
-
-def test_get_extension_no_ext():
-    assert get_extension("Makefile") is None
-    assert get_extension(None) is None
+@pytest.mark.parametrize("value", ["no", 1, None])
+def test_folder_versions_must_be_a_boolean(tmp_path, value):
+    root = tmp_path / "root"
+    with pytest.raises(VFSConfigError) as exc:
+        DiskVFS(str(root), folder_versions=value)
+    assert str(exc.value) == "disk: folder_versions: must be a boolean"
+    assert not root.exists()

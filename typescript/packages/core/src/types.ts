@@ -214,6 +214,24 @@ export const ReadPolicy = Object.freeze({
 
 export type ReadPolicy = (typeof ReadPolicy)[keyof typeof ReadPolicy]
 
+/**
+ * What a backend's cached listings can be checked against under fresh.
+ *
+ * NONE: nothing, so a listing the running command did not write itself is
+ * listed again. MOUNT: one version covers every listing of the mount, and a
+ * stat of the mount root answers it. FOLDER: each listing carries its own
+ * folder's version, and a stat of that folder answers it. The stored version
+ * and the stat's fingerprint must be the same kind of token, since the gate
+ * compares them with `===`.
+ */
+export const ListingVersion = Object.freeze({
+  NONE: 'none',
+  MOUNT: 'mount',
+  FOLDER: 'folder',
+} as const)
+
+export type ListingVersion = (typeof ListingVersion)[keyof typeof ListingVersion]
+
 /** Maximum lifetime in seconds for cached bodies and listings. */
 export const DEFAULT_READ_TTL = 600
 

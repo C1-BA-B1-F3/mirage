@@ -18,7 +18,7 @@ import yarl
 import mirage.core.gcal.client as client_mod
 from mirage.core.gcal.client import delete_event, list_events
 from mirage.core.google.client import TokenManager
-from mirage.vfs.gcal.config import GCalConfig
+from tests.fixtures.gcal_api import gcal_config
 
 pytestmark = pytest.mark.asyncio
 
@@ -30,7 +30,7 @@ HOLIDAY = "en.usa#holiday@group.v.calendar.google.com"
 
 @pytest.fixture
 def token_manager():
-    return TokenManager(GCalConfig(client_id="cid", refresh_token="rt"))
+    return TokenManager(gcal_config())
 
 
 async def test_list_events_encodes_the_calendar_id(monkeypatch, token_manager):

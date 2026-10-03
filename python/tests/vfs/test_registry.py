@@ -54,10 +54,11 @@ def test_capabilities_match_the_committed_spec_manifest():
     """Every registry class's capability values must match the dump.
 
     Membership alone says a backend can be built, not how it behaves once
-    mounted. These four values decide how stale a listing may be, whether
-    reads are cached, whether a snapshot records a fingerprint and whether
-    a size is knowable without fetching, and each was an independent hand
-    edit until the dump started carrying them.
+    mounted. These values decide how stale a listing may be, whether reads
+    are cached, whether a snapshot records a fingerprint, whether a size is
+    knowable without fetching and what a fresh listing is checked against,
+    and each was an independent hand edit until the dump started carrying
+    them.
     """
     manifest = json.loads(SPEC_VFS_NAMES.read_text())["capabilities"]
     live = {
@@ -66,6 +67,7 @@ def test_capabilities_match_the_committed_spec_manifest():
             "caches_reads": cls.caches_reads,
             "supports_snapshot": cls.supports_snapshot,
             "sizes_always_known": cls.sizes_always_known,
+            "listing_version": cls.listing_version,
         }
         for name, cls in (
             (n, registry.resolve_class(e.vfs_path))

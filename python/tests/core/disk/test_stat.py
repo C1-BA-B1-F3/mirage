@@ -16,11 +16,15 @@ import os
 
 import pytest
 
+from mirage import MountMode, Workspace
 from mirage.accessor.disk import DiskAccessor
-from mirage.cache.index import RAMIndexCacheStore
+from mirage.cache.index import IndexEntry, RAMIndexCacheStore, ResourceType
 from mirage.core.disk.stat import stat
-from mirage.types import FileType, PathSpec
+from mirage.types import FileType, PathSpec, ReadPolicy, ReadSpec
 from mirage.utils.key_prefix import mount_key
+from mirage.vfs.disk import DiskVFS
+from mirage.workspace.mount import Mount
+from mirage.workspace.reconcile import Reconciler
 
 
 @pytest.mark.asyncio
@@ -136,3 +140,51 @@ async def test_stat_keeps_the_fraction_of_a_second(tmp_path):
     )
     assert result.modified == "2024-01-01T00:00:00.500Z"
     assert result.atime == "2024-01-01T00:00:00.250Z"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quiet", [False, True])
+async def test_a_folder_with_an_overlay_still_drops_the_index_under_fresh(
+    tmp_path, monkeypatch, quiet
+):
+    folder = tmp_path / "d"
+    folder.mkdir()
+    if quiet:
+        # Past the racy window the folder's stat carries a version, so the
+        # probe compares it instead of finding no fingerprint at all.
+        st = os.stat(folder)
+        quiet_ns = max(st.st_ctime_ns, st.st_mtime_ns) + 3_000_000_000
+        monkeypatch.setattr(
+            "mirage.core.disk.listing_version.time_ns", lambda: quiet_ns
+        )
+    ws = Workspace(
+        {
+            "/m": Mount(
+                vfs=DiskVFS(str(tmp_path)),
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.FRESH, ttl=600),
+            )
+        }
+    )
+    try:
+        await ws.namespace.ensure_loaded()
+        await ws.namespace.set_attrs("/m/d", uid=1000)
+        mount = ws.namespace.mount_for("/m/d")
+        await mount.index_store.set_dir(
+            "/m/d",
+            [
+                (
+                    "x.txt",
+                    IndexEntry(
+                        id="/d/x.txt",
+                        name="x.txt",
+                        resource_type=ResourceType.FILE,
+                    ),
+                )
+            ],
+        )
+        assert (await mount.index_store.list_dir("/m/d")).entries is not None
+        await Reconciler(ws.cache, ws.namespace).reconcile_read(mount, "/m/d")
+        assert (await mount.index_store.list_dir("/m/d")).entries is None
+    finally:
+        await ws.close()

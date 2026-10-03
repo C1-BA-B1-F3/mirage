@@ -308,6 +308,7 @@ def _capabilities() -> dict[str, dict[str, Any]]:
             "read_revalidatable": cls.read_revalidatable,
             "supports_snapshot": cls.supports_snapshot,
             "sizes_always_known": cls.sizes_always_known,
+            "listing_version": cls.listing_version.value,
             "storage_location": cls.storage_location
             is not BaseVFS.storage_location,
             "capacity": cls.capacity is not BaseVFS.capacity,

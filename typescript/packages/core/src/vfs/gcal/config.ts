@@ -35,6 +35,7 @@ export const GCalConfigSchema = GoogleConfigSchema.safeExtend({
   // would make the same day directory name mean different 24-hour windows
   // on different calendars. Defaults to the primary calendar's zone.
   timeZone: z.string().optional(),
+  bucketDays: z.literal([1, 7, 30]).default(1),
   // Keep only calendars at or above this accessRole, e.g. "writer" for
   // ones the agent can actually schedule into.
   minAccessRole: z.string().optional(),

@@ -16,6 +16,7 @@ import asyncio
 import errno
 import logging
 import os
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -29,6 +30,7 @@ from mirage.cache.index.config import (
     RedisIndexConfig,
 )
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
+from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.scope import command_scope
 from mirage.types import FileStat, FileType, PathSpec, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
@@ -37,6 +39,7 @@ from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.workspace.mount.namespace.namespace import NodeMeta
 from mirage.workspace.reconcile import Reconciler
 from tests.e2e.s3_mock import patch_s3_multi
+from tests.fixtures.versioned_vfs import VersionedVFS
 
 
 async def _ws_with_overlay():
@@ -137,7 +140,7 @@ async def test_may_serve_listing_trusts_the_index_under_bounded():
     ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
     mount = ws.namespace.mount_for("/data/d")
     rec = Reconciler(ws.cache, ws.namespace)
-    assert await rec.may_serve_listing(mount, "/data/d") is True
+    assert await rec.may_serve_listing(mount, "/data/d", None) is True
     await ws.close()
 
 
@@ -155,14 +158,14 @@ async def test_may_serve_listing_under_fresh_trusts_only_this_commands_writes(
     mount.read = ReadSpec(policy=ReadPolicy.FRESH)
     rec = Reconciler(ws.cache, ws.namespace)
     await mount.index.set_dir("/data/d", [])
-    assert await rec.may_serve_listing(mount, "/data/d") is True
+    assert await rec.may_serve_listing(mount, "/data/d", None) is True
     now[0] += LISTING_TRUST_WINDOW
-    assert await rec.may_serve_listing(mount, "/data/d") is False
+    assert await rec.may_serve_listing(mount, "/data/d", None) is False
     async with command_scope():
-        assert await rec.may_serve_listing(mount, "/data/d") is False
+        assert await rec.may_serve_listing(mount, "/data/d", None) is False
         await mount.index.set_dir("/data/d", [])
-        assert await rec.may_serve_listing(mount, "/data/d") is True
-        assert await rec.may_serve_listing(mount, "/data/other") is False
+        assert await rec.may_serve_listing(mount, "/data/d", None) is True
+        assert await rec.may_serve_listing(mount, "/data/other", None) is False
     await ws.close()
 
 
@@ -846,3 +849,258 @@ async def test_the_gate_asks_the_backend_outside_a_command():
         assert stat.calls == 2
     finally:
         await ws.close()
+
+
+@asynccontextmanager
+async def _versioned(
+    kind: str = "mount",
+    remote: str | None = "v1",
+    *,
+    has_stat: bool = True,
+):
+    vfs = VersionedVFS(kind, remote, has_stat=has_stat)
+    ws = Workspace({"/m/": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))
+    mount = ws.namespace.mount_for("/m/a")
+    try:
+        yield vfs, mount, Reconciler(ws.cache, ws.namespace)
+    finally:
+        if vfs.hold is not None:
+            vfs.hold.set()
+        await ws.close()
+
+
+async def _store(mount, folder: str, version: str | None) -> None:
+    # The raw store, so the write is not one the running command made.
+    await mount.index_store.set_dir(folder, [], version=version)
+
+
+async def _sent(vfs: VersionedVFS) -> None:
+    await asyncio.wait_for(vfs.sent.wait(), timeout=2)
+    vfs.sent.clear()
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_trusts_this_commands_own_listing_unchecked():
+    async with _versioned() as (vfs, mount, rec):
+        async with command_scope():
+            await mount.index.set_dir("/m/a", [], version="v1")
+            assert await rec.may_serve_listing(mount, "/m/a", "v1") is True
+        assert vfs.stats == []
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_never_checks_a_mount_without_versions():
+    async with _versioned(kind="none") as (vfs, mount, rec):
+        await _store(mount, "/m/a", "v1")
+        async with command_scope():
+            assert await rec.may_serve_listing(mount, "/m/a", "v1") is False
+        assert vfs.stats == []
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_never_checks_a_listing_stored_without_a_version():
+    async with _versioned() as (vfs, mount, rec):
+        await _store(mount, "/m/a", None)
+        async with command_scope():
+            assert await rec.may_serve_listing(mount, "/m/a", None) is False
+        assert vfs.stats == []
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_refuses_a_moved_version_and_keeps_the_listing():
+    # A refusal leaves the listing stored for the re-list to diff, and the
+    # index is never cleared.
+    async with _versioned(remote="v2") as (vfs, mount, rec):
+        await _store(mount, "/m/a", "v1")
+        await mount.index_store.put(
+            "/m/f.txt", IndexEntry(id="f", name="f.txt", resource_type="file")
+        )
+        async with command_scope():
+            assert await rec.may_serve_listing(mount, "/m/a", "v1") is False
+        assert vfs.stats == ["/m"]
+        kept = await mount.index_store.list_dir("/m/a")
+        assert kept.entries == [] and kept.version == "v1"
+        assert (await mount.index_store.get("/m/f.txt")).entry is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["enoent", "none"])
+async def test_listing_gate_refuses_what_the_check_cannot_confirm(
+    outcome, caplog
+):
+    async with _versioned() as (vfs, mount, rec):
+        if outcome == "enoent":
+            vfs.raises = FileNotFoundError("/m")
+        else:
+            vfs.remote = None
+        caplog.set_level(logging.DEBUG, logger="mirage.workspace.reconcile")
+        await _store(mount, "/m/a", "v1")
+        async with command_scope():
+            assert await rec.may_serve_listing(mount, "/m/a", "v1") is False
+        assert vfs.stats == ["/m"]
+        assert (await mount.index_store.list_dir("/m/a")).version == "v1"
+        logged = [
+            r for r in caplog.records if r.name == "mirage.workspace.reconcile"
+        ]
+        assert logged == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [TypeError, AttributeError, NameError])
+async def test_listing_gate_lets_a_programming_error_escape(error):
+    async with _versioned() as (vfs, mount, rec):
+        vfs.raises = error("bug")
+        await _store(mount, "/m/a", "v1")
+        async with command_scope():
+            with pytest.raises(error, match="bug"):
+                await rec.may_serve_listing(mount, "/m/a", "v1")
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_refuses_silently_without_a_stat_op(
+    caplog, monkeypatch
+):
+    async with _versioned(has_stat=False) as (vfs, mount, rec):
+        asked: list[str] = []
+        execute = mount.execute_op
+
+        async def recording(op_name, path, *args, **kwargs):
+            asked.append(op_name)
+            return await execute(op_name, path, *args, **kwargs)
+
+        monkeypatch.setattr(mount, "execute_op", recording)
+        caplog.set_level(logging.DEBUG, logger="mirage.workspace.reconcile")
+        await _store(mount, "/m/a", "v1")
+        async with command_scope():
+            assert await rec.may_serve_listing(mount, "/m/a", "v1") is False
+        assert asked == ["stat"]
+        assert [
+            r for r in caplog.records if r.name == "mirage.workspace.reconcile"
+        ] == []
+
+
+async def _gate_in_command(rec, mount, folder: str, version: str) -> bool:
+    async with command_scope():
+        return await rec.may_serve_listing(mount, folder, version)
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_never_shares_a_check_sent_before_the_command():
+    # Command C starts after A's check was sent, so that check may predate
+    # a change C must see: C sends its own.
+    async with _versioned() as (vfs, mount, rec):
+        vfs.hold = asyncio.Event()
+        await _store(mount, "/m/a", "v1")
+        first = asyncio.create_task(_gate_in_command(rec, mount, "/m/a", "v1"))
+        await _sent(vfs)
+        second = asyncio.create_task(
+            _gate_in_command(rec, mount, "/m/a", "v1")
+        )
+        await _sent(vfs)
+        vfs.hold.set()
+        assert await first is True
+        assert await second is True
+        assert vfs.stats == ["/m", "/m"]
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_stamps_a_check_when_it_is_sent():
+    # Command D starts while A's check is in flight and gates after it
+    # lands. The check was sent before D began, so its answer is not D's.
+    async with _versioned() as (vfs, mount, rec):
+        vfs.hold = asyncio.Event()
+        await _store(mount, "/m/a", "v1")
+        first = asyncio.create_task(_gate_in_command(rec, mount, "/m/a", "v1"))
+        await _sent(vfs)
+        async with command_scope():
+            vfs.hold.set()
+            assert await first is True
+            assert await rec.may_serve_listing(mount, "/m/a", "v1") is True
+        assert vfs.stats == ["/m", "/m"]
+
+
+async def _gate_when_told(
+    rec, mount, entered: asyncio.Event, go: asyncio.Event
+) -> bool:
+    async with command_scope():
+        entered.set()
+        await go.wait()
+        return await rec.may_serve_listing(mount, "/m/a", "v1")
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_shares_one_check_among_commands_already_running():
+    async with _versioned() as (vfs, mount, rec):
+        vfs.hold = asyncio.Event()
+        go = asyncio.Event()
+        entered = [asyncio.Event() for _ in range(7)]
+        await _store(mount, "/m/a", "v1")
+        tasks = [
+            asyncio.create_task(_gate_when_told(rec, mount, e, go))
+            for e in entered
+        ]
+        await asyncio.gather(*(e.wait() for e in entered))
+        go.set()
+        await _sent(vfs)
+        for _ in range(50):
+            await asyncio.sleep(0)
+        vfs.hold.set()
+        assert await asyncio.gather(*tasks) == [True] * 7
+        assert vfs.stats == ["/m"]
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_check_survives_its_first_waiter_cancelling():
+    async with _versioned() as (vfs, mount, rec):
+        vfs.hold = asyncio.Event()
+        go = asyncio.Event()
+        entered = [asyncio.Event(), asyncio.Event()]
+        await _store(mount, "/m/a", "v1")
+        owner = asyncio.create_task(
+            _gate_when_told(rec, mount, entered[0], go)
+        )
+        peer = asyncio.create_task(_gate_when_told(rec, mount, entered[1], go))
+        await asyncio.gather(*(e.wait() for e in entered))
+        go.set()
+        await _sent(vfs)
+        for _ in range(50):
+            await asyncio.sleep(0)
+        owner.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await owner
+        vfs.hold.set()
+        assert await peer is True
+        assert vfs.stats == ["/m"]
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_outside_a_command_reuses_a_check_for_the_window(
+    monkeypatch,
+):
+    now = [100.0]
+    monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
+    async with _versioned() as (vfs, mount, rec):
+        await _store(mount, "/m/a", "v1")
+        assert await rec.may_serve_listing(mount, "/m/a", "v1") is True
+        assert vfs.stats == ["/m"]
+        now[0] += LISTING_TRUST_WINDOW / 2
+        assert await rec.may_serve_listing(mount, "/m/a", "v1") is True
+        assert vfs.stats == ["/m"]
+        now[0] += LISTING_TRUST_WINDOW
+        assert await rec.may_serve_listing(mount, "/m/a", "v1") is True
+        assert vfs.stats == ["/m", "/m"]
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_forgets_its_checks_when_the_store_changes():
+    async with _versioned() as (vfs, mount, rec):
+        await _store(mount, "/m/a", "v1")
+        async with command_scope():
+            served = await mount.index.list_dir("/m/a")
+            assert served.entries == []
+            assert vfs.stats == ["/m"]
+            replacement = RAMIndexCacheStore(ttl=600)
+            await replacement.set_dir("/m/a", [], version="v1")
+            mount.index_store = replacement
+            assert (await mount.index.list_dir("/m/a")).entries == []
+        assert vfs.stats == ["/m", "/m"]

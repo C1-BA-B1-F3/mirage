@@ -21,7 +21,7 @@ import { isEnoent } from '../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { readdirUnlocked } from './readdir.ts'
-import { pointRow } from './tree.ts'
+import { pointRow, refillSnapshot } from './tree.ts'
 import { indexEntryFromTree } from './tree_entry.ts'
 
 /** What sits at one mount-absolute key; `entry` is null when nothing is. */
@@ -57,7 +57,8 @@ export function locate(path: PathSpec): { prefix: string; rel: string; key: stri
  * The parent's current listing is what establishes membership: an entry row
  * survives invalidation and a replacement listing, so a key it no longer
  * names is absent even when its old row is still there. The parent is
- * filled first if the index holds no listing for it.
+ * filled first if the index holds no listing for it. A listed name with no
+ * row refills once unless `recoverEvicted` is false, which the retry passes.
  *
  * Mirrors Python's `lookup`.
  */
@@ -66,30 +67,54 @@ export async function lookup(
   index: IndexCacheStore | undefined,
   prefix: string,
   key: string,
+  recoverEvicted = true,
 ): Promise<Found> {
   if (index === undefined) return ABSENT
   return withIndexLock(index, rootOf(prefix), async () => {
-    const parent = key.slice(0, key.lastIndexOf('/')) || '/'
-    let children: string[]
-    try {
-      children = await readdirUnlocked(
-        accessor,
-        new PathSpec({
-          virtual: parent,
-          directory: parent,
-          resolved: false,
-          vfsPath: mountKey(parent, prefix),
-        }),
-        index,
-      )
-    } catch (error) {
-      if (isEnoent(error)) return ABSENT
-      throw error
+    if (!(await listed(accessor, index, prefix, key))) return ABSENT
+    const entry = (await index.get(key)).entry ?? null
+    if (entry !== null) return { entry }
+    // A clear can race the read and another op reseed the index after it;
+    // read the row once more before taking the miss as an eviction.
+    const again = (await index.get(key)).entry ?? null
+    if (again !== null || !recoverEvicted) return { entry: again }
+    // Eviction can drop a row its listing still names. The store serves the
+    // listing regardless, so the miss is checked here, on demand: refill once,
+    // as for an expired listing, and resolve the key again.
+    if (accessor.truncated) {
+      await index.invalidateDir(key.slice(0, key.lastIndexOf('/')) || '/')
+    } else {
+      await refillSnapshot(accessor, index, prefix)
     }
-    if (!children.includes(key)) return ABSENT
-    const result = await index.get(key)
-    return { entry: result.entry ?? null }
+    if (!(await listed(accessor, index, prefix, key))) return ABSENT
+    return { entry: (await index.get(key)).entry ?? null }
   })
+}
+
+/** Whether the parent's current listing names `key`; the caller holds the lock. */
+async function listed(
+  accessor: GitHubAccessor,
+  index: IndexCacheStore,
+  prefix: string,
+  key: string,
+): Promise<boolean> {
+  const parent = key.slice(0, key.lastIndexOf('/')) || '/'
+  try {
+    const children = await readdirUnlocked(
+      accessor,
+      new PathSpec({
+        virtual: parent,
+        directory: parent,
+        resolved: false,
+        vfsPath: mountKey(parent, prefix),
+      }),
+      index,
+    )
+    return children.includes(key)
+  } catch (error) {
+    if (isEnoent(error)) return false
+    throw error
+  }
 }
 
 /**
@@ -103,8 +128,10 @@ export async function lookup(
  * so a miss is absent only when both agree. A genuine miss costs one more
  * index read and no request, since the first lookup left the listing that
  * answers the second; only a missing directory in a truncated tree is
- * walked twice. Two clears inside one call can still produce a false miss,
- * as in hf.
+ * walked twice. The second lookup does not refill for a listed name with no
+ * row: the first already did, so a row the refill did not bring back is
+ * absent after one refill, not two. Two clears inside one call can still
+ * produce a false miss, as in hf.
  *
  * Mirrors Python's `lookup_retrying`.
  */
@@ -116,7 +143,7 @@ export async function lookupRetrying(
 ): Promise<Found> {
   const found = await lookup(accessor, index, prefix, key)
   if (found.entry !== null || index === undefined) return found
-  return lookup(accessor, index, prefix, key)
+  return lookup(accessor, index, prefix, key, false)
 }
 
 /**

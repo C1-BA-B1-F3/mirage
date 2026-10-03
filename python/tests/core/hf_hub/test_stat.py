@@ -160,7 +160,7 @@ async def test_a_mount_that_never_loaded_walks_and_seeds(accessor):
 @pytest.mark.asyncio
 async def test_a_live_index_answers_without_a_request(loaded):
     index = RAMIndexCacheStore()
-    seed_index(loaded, index, "")
+    seed_index(loaded.tree, index, "")
     with _point([]) as post, _walk() as walk:
         result = await stat(loaded, ps("a.txt"), index)
     post.assert_not_awaited()
@@ -171,7 +171,7 @@ async def test_a_live_index_answers_without_a_request(loaded):
 @pytest.mark.asyncio
 async def test_an_expired_index_refills_rather_than_asking_one_path(loaded):
     index = RAMIndexCacheStore()
-    seed_index(loaded, index, "")
+    seed_index(loaded.tree, index, "")
     await index.invalidate()
     with _point([]) as post, _walk(file_row("a.txt", 7)) as walk:
         await stat(loaded, ps("a.txt"), index)

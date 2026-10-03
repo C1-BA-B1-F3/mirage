@@ -22,6 +22,7 @@ import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import { diskError } from './errors.ts'
+import { folderVersion, wallNs } from './listing_version.ts'
 import { norm, readEntries, resolveInside } from './utils.ts'
 
 export async function readdir(
@@ -48,7 +49,12 @@ export async function readdir(
   }
   const full = await resolveInside(accessor.root, path, virtual)
   let entries: Dirent[]
+  let version: string | null = null
   try {
+    // The version is read before the scan: a change landing during the scan
+    // then leaves the stored version behind the folder's, and the next check
+    // re-lists instead of serving rows that missed it.
+    if (accessor.folderVersions) version = await folderVersion(full, wallNs())
     // A host symlink is not an entry of the mount (see resolveInside).
     entries = await readEntries(full)
   } catch (err) {
@@ -74,7 +80,7 @@ export async function readdir(
         resourceType: entry.isDirectory() ? ResourceType.FOLDER : ResourceType.FILE,
       }),
     ])
-    await index.setDir(virtualKey, indexEntries)
+    await index.setDir(virtualKey, indexEntries, null, { version })
   }
   return virtualEntries
 }

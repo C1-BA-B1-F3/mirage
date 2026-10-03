@@ -21,6 +21,22 @@ When the check cannot be made — the backend supplies no fingerprint, registers
 
 A fresh directory listing proves a child absent only when that child is not listed. If a listed child's metadata has been evicted independently, object-store stat fetches it from the backend.
 
+### Listings under `fresh`
+
+`fresh` also checks cached listings. A live cached listing (one still inside the mount's `ttl`) is served when one of these holds, checked in this order; otherwise the folder is listed again:
+
+1. The running command wrote it. A read outside any command (FUSE, `ws.vfs`, an agent's file tools) trusts a listing written in the last second instead.
+2. The mount is a GitHub mount pinned to a full 40- or 64-hex commit sha, and the listing was fetched at that sha. This costs no request: github.com refuses a branch or tag named with 40 or 64 hex characters, so such a ref always names a commit (a GitHub Enterprise host is assumed to do the same). A Hugging Face Hub mount never pins: a full-sha revision is checked every command like a branch, since a branch or tag named like the sha could take the name, and mirage does not assume which one the Hub resolves.
+3. The backend versions its listings, and the version stored with the listing still matches the backend's.
+
+Which backends version their listings:
+
+- **GitHub, HF Models, HF Datasets, HF Spaces:** one version for the whole mount, the head commit the ref or revision resolves to. On the Hub a mount with a `key_prefix` stores that commit joined with its key prefix, so mounts of different subtrees of one repository that share an index never share a version. A command sends one small check for the mount (GitHub: a shallow `git/trees/{ref}`; the Hub: `revision/{rev}?expand[]=sha`, about 110 bytes) and then serves every cached listing of the mount at that commit. A moved head re-lists, which on these backends means one full tree fetch. A GitHub repo whose recursive tree comes back truncated stores no version and still re-lists each folder per command.
+- **Disk:** each folder's own version, from its device, inode, change time and modified time. A command pays one local stat per listed folder instead of a scan. A folder changed in the last 2 seconds stores no version and re-lists until it has been quiet that long. This assumes a local POSIX filesystem; set `folder_versions: false` for a network or FUSE root, where a folder's change time may not move (see [Disk](/python/vfs/disk)).
+- **Every other backend:** no version. A cached listing is re-listed once per command, then trusted for the rest of that command. Google Drive and OneDrive, for example, expose no folder value that moves when a folder's entries change.
+
+One check answers for a whole command: later listings of the same mount (or, on disk, the same folder) in that command reuse it, and concurrent commands share a check only when it was sent after they started. Outside a command, a matching check is trusted for the same one-second window as a listing. A moved version, a missing path or a check that fails all re-list; the stored listing is kept for the re-list to compare against, never cleared. `bounded` mounts never check.
+
 ## Stores
 
 Each layer is a pluggable store with two built-ins:
@@ -158,7 +174,11 @@ removes that directory's token; subtree invalidation removes tokens under that
 path, preserving fresh listings outside a scoped invalidation.
 Like RAM, these records retain expired listings until explicit removal; they do
 not use Redis TTL deletion. Redis server eviction can still turn any cached
-record into a miss. Configure Redis `maxmemory` for server-side size limits.
+record into a miss. A listing is served as stored even when one of its
+children's rows was evicted; GitHub and the Hub refill the tree once when a
+stat or read of that listed child finds no row, and a name the listing does
+not hold stays absent with no refill. Configure Redis `maxmemory` for
+server-side size limits.
 
 The layout is not versioned and earlier layouts are not read. Upgrade every
 worker that shares an index together, and flush the key prefix first

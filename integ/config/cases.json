@@ -402,6 +402,78 @@
       "expect": {
         "refused": "gcal: start"
       }
+    },
+    {
+      "id": "gcal_bucket_days_round_trips",
+      "vfs": "gcal",
+      "config": {
+        "access_token": "t",
+        "bucket_days": 7
+      },
+      "expect": {
+        "state": {
+          "bucket_days": 7
+        }
+      }
+    },
+    {
+      "id": "gcal_bucket_days_is_1_7_or_30",
+      "vfs": "gcal",
+      "config": {
+        "access_token": "t",
+        "bucket_days": 14
+      },
+      "expect": {
+        "refused": "gcal: bucket"
+      }
+    },
+    {
+      "id": "disk_folder_versions_default_on",
+      "vfs": "disk",
+      "config": {
+        "root": "/tmp/mirage-integ-config-disk"
+      },
+      "expect": {
+        "state": {
+          "folder_versions": true
+        }
+      }
+    },
+    {
+      "id": "disk_folder_versions_can_be_turned_off",
+      "vfs": "disk",
+      "config": {
+        "root": "/tmp/mirage-integ-config-disk",
+        "folder_versions": false
+      },
+      "expect": {
+        "state": {
+          "folder_versions": false
+        }
+      }
+    },
+    {
+      "id": "disk_folder_versions_must_be_a_boolean",
+      "vfs": "disk",
+      "config": {
+        "root": "/tmp/mirage-integ-config-disk",
+        "folder_versions": "no"
+      },
+      "expect": {
+        "refused": "disk: folder_versions: must be a boolean"
+      }
+    },
+    {
+      "id": "disk_unknown_key_is_refused_before_a_bad_folder_versions",
+      "vfs": "disk",
+      "config": {
+        "root": "/tmp/mirage-integ-config-disk",
+        "folder_versions": "no",
+        "bogus": 1
+      },
+      "expect": {
+        "refused": "bogus"
+      }
     }
   ]
 }

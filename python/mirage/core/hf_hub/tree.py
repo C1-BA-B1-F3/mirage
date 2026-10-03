@@ -40,6 +40,7 @@ from mirage.core.hf_hub.constants import (
     TREE_PAGE_SIZE,
     TREE_PAGE_SIZE_EXPANDED,
 )
+from mirage.core.hf_hub.repo import head_commit, mount_version
 from mirage.core.hf_hub.tree_entry import TreeEntry
 from mirage.utils import key_prefix as kp
 
@@ -118,16 +119,19 @@ def page_params(expand: bool) -> dict[str, Any]:
     }
 
 
-def tree_url(accessor: HfHubAccessor) -> str:
-    """The tree endpoint for the mount's revision and key prefix.
+def tree_url(accessor: HfHubAccessor, revision: str | None = None) -> str:
+    """The tree endpoint for a revision and the mount's key prefix.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
+        revision (str | None): the revision to walk at, the mount's own
+            when None. A refill passes the commit its head resolved to, so
+            the rows it stores are the ones that version names.
 
     Returns:
         str: the absolute URL.
     """
-    suffix = f"/tree/{rev_segment(accessor.revision)}"
+    suffix = f"/tree/{rev_segment(revision or accessor.revision)}"
     # The prefix is normalized with a trailing slash, which the tree
     # endpoint reads as a path segment of its own.
     stem = accessor.key_prefix.strip("/")
@@ -310,7 +314,9 @@ async def walk_pages(
     return url
 
 
-async def fetch_tree(accessor: HfHubAccessor) -> dict[str, TreeEntry]:
+async def fetch_tree(
+    accessor: HfHubAccessor, revision: str | None = None
+) -> dict[str, TreeEntry]:
     """Every path under the mount's subtree, in one paged walk.
 
     ``recursive=true`` returns the whole subtree. Size, oid and the LFS
@@ -331,6 +337,8 @@ async def fetch_tree(accessor: HfHubAccessor) -> dict[str, TreeEntry]:
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
+        revision (str | None): the revision to walk at, the mount's own
+            when None.
 
     Returns:
         dict[str, TreeEntry]: entries keyed by path relative to the
@@ -340,7 +348,7 @@ async def fetch_tree(accessor: HfHubAccessor) -> dict[str, TreeEntry]:
         HfHubError: the Hub refused for any reason but a missing subtree
             on the first page, or the listing ran past the page ceiling.
     """
-    url = tree_url(accessor)
+    url = tree_url(accessor, revision)
     expand = accessor.expand_commits
     result: dict[str, TreeEntry] = {}
     if expand is not False:
@@ -424,6 +432,7 @@ def index_rows(
         while head:
             dirs.setdefault(stem + "/" + head, [])
             head = head.rsplit("/", 1)[0] if "/" in head else ""
+    _list_implied(dirs, stem or "/")
     entries = {
         (parent.rstrip("/") + "/" + name): entry
         for parent, rows in dirs.items()
@@ -436,24 +445,64 @@ def index_rows(
     return entries, children
 
 
-def seed_index(
-    accessor: HfHubAccessor,
-    index: IndexCacheStore,
-    prefix: str,
-) -> IndexSnapshot:
-    """Write the accessor's tree into ``index`` under ``prefix``.
+def _list_implied(
+    dirs: dict[str, list[tuple[str, IndexEntry]]], root: str
+) -> None:
+    """Give every directory the tree only implies a row in its parent.
+
+    A directory seen only as some path's parent has a listing of its own
+    but no row naming it, so its parent would not list it and a stat of it
+    would find no entry. Every listed path must have a row: a lookup that
+    finds a listed name with none takes it as evicted and refills.
 
     Args:
-        accessor (HfHubAccessor): the mount's accessor, holding the tree.
+        dirs (dict[str, list[tuple[str, IndexEntry]]]): each directory's
+            rows, keyed by mount-absolute path; completed in place.
+        root (str): the mount root's key, which no parent lists.
+    """
+    named = {
+        parent.rstrip("/") + "/" + name
+        for parent, rows in dirs.items()
+        for name, _ in rows
+    }
+    for key in sorted(dirs):
+        if key == root or key in named:
+            continue
+        parent, name = key.rsplit("/", 1)
+        dirs[parent or "/"].append(
+            (name, IndexEntry(id="", name=name, resource_type="folder"))
+        )
+
+
+def seed_index(
+    tree: dict[str, TreeEntry],
+    index: IndexCacheStore,
+    prefix: str,
+    version: str | None = None,
+) -> IndexSnapshot:
+    """Write one fetched tree into ``index`` under ``prefix``.
+
+    The tree is the caller's own fetch, never ``accessor.tree`` re-read
+    after an await: the watcher replaces that with no lock, and its rows
+    may be at another head than the ``version`` stamped here.
+
+    Args:
+        tree (dict[str, TreeEntry]): the tree, walked at ``version``.
         index (IndexCacheStore): the index to seed.
         prefix (str): the mount prefix the keys are built against.
+        version (str | None): the mount version of the head the tree was
+            walked at (``mount_version``), stamped on every listing; None
+            stores them unversioned.
 
     Returns:
         IndexSnapshot: the rows it wrote.
     """
-    entries, children = index_rows(accessor.tree, prefix)
+    entries, children = index_rows(tree, prefix)
     index.seed(
-        entries, children, datetime.now(timezone.utc) + timedelta(days=365)
+        entries,
+        children,
+        datetime.now(timezone.utc) + timedelta(days=365),
+        version=version,
     )
     return IndexSnapshot(entries=entries, children=children)
 
@@ -504,14 +553,22 @@ async def refill_snapshot(
     if index is NULL_INDEX:
         return None
     previous = dict(accessor.tree) if accessor.tree_loaded else None
-    tree = await fetch_tree(accessor)
+    # The head first, and the tree walked at the commit it names: the
+    # version stored is then the one these rows are at, never a later one
+    # a commit landing between the two requests would give. The head
+    # failing is the refill failing. "" (a Hub that names none) walks the
+    # branch and stores no version.
+    head = await head_commit(accessor) or None
+    tree = await fetch_tree(accessor, head)
     accessor.tree = tree
     accessor.tree_loaded = True
     accessor.rows_cache = None
     accessor.refills += 1
     # Refilling replaces the snapshot; merging would retain deleted paths.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    snapshot = seed_index(accessor, index, prefix)
+    snapshot = seed_index(
+        tree, index, prefix, mount_version(head, accessor.key_prefix)
+    )
     if previous is not None:
         await index.report_gone(
             departed(previous.items(), tree, prefix, _is_folder)

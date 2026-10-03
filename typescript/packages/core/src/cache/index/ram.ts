@@ -33,6 +33,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
   private readonly expiry = new Map<string, number>()
   private readonly partial = new Set<string>()
   private readonly tombstones = new Map<string, Evicted[]>()
+  private readonly versions = new Map<string, string>()
   private readonly lock = new KeyLock()
 
   constructor(options: { ttl?: number } = {}) {
@@ -44,6 +45,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
+    version: string | null = null,
   ): void {
     const nowIso = toIsoZ(new Date())
     for (const [path, entry] of entries) {
@@ -56,7 +58,13 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       this.children.set(path, [...keys])
       this.expiry.set(path, expiresAt.getTime())
       this.partial.delete(path)
+      this.stamp(path, version)
     }
+  }
+
+  private stamp(vfsPath: string, version: string | null): void {
+    if (version === null) this.versions.delete(vfsPath)
+    else this.versions.set(vfsPath, version)
   }
 
   entries(): Promise<Map<string, IndexEntry>> {
@@ -83,8 +91,9 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     if (exp === undefined) return Promise.resolve({ status: LookupStatus.NOT_FOUND })
     if (Date.now() >= exp) return Promise.resolve({ status: LookupStatus.EXPIRED })
     const children = this.children.get(vfsPath) ?? []
-    if (this.partial.has(vfsPath)) return Promise.resolve({ partialEntries: children })
-    return Promise.resolve({ entries: children })
+    const version = this.versions.get(vfsPath) ?? null
+    if (this.partial.has(vfsPath)) return Promise.resolve({ partialEntries: children, version })
+    return Promise.resolve({ entries: children, version })
   }
 
   setDir(
@@ -100,6 +109,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       false,
       options.window !== true,
       options.excluded ?? [],
+      options.version ?? null,
     )
   }
 
@@ -118,6 +128,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     partial: boolean,
     evict: boolean,
     excluded: readonly string[] = [],
+    version: string | null = null,
   ): Promise<Evicted[]> {
     return this.lock.withLock(vfsPath, () => {
       const now = Date.now()
@@ -160,6 +171,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       for (const [path, row] of rows) this.entryMap.set(path, row)
       this.children.set(vfsPath, childKeys)
       this.expiry.set(vfsPath, exp)
+      this.stamp(vfsPath, partial ? null : version)
       if (partial) this.partial.add(vfsPath)
       else this.partial.delete(vfsPath)
       return Promise.resolve(gone)
@@ -210,6 +222,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     this.expiry.delete(vfsPath)
     this.children.delete(vfsPath)
     this.partial.delete(vfsPath)
+    this.versions.delete(vfsPath)
     return Promise.resolve()
   }
 
@@ -243,6 +256,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       if (underPath(key, vfsPath) && !excluded.some((prefix) => underPath(key, prefix))) {
         this.expiry.delete(key)
         this.partial.delete(key)
+        this.versions.delete(key)
       }
     }
   }
@@ -259,7 +273,20 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     this.expiry.clear()
     this.partial.clear()
     this.tombstones.clear()
+    this.versions.clear()
     this.lock.clear()
     return Promise.resolve()
   }
 }
+
+/**
+ * The empty, throwaway store the listing gate stats a version through.
+ *
+ * A root stat asks the backend for its head only through this store. Through
+ * any other index it names no version and reads nothing, so a getattr of the
+ * root never sends a request or reads the index; the gate passes this store
+ * to say a request is what it wants.
+ *
+ * Mirrors Python's `ListingCheckStore`.
+ */
+export class ListingCheckStore extends RAMIndexCacheStore {}

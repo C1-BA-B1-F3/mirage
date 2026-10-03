@@ -422,6 +422,10 @@ function treeListing(
 // resolves a ref to a commit then asks for the tree by that sha: git accepts
 // it, since a commit names its root tree.
 //
+// A ref's tree answers the commit it resolved to as its top-level sha, the way
+// GitHub does (measured 2026-09-30), so a ref and `{ref}:` answer different
+// shas: the commit, and its root tree.
+//
 // An empty repository is answered first, for every form of the request: the
 // recursive and shallow tree of a ref and one directory of it all 409, measured
 // against GitHub (2026-09-27), whatever the ref names.
@@ -449,9 +453,11 @@ const gitTree = withRepo(async (ctx, repo) => {
     if (sha === undefined) return fail(404, 'Not Found')
     return treeListing(repo, tree, at, sha, recursive)
   }
-  const tree = await snapshotOf(ctx.db, ctx.tenant, repo, ref)
+  const resolved = await resolveRef(ctx.db, ctx.tenant, repo, ref)
+  const tree = resolved === null ? null : await snapshotAt(ctx.db, ctx.tenant, repo, resolved)
   if (tree !== null) {
-    return treeListing(repo, tree, '', treeIdOf(tree.files, tree.links), recursive)
+    const head = resolved?.history[0]?.sha ?? treeIdOf(tree.files, tree.links)
+    return treeListing(repo, tree, '', head, recursive)
   }
   const named = await treeById(ctx.db, ctx.tenant, repo, ref)
   if (named === null) return fail(404, 'Not Found')

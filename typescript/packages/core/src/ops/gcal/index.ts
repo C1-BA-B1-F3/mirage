@@ -16,11 +16,8 @@ import { IO } from '../../commands/builtin/gcal/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
-import { readOp } from './read.ts'
 
-// The only read is the rendered filetype op, so the factory's plain read is
-// suppressed via overrides.
-export const GCAL_OPS: readonly RegisteredOp[] = [
-  ...makeGenericOps(VFSName.GCAL, IO, { overrides: new Set(['read']) }),
-  readOp,
-]
+// The read is the by-VFS one, unlike the gdocs family's: an event payload is
+// the file itself, not a rendering of stored bytes, so there is no
+// filetype-scoped form for the op door to select.
+export const GCAL_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.GCAL, IO)

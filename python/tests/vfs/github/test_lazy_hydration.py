@@ -39,7 +39,7 @@ def tree_calls(monkeypatch):
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
         calls.append((owner, repo, ref))
-        return dict(TREE), False
+        return dict(TREE), False, None
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", _fetch_tree)
     return calls
@@ -95,7 +95,7 @@ async def test_an_empty_repo_hydrates_once(tree_calls, monkeypatch):
     # root and then the fallback runs anyway.
     async def _empty(config, owner, repo, ref, session=None):
         tree_calls.append((owner, repo, ref))
-        return {}, False
+        return {}, False, None
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", _empty)
     vfs = GitHubVFS(CONFIG, "o", "r", "main")
@@ -186,9 +186,11 @@ async def test_always_reads_current_github_blob_after_probe(
     sha = "v1"
 
     async def fetch_tree(*args, **kwargs):
-        return {
-            "f.txt": TreeEntry(path="f.txt", type="blob", sha=sha, size=2)
-        }, False
+        return (
+            {"f.txt": TreeEntry(path="f.txt", type="blob", sha=sha, size=2)},
+            False,
+            None,
+        )
 
     async def fetch_dir_page(*args, **kwargs):
         return [TreeEntry(path="f.txt", type="blob", sha=sha, size=2)], False

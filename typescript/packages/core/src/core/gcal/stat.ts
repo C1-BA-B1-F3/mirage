@@ -20,7 +20,7 @@ import { enoent } from '../../utils/errors.ts'
 import { resolveEntry } from '../hierarchy/probe.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
-import { calendarIndex, readdir, bucketZone, scopedDayBounds } from './readdir.ts'
+import { calendarIndex, readdir, bucketZone, scopedBucket } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 function dirStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileStat {
@@ -39,28 +39,28 @@ function fileStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileS
 }
 
 /**
- * Stat a day directory, which resolves whether or not it is listed.
+ * Stat a bucket directory, which resolves whether or not it is listed.
  *
- * A well-formed day under a calendar that exists is a directory whether or
- * not it holds an event: the range query over that day is positive proof of
- * what is there, so an event-free day (or one outside the default listing
- * window) is an empty directory rather than a miss.
+ * A bucket on the mount's grid under a calendar that exists is a directory
+ * whether or not it holds an event: the range query over it is positive
+ * proof of what is there, so an event-free bucket (or one outside the
+ * default listing window) is an empty directory rather than a miss.
  */
-async function statDay(
+async function statBucket(
   accessor: GCalAccessor,
   match: ScopeMatch,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
   const calendars = await calendarIndex(accessor)
-  scopedDayBounds(accessor, match.slots.day ?? '', bucketZone(accessor, calendars), path.virtual)
+  scopedBucket(accessor, match.slots.bucket ?? '', bucketZone(accessor, calendars), path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
   // Ask the calendar list rather than the index: the index only knows the
-  // calendar once the ROOT has been listed, which a stat of a day two
+  // calendar once the ROOT has been listed, which a stat of a bucket two
   // levels down never triggers.
   if (!calendars.has(match.slots.calendar ?? '')) throw enoent(path.virtual)
-  return new FileStat({ name: match.slots.day ?? '', type: FileType.DIRECTORY })
+  return new FileStat({ name: match.slots.bucket ?? '', type: FileType.DIRECTORY })
 }
 
 export const stat = makeStat(detectScope, readdir, {
@@ -69,5 +69,5 @@ export const stat = makeStat(detectScope, readdir, {
     calendar_json: fileStat,
     event: fileStat,
   },
-  overrides: { day: statDay },
+  overrides: { bucket: statBucket },
 })

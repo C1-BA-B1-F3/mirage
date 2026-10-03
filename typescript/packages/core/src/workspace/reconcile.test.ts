@@ -19,6 +19,8 @@ import { stat as githubStat } from '../core/github/stat.ts'
 import { IndexEntry } from '../cache/index/config.ts'
 import { LISTING_TRUST_WINDOW } from '../cache/index/constants.ts'
 import { shiftPerformanceNow } from '../cache/_test_util.ts'
+import { RAMIndexCacheStore } from '../cache/index/ram.ts'
+import type { IndexCacheStore } from '../cache/index/store.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import {
   type ReadSpec,
@@ -38,6 +40,7 @@ import { Reconciler } from './reconcile.ts'
 import { runInCommandScope } from '../cache/index/scope.ts'
 import { ops } from '../test-utils.ts'
 import { Workspace } from './workspace/workspace.ts'
+import { VersionedVFS, versionedWorkspace } from './fixtures/versioned_vfs.ts'
 
 function enoent(path: string): Error {
   return Object.assign(new Error(path), { code: 'ENOENT' })
@@ -151,7 +154,7 @@ describe('Reconciler', () => {
     const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
     const mount = mountOf(ws, '/data/d')
     const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
-    expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+    expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(true)
     await ws.close()
   })
 
@@ -166,14 +169,14 @@ describe('Reconciler', () => {
       const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
       const index = mount.index
       await index.setDir('/data/d', [])
-      expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+      expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(true)
       clock.advance(LISTING_TRUST_WINDOW * 1000)
-      expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+      expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(false)
       await runInCommandScope(async () => {
-        expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+        expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(false)
         await index.setDir('/data/d', [])
-        expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
-        expect(await rec.mayServeListing(mount, '/data/other')).toBe(false)
+        expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(true)
+        expect(await rec.mayServeListing(mount, '/data/other', null)).toBe(false)
       })
     } finally {
       clock.spy.mockRestore()
@@ -760,5 +763,273 @@ describe('the gate reuses what routing got from the backend', () => {
     } finally {
       await ws.close()
     }
+  })
+})
+
+describe('the listing version gate', () => {
+  // The raw store, so the write is not one the running command made.
+  async function store(mount: MountEntry, folder: string, version: string | null): Promise<void> {
+    await mount.indexStore.setDir(folder, [], null, { version })
+  }
+
+  async function inCommand(
+    rec: Reconciler,
+    mount: MountEntry,
+    folder: string,
+    version: string | null,
+  ): Promise<boolean> {
+    return runInCommandScope(() => rec.mayServeListing(mount, folder, version))
+  }
+
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 50; i += 1) await Promise.resolve()
+  }
+
+  async function withVersioned(
+    vfs: VersionedVFS,
+    body: (ctx: ReturnType<typeof versionedWorkspace>) => Promise<void>,
+  ): Promise<void> {
+    const ctx = versionedWorkspace(vfs)
+    try {
+      await body(ctx)
+    } finally {
+      vfs.release()
+      vi.restoreAllMocks()
+      await ctx.ws.close()
+    }
+  }
+
+  it("trusts this command's own listing unchecked", async () => {
+    const vfs = new VersionedVFS('mount')
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await runInCommandScope(async () => {
+        await mount.index.setDir('/m/a', [], null, { version: 'v1' })
+        expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
+      })
+      expect(vfs.stats).toEqual([])
+    })
+  })
+
+  it('never checks a mount without versions', async () => {
+    const vfs = new VersionedVFS('none')
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
+      expect(vfs.stats).toEqual([])
+    })
+  })
+
+  it('never checks a listing stored without a version', async () => {
+    const vfs = new VersionedVFS('mount')
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', null)
+      expect(await inCommand(rec, mount, '/m/a', null)).toBe(false)
+      expect(vfs.stats).toEqual([])
+    })
+  })
+
+  it('refuses a moved version and keeps the listing', async () => {
+    // A refusal leaves the listing stored for the re-list to diff, and the
+    // index is never cleared.
+    const vfs = new VersionedVFS('mount', 'v2')
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      await mount.indexStore.put(
+        '/m/f.txt',
+        new IndexEntry({ id: 'f', name: 'f.txt', resourceType: 'file' }),
+      )
+      expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
+      expect(vfs.stats).toEqual(['/m'])
+      const kept = await mount.indexStore.listDir('/m/a')
+      expect(kept.entries).toEqual([])
+      expect(kept.version).toBe('v1')
+      expect((await mount.indexStore.get('/m/f.txt')).entry).not.toBeNull()
+    })
+  })
+
+  it.each(['enoent', 'none'])('refuses what the check cannot confirm (%s)', async (outcome) => {
+    const vfs = new VersionedVFS('mount')
+    if (outcome === 'enoent') vfs.rejects = enoent('/m')
+    else vfs.remote = null
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
+      expect(vfs.stats).toEqual(['/m'])
+      expect((await mount.indexStore.listDir('/m/a')).version).toBe('v1')
+      const logged = warn.mock.calls.map((c) => String(c[0]))
+      expect(logged).toEqual([])
+    })
+  })
+
+  it.each([
+    ['TypeError', () => new TypeError('bug')],
+    ['ReferenceError', () => new ReferenceError('bug')],
+  ])('lets a programming error escape (%s)', async (_name, make) => {
+    const vfs = new VersionedVFS('mount')
+    vfs.rejects = make()
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      await expect(inCommand(rec, mount, '/m/a', 'v1')).rejects.toThrow('bug')
+    })
+  })
+
+  it('refuses silently without a stat op', async () => {
+    const vfs = new VersionedVFS('mount')
+    vfs.hasStat = false
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await withVersioned(vfs, async ({ mount, rec, asked }) => {
+      await store(mount, '/m/a', 'v1')
+      expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
+      expect(asked).toEqual(['stat'])
+      expect(warn).not.toHaveBeenCalled()
+    })
+  })
+
+  it('never shares a check sent before the command began', async () => {
+    // Command C starts after A's check was sent, so that check may predate a
+    // change C must see: C sends its own.
+    const vfs = new VersionedVFS('mount')
+    vfs.hold()
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      let sent = vfs.sent()
+      const first = inCommand(rec, mount, '/m/a', 'v1')
+      await sent
+      sent = vfs.sent()
+      const second = inCommand(rec, mount, '/m/a', 'v1')
+      await sent
+      vfs.release()
+      expect(await first).toBe(true)
+      expect(await second).toBe(true)
+      expect(vfs.stats).toEqual(['/m', '/m'])
+    })
+  })
+
+  it('stamps a check when it is sent', async () => {
+    // Command D starts while A's check is in flight and gates after it lands.
+    // The check was sent before D began, so its answer is not D's.
+    const vfs = new VersionedVFS('mount')
+    vfs.hold()
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      const sent = vfs.sent()
+      const first = inCommand(rec, mount, '/m/a', 'v1')
+      await sent
+      await runInCommandScope(async () => {
+        vfs.release()
+        expect(await first).toBe(true)
+        expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
+      })
+      expect(vfs.stats).toEqual(['/m', '/m'])
+    })
+  })
+
+  function gateWhenTold(
+    rec: Reconciler,
+    mount: MountEntry,
+    entered: () => void,
+    go: Promise<void>,
+  ): Promise<boolean> {
+    return runInCommandScope(async () => {
+      entered()
+      await go
+      return rec.mayServeListing(mount, '/m/a', 'v1')
+    })
+  }
+
+  function signals(n: number): { all: Promise<unknown>; marks: (() => void)[] } {
+    const marks: (() => void)[] = []
+    const all = Promise.all(
+      Array.from(
+        { length: n },
+        () =>
+          new Promise<void>((resolve) => {
+            marks.push(resolve)
+          }),
+      ),
+    )
+    return { all, marks }
+  }
+
+  it('shares one check among commands already running', async () => {
+    const vfs = new VersionedVFS('mount')
+    vfs.hold()
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      let open = (): void => undefined
+      const go = new Promise<void>((resolve) => {
+        open = resolve
+      })
+      const { all, marks } = signals(7)
+      const gates = marks.map((mark) => gateWhenTold(rec, mount, mark, go))
+      await all
+      const sent = vfs.sent()
+      open()
+      await sent
+      await settle()
+      vfs.release()
+      expect(await Promise.all(gates)).toEqual(Array(7).fill(true))
+      expect(vfs.stats).toEqual(['/m'])
+    })
+  })
+
+  it('delivers a shared failure to each waiter on its own', async () => {
+    // The python twin cancels one waiter; here the analogue is that the one
+    // shared check's rejection is classified by each waiter, so none of them
+    // throws and none is left hanging.
+    const vfs = new VersionedVFS('mount')
+    vfs.hold()
+    vfs.rejects = new Error('backend down')
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      let open = (): void => undefined
+      const go = new Promise<void>((resolve) => {
+        open = resolve
+      })
+      const { all, marks } = signals(2)
+      const gates = marks.map((mark) => gateWhenTold(rec, mount, mark, go))
+      await all
+      const sent = vfs.sent()
+      open()
+      await sent
+      await settle()
+      vfs.release()
+      expect(await Promise.all(gates)).toEqual([false, false])
+      expect(vfs.stats).toEqual(['/m'])
+    })
+  })
+
+  it('outside a command reuses a check for the window', async () => {
+    const clock = shiftPerformanceNow()
+    const vfs = new VersionedVFS('mount')
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
+      expect(vfs.stats).toEqual(['/m'])
+      clock.advance((LISTING_TRUST_WINDOW * 1000) / 2)
+      expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
+      expect(vfs.stats).toEqual(['/m'])
+      clock.advance(LISTING_TRUST_WINDOW * 1000)
+      expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
+      expect(vfs.stats).toEqual(['/m', '/m'])
+    })
+  })
+
+  it('forgets its checks when the store changes', async () => {
+    const vfs = new VersionedVFS('mount')
+    await withVersioned(vfs, async ({ mount }) => {
+      await store(mount, '/m/a', 'v1')
+      await runInCommandScope(async () => {
+        expect((await mount.index.listDir('/m/a')).entries).toEqual([])
+        expect(vfs.stats).toEqual(['/m'])
+        const replacement = new RAMIndexCacheStore({ ttl: 600 })
+        await replacement.setDir('/m/a', [], null, { version: 'v1' })
+        ;(mount as { indexStore: IndexCacheStore }).indexStore = replacement
+        expect((await mount.index.listDir('/m/a')).entries).toEqual([])
+      })
+      expect(vfs.stats).toEqual(['/m', '/m'])
+    })
   })
 })

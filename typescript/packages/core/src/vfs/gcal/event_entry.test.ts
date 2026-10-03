@@ -30,74 +30,77 @@ function byteLength(value: string): number {
 }
 
 describe('gcal event entry naming', () => {
-  it('leads with the id', () => {
-    const name = makeEventFilename(EVENT_ID, '0900-1030', 'PhD_Defense')
-    expect(name).toBe(`${EVENT_ID}__0900-1030_PhD_Defense.gcal.json`)
-    expect(parseEventFilename(name)).toEqual([EVENT_ID, '0900-1030'])
+  it.each([
+    ['PhD_Defense', null, `${EVENT_ID}__0900-1030_PhD_Defense.gcal.json`],
+    ['A__B_C', null, `${EVENT_ID}__0900-1030_A__B_C.gcal.json`],
+    ['PhD_Defense', '2026-08-11', `${EVENT_ID}__2026-08-11_0900-1030_PhD_Defense.gcal.json`],
+  ])('leads with the id and round trips %s on %s', (title, day, name) => {
+    expect(makeEventFilename(EVENT_ID, '0900-1030', title, day)).toBe(name)
+    expect(parseEventFilename(name)).toEqual([EVENT_ID, day])
   })
 
-  it('round trips a title holding underscores', () => {
-    const name = makeEventFilename(EVENT_ID, '1500-1600', 'A__B_C')
-    expect(parseEventFilename(name)).toEqual([EVENT_ID, '1500-1600'])
+  it.each([
+    'notes.txt',
+    'noseparator.gcal.json',
+    `${EVENT_ID}__090.gcal.json`,
+    `${EVENT_ID}__0900-1030x.gcal.json`,
+    `${EVENT_ID}__2026-08-11_090.gcal.json`,
+  ])('refuses %s, which has no time label', (name) => {
+    expect(() => parseEventFilename(name)).toThrow()
   })
 
-  it('rejects a non-event name', () => {
-    expect(() => parseEventFilename('notes.txt')).toThrow()
-    expect(() => parseEventFilename('noseparator.gcal.json')).toThrow()
-    expect(() => parseEventFilename(`${EVENT_ID}__090.gcal.json`)).toThrow()
-  })
-
-  it('trims a long ascii title to NAME_MAX', () => {
-    const name = makeEventFilename(EVENT_ID, '0900-1030', 'a'.repeat(400))
-    expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
-    expect(parseEventFilename(name)).toEqual([EVENT_ID, '0900-1030'])
-  })
-
-  it('trims a long CJK title by bytes, not characters', () => {
-    // 3 bytes per character: a character-counted budget would overflow
-    // NAME_MAX. gdocs/gsheets/gslides had exactly that bug until
-    // sanitizeLabel grew a byte budget.
-    const name = makeEventFilename(EVENT_ID, '0900-1030', '会'.repeat(200))
+  it.each([
+    ['ascii', 'a'.repeat(400), null],
+    ['ascii', 'a'.repeat(400), '2026-08-11'],
+    ['cjk', '会'.repeat(200), null],
+    ['cjk', '会'.repeat(200), '2026-08-11'],
+  ])('trims a long %s title by bytes to NAME_MAX (day %s)', (_kind, title, day) => {
+    // 3 bytes per CJK character: a character-counted budget would overflow
+    // NAME_MAX, the bug gdocs/gsheets/gslides had until sanitizeLabel grew a
+    // byte budget.
+    const name = makeEventFilename(EVENT_ID, '0900-1030', title, day)
     expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
     expect(name).not.toContain('�')
-    expect(parseEventFilename(name)).toEqual([EVENT_ID, '0900-1030'])
+    expect(parseEventFilename(name)).toEqual([EVENT_ID, day])
   })
 
   it('drops the title when a long id leaves no room', () => {
-    // 234 is the widest id that still names an event: the title is
-    // squeezed out entirely and id + separators + suffix lands exactly on
-    // NAME_MAX.
+    // 234 is the widest id that still names an event: the title is squeezed
+    // out and id + separators + suffix lands exactly on NAME_MAX.
     const longId = 'v'.repeat(234)
     const name = makeEventFilename(longId, '0900-1030', 'Some_Title')
-    expect(byteLength(name)).toBe(NAME_MAX_BYTES)
     expect(name).toBe(`${longId}__0900-1030.gcal.json`)
-    expect(parseEventFilename(name)).toEqual([longId, '0900-1030'])
+    expect(byteLength(name)).toBe(NAME_MAX_BYTES)
   })
 
   it('keeps an id too long to name rather than truncating it', () => {
     // The title is what gives, never the id: a trimmed id would stop
-    // addressing the event. Real Google ids are 26 chars, so this only
+    // addressing the event. Google's own ids are 26 chars, so this only
     // arises for a caller-supplied events.import id.
     const longId = 'v'.repeat(NAME_MAX_BYTES - 20)
     const name = makeEventFilename(longId, '0900-1030', 'Some Title')
     expect(byteLength(name)).toBeGreaterThan(NAME_MAX_BYTES)
-    expect(parseEventFilename(name)).toEqual([longId, '0900-1030'])
+    expect(parseEventFilename(name)).toEqual([longId, null])
   })
 
-  it('falls back by access role', () => {
-    expect(eventTitle('Standup')).toBe('Standup')
-    expect(eventTitle(null)).toBe('untitled')
-    expect(eventTitle('   ')).toBe('untitled')
-    expect(eventTitle(null, true)).toBe('busy')
+  it.each([
+    ['Standup', false, 'Standup'],
+    [null, false, 'untitled'],
+    ['   ', false, 'untitled'],
+    [null, true, 'busy'],
+  ])('titles %s (free/busy %s) as %s', (summary, freeBusy, title) => {
+    expect(eventTitle(summary, freeBusy)).toBe(title)
   })
 
-  it('keeps the primary alias', () => {
-    expect(makeCalendarDirname('integ@example.com', 'integ@example.com', true)).toBe(PRIMARY_DIR)
-  })
-
-  it('embeds the calendar id verbatim', () => {
-    const calId = 'en.usa#holiday@group.v.calendar.google.com'
-    const name = makeCalendarDirname('US Holidays', calId)
-    expect(name).toBe(`US_Holidays__${calId}`)
+  it.each([
+    ['integ@example.com', 'integ@example.com', true, PRIMARY_DIR],
+    [
+      'US Holidays',
+      'en.usa#holiday@group.v.calendar.google.com',
+      false,
+      'US_Holidays__en.usa#holiday@group.v.calendar.google.com',
+    ],
+  ])('names calendar %s by its alias or id', (summary, calId, primary, name) => {
+    expect(makeCalendarDirname(summary, calId, primary)).toBe(name)
   })
 })

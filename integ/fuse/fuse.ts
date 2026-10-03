@@ -12,10 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { rmSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { open, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import {
   FileStat,
   FileType,
@@ -31,6 +33,7 @@ import {
   type OpsResultContext,
   type Policy,
 } from '@struktoai/mirage-node'
+import { resolveFusermountBinary } from '@struktoai/mirage-node/fuse/mount'
 
 // Size-unknown probe: a stat wrapper simulates API-backed mounts (Linear,
 // Slack, Trello, ...) whose byte size is unknown until the content is
@@ -255,6 +258,46 @@ async function runSessionProbe(
   }
 }
 
+// Outside-unmount probe: an outside unmount leaves nothing to release, so
+// removing the mount must succeed with no unmount helper on PATH, and a new
+// mount at the same path must serve again.
+async function runExternalUnmountProbe(
+  result: Record<string, string | number | boolean | null>,
+): Promise<void> {
+  const data = new RAMVFS()
+  data.store.dirs.add('/')
+  data.store.files.set('/a.txt', new TextEncoder().encode('alpha\n'))
+  const mountpoint = mkdtempSync(join(tmpdir(), 'mirage-fuse-ext-'))
+  const ws = new Workspace({ '/x': data })
+  try {
+    await ws.addFuseMount('/x', mountpoint)
+    if (process.platform === 'darwin') {
+      await promisify(execFile)('diskutil', ['unmount', mountpoint])
+    } else {
+      await promisify(execFile)(resolveFusermountBinary() ?? 'fusermount', ['-u', mountpoint])
+    }
+    const path = process.env.PATH
+    process.env.PATH = ''
+    let released = false
+    try {
+      await ws.removeFuseMount('/x')
+      released = !('/x' in ws.fuseMountpoints)
+    } catch (err) {
+      result.external_unmount_error = String(err)
+    } finally {
+      process.env.PATH = path
+    }
+    let remounted = false
+    if (released) {
+      await ws.addFuseMount('/x', mountpoint)
+      remounted = (await readFile(`${mountpoint}/a.txt`, 'utf8')) === 'alpha\n'
+    }
+    result.external_unmount_remounts = released && remounted
+  } finally {
+    await ws.close()
+  }
+}
+
 async function main(): Promise<void> {
   const result: Record<string, string | number | boolean | null> = {}
   const enc = new TextEncoder()
@@ -337,6 +380,7 @@ async function main(): Promise<void> {
   await runPolicyProbe(result)
   await runLinkProbe(result)
   await runSessionProbe(result)
+  await runExternalUnmountProbe(result)
   process.stdout.write(JSON.stringify(result) + '\n')
 }
 

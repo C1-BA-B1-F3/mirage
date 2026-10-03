@@ -123,20 +123,17 @@ export class FuseManager {
       return
     }
     const mp = this.handle.mountpoint
-    try {
-      await this.handle.unmount()
-    } finally {
-      const cleanupEntry = this.cleanupEntry
-      if (cleanupEntry !== null) {
-        CLEANUP.unregister(cleanupEntry)
-        this.cleanupEntry = null
-      }
-      this.handle = null
-      removeMountpointIfOwned({
-        mountpoint: mp,
-        ownsMountpoint: cleanupEntry?.ownsMountpoint ?? false,
-      })
+    await this.handle.unmount()
+    const cleanupEntry = this.cleanupEntry
+    if (cleanupEntry !== null) {
+      CLEANUP.unregister(cleanupEntry)
+      this.cleanupEntry = null
     }
+    this.handle = null
+    removeMountpointIfOwned({
+      mountpoint: mp,
+      ownsMountpoint: cleanupEntry?.ownsMountpoint ?? false,
+    })
   }
 
   async close(): Promise<void> {

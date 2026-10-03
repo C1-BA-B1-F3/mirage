@@ -42,3 +42,5 @@ sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
 ```bash
 fusermount3 --version
 ```
+
+Only `fusermount3` is required: MIRAGE unmounts with `fusermount3` when the legacy `fusermount` is absent, as on Fedora, RHEL, Amazon Linux 2023, openSUSE and Alpine.

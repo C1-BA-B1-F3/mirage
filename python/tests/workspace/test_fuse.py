@@ -12,8 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import os
 import subprocess
+import sys
 import tempfile
+from unittest.mock import Mock
+
+import pytest
 
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -27,6 +32,10 @@ def _fake_mount(monkeypatch):
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "mirage.workspace.fuse.unmount_with_fusermount",
+        lambda _mountpoint: None,
+    )
 
 
 class TestFuseManager:
@@ -70,3 +79,44 @@ class TestFuseManager:
 
         assert not generated.exists()
         assert fm.mountpoint is None
+
+    def test_unmount_failure_keeps_mountpoint(self, monkeypatch, tmp_path):
+        _fake_mount(monkeypatch)
+        ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
+        fm = FuseManager()
+        fm.setup(ws._ops, prefix="/a/", mountpoint=str(tmp_path))
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            "mirage.workspace.fuse.unmount_with_fusermount",
+            Mock(side_effect=FileNotFoundError("cannot unmount")),
+        )
+
+        with pytest.raises(FileNotFoundError, match="cannot unmount"):
+            fm.unmount()
+        assert fm.mountpoint == str(tmp_path)
+
+    def test_mounts_and_unmounts_the_path_resolved_at_mount(
+        self, monkeypatch, tmp_path
+    ):
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real)
+        _fake_mount(monkeypatch)
+        mounted = Mock()
+        monkeypatch.setattr("mirage.workspace.fuse.mount_background", mounted)
+        monkeypatch.setattr(sys, "platform", "linux")
+        ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
+        fm = FuseManager()
+        fm.setup(ws._ops, prefix="/a/", mountpoint=str(link / "mp"))
+        link.unlink()
+        unmount = Mock()
+        monkeypatch.setattr(
+            "mirage.workspace.fuse.unmount_with_fusermount", unmount
+        )
+
+        fm.unmount()
+
+        resolved = os.path.join(os.path.realpath(real), "mp")
+        assert mounted.call_args.args[1] == resolved
+        unmount.assert_called_once_with(resolved)

@@ -27,7 +27,8 @@ import { NO_WRITE, planFlush, type FlushKind } from './flush.ts'
  */
 export class FileHandle {
   readonly path: string
-  buf: Uint8Array
+  private _buf: Uint8Array
+  private _length: number
   pos = 0
   readonly writable: boolean
   readonly baseLen: number
@@ -36,9 +37,15 @@ export class FileHandle {
 
   constructor(path: string, buf: Uint8Array, writable = false) {
     this.path = path
-    this.buf = buf
+    this._buf = buf
+    this._length = buf.length
     this.writable = writable
     this.baseLen = buf.length
+  }
+
+  /** The used bytes of the backing buffer (capacity may exceed this view). */
+  get buf(): Uint8Array {
+    return this._buf.subarray(0, this._length)
   }
 
   /**
@@ -47,7 +54,8 @@ export class FileHandle {
    * Args:
    *   path: guest-absolute virtual path.
    *   data: the file's content at open (empty when the open created
-   *     or truncated it).
+   *     or truncated it). Copied, so the handle's writes never reach
+   *     the caller's array.
    *   mode: whether writes are accepted, and whether the position
    *     starts at the end.
    */
@@ -56,7 +64,7 @@ export class FileHandle {
     data: Uint8Array,
     mode: { writable: boolean; append: boolean },
   ): FileHandle {
-    const handle = new FileHandle(path, data, mode.writable)
+    const handle = new FileHandle(path, data.slice(), mode.writable)
     if (mode.append) handle.pos = data.length
     return handle
   }
@@ -69,17 +77,34 @@ export class FileHandle {
    *     position past the end reads empty and stays.
    */
   read(size: number | null): Uint8Array {
-    const end =
-      size === null || size < 0 ? this.buf.length : Math.min(this.buf.length, this.pos + size)
-    const chunk = this.buf.slice(this.pos, end)
+    const end = size === null || size < 0 ? this._length : Math.min(this._length, this.pos + size)
+    const chunk = this._buf.slice(this.pos, end)
     this.pos += chunk.length
     return chunk
   }
 
   /** Read at an explicit offset without moving the position. */
   pread(offset: number, size: number): Uint8Array {
-    return this.buf.slice(offset, offset + size)
+    return this._buf.slice(offset, Math.min(offset + size, this._length))
   }
+
+  /**
+   * Grow the backing buffer to at least `needed` bytes, doubling the
+   * capacity each time so N appends cost O(N) instead of O(N²).
+   */
+  private _grow(needed: number): void {
+    if (needed <= this._buf.length) return
+    let capacity = this._buf.length
+    if (capacity === 0) capacity = 4096
+    while (capacity < needed) capacity *= 2
+    const grown = new Uint8Array(capacity)
+    grown.set(this._buf.subarray(0, this._length))
+    this._buf = grown
+    this._growCount++
+  }
+
+  /** Internal counter for tests to verify amortized growth. */
+  _growCount = 0
 
   /**
    * Splice bytes in at an offset without moving the position.
@@ -90,13 +115,11 @@ export class FileHandle {
    */
   pwrite(offset: number, data: Uint8Array): void {
     const end = offset + data.length
-    if (end > this.buf.length) {
-      const grown = new Uint8Array(end)
-      grown.set(this.buf)
-      this.buf = grown
-    }
+    this._grow(end)
     this.lowWrite = Math.min(this.lowWrite, offset)
-    this.buf.set(data, offset)
+    this._buf.set(data, offset)
+    if (offset > this._length) this._buf.fill(0, this._length, offset)
+    if (end > this._length) this._length = end
     this.dirty = true
   }
 
@@ -113,7 +136,7 @@ export class FileHandle {
    * untouched).
    */
   seek(offset: number, whence: number): number | null {
-    const base = whence === 0 ? 0 : whence === 1 ? this.pos : whence === 2 ? this.buf.length : null
+    const base = whence === 0 ? 0 : whence === 1 ? this.pos : whence === 2 ? this._length : null
     if (base === null || base + offset < 0) return null
     this.pos = base + offset
     return this.pos
@@ -126,12 +149,14 @@ export class FileHandle {
    * the whole buffer.
    */
   truncate(size: number): void {
-    if (size < this.buf.length) {
-      this.buf = this.buf.slice(0, size)
+    if (size < this._length) {
+      this._length = size
     } else {
-      const grown = new Uint8Array(size)
-      grown.set(this.buf)
-      this.buf = grown
+      this._grow(size)
+      if (size > this._length) {
+        this._buf.fill(0, this._length, size)
+        this._length = size
+      }
     }
     this.dirty = true
     this.lowWrite = 0
@@ -139,12 +164,12 @@ export class FileHandle {
 
   /** True when the position sits at or past the end. */
   get eof(): boolean {
-    return this.pos >= this.buf.length
+    return this.pos >= this._length
   }
 
   /** The file's length as this handle holds it. */
   get size(): number {
-    return this.buf.length
+    return this._length
   }
 
   /** What this handle owes the mount at close. */

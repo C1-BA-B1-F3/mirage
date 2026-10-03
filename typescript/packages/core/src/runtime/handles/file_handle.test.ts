@@ -84,7 +84,6 @@ describe('FileHandle', () => {
   })
 
   it('appending many small writes stays linear and preserves content', () => {
-    // https://github.com/strukto-ai/mirage/issues/1418
     const h = FileHandle.opened('/f', new Uint8Array(), { writable: true, append: true })
     const parts: Uint8Array[] = []
     for (let i = 0; i < 5000; i++) {
@@ -101,17 +100,13 @@ describe('FileHandle', () => {
     expect(h.buf).toEqual(expected)
     expect(h.size).toBe(expected.length)
     expect(h.eof).toBe(true)
-    // Doubling growth means ~log2(N) backing-array replacements, not N.
     expect(h._growCount).toBeLessThanOrEqual(Math.ceil(Math.log2(h.size)) + 1)
     const [kind, tail] = h.flushPlan()
-    // baseLen is 0 (opened empty), so planFlush returns 'write' with the
-    // whole buffer rather than an append tail.
     expect(kind).toBe('write')
     expect(tail).toEqual(expected)
   })
 
   it('pwrite after truncate zero-fills the gap', () => {
-    // https://github.com/strukto-ai/mirage/pull/1426#discussion_r4171406274
     const h = FileHandle.opened('/f', enc.encode('hello'), { writable: true, append: false })
     h.truncate(2)
     h.pwrite(3, enc.encode('X'))

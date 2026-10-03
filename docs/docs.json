@@ -639,14 +639,6 @@
         "href": "https://discord.gg/u8BPQ65KsS"
       },
       {
-        "label": "WeChat",
-        "icon": {
-          "name": "weixin",
-          "style": "brands"
-        },
-        "href": "/images/wechat-qr-code.jpg"
-      },
-      {
         "label": "",
         "icon": "x-twitter",
         "href": "https://x.com/struktoai"

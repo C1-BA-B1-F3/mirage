@@ -14,7 +14,7 @@
         <img src="https://img.shields.io/github/license/strukto-ai/mirage?label=gi%E1%BA%A5y%20ph%C3%A9p&color=0C0C0C&labelColor=FAFAFA" /></a>
     <a href="https://discord.gg/u8BPQ65KsS" alt="Cộng đồng Discord">
         <img src="https://img.shields.io/badge/discord-tham%20gia-0C0C0C?labelColor=FAFAFA&logo=discord&logoColor=0C0C0C" /></a>
-    <a href="../docs/images/wechat-qr-code.jpg" aria-label="Cộng đồng WeChat">
+    <a href="../assets/wechat-qr-code.jpg" aria-label="Cộng đồng WeChat">
         <img src="https://img.shields.io/badge/wechat-tham%20gia-0C0C0C?labelColor=FAFAFA&logo=wechat&logoColor=0C0C0C" alt="Cộng đồng WeChat" /></a>
     <br/>
     <a href="https://docs.mirage.strukto.ai/python/quickstart" alt="Tài liệu Python">

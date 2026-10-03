@@ -29,18 +29,6 @@ import type { SessionState } from '@struktoai/mirage-core/workspace/session/sess
 import { errnoError } from './errors.ts'
 import { isMacosMetadata } from './platform/macos.ts'
 
-/** A run in a buffered write failed after earlier runs landed. */
-class PartialWriteError extends Error {
-  readonly applied: number
-  readonly underlying: unknown
-
-  constructor(applied: number, underlying: unknown) {
-    super(String(underlying))
-    this.applied = applied
-    this.underlying = underlying
-  }
-}
-
 export interface FuseAttr {
   mtime: Date
   atime: Date
@@ -364,23 +352,22 @@ export class MountCore {
   }
 
   /**
-   * Land buffered writes on the mount, one pwrite per run. A pwrite keeps
+   * Land write runs on the mount, one pwrite each, in order. A pwrite keeps
    * every stored byte the handle did not write, so nothing is read through
    * the door first: a session that may write a file and not read it writes
-   * through FUSE, as through a write-only descriptor. A run that fails still
-   * invalidates what the core holds, since the runs before it have landed.
+   * through FUSE, as through a write-only descriptor. Each run leaves `runs`
+   * once it lands, so after a failure `runs` holds only what did not land
+   * and a retry never replays a run over bytes another writer has since put
+   * there. A run that fails still invalidates what the core holds, since
+   * the runs before it have landed.
    */
-  private async applyWrites(path: string, writes: [number, Uint8Array][]): Promise<void> {
+  private async applyWrites(path: string, runs: [number, Uint8Array][]): Promise<void> {
     const target = this.resolve(path)
-    const runs = writeRuns(writes)
-    let applied = 0
     try {
-      for (const [offset, data] of runs) {
+      for (const [offset, data] of [...runs]) {
         await this.op(() => this.ops.pwrite(target, data, offset))
-        applied += 1
+        runs.shift()
       }
-    } catch (err) {
-      throw new PartialWriteError(applied, err)
     } finally {
       await this.changed(path)
     }
@@ -621,9 +608,10 @@ export class MountCore {
 
   /**
    * Persist a handle's buffered writes. The buffer is detached before the
-   * await so a write arriving meanwhile is not lost to the clear, and
-   * restored ahead of those later writes when persistence fails, so the
-   * acknowledged bytes stay for the handle's own flush to retry.
+   * await so a write arriving meanwhile is not lost to the clear, and the
+   * runs that did not land are restored ahead of those later writes when
+   * persistence fails, so the acknowledged bytes stay for the handle's own
+   * flush to retry.
    */
   private settle(ctx: Handle): Promise<void> {
     if (ctx.writeBuf === undefined || ctx.writeBuf.length === 0) return Promise.resolve()
@@ -632,27 +620,12 @@ export class MountCore {
 
   private async persistBuffered(ctx: Handle): Promise<void> {
     if (ctx.writeBuf === undefined || ctx.writeBuf.length === 0) return
-    const writes = ctx.writeBuf
+    const runs = writeRuns(ctx.writeBuf)
     ctx.writeBuf = []
     try {
-      await this.applyWrites(ctx.path, writes)
+      await this.applyWrites(ctx.path, runs)
     } catch (err) {
-      // Only the runs from the failure onward still need to land; runs
-      // before it already landed, and replaying them could overwrite a
-      // concurrent writer's newer bytes at those offsets.
-      if (err instanceof PartialWriteError) {
-        const runs = writeRuns(writes)
-        const lastApplied = err.applied > 0 ? runs[err.applied - 1] : undefined
-        const doneThrough = lastApplied
-          ? lastApplied[0] + lastApplied[1].length
-          : 0
-        ctx.writeBuf = [
-          ...writes.filter(([offset]) => offset >= doneThrough),
-          ...ctx.writeBuf,
-        ]
-        throw err.underlying
-      }
-      ctx.writeBuf = [...writes, ...ctx.writeBuf]
+      ctx.writeBuf = [...runs, ...ctx.writeBuf]
       throw err
     }
   }

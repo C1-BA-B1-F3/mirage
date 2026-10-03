@@ -200,6 +200,28 @@ describe('makeGenericOps', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it('answers an empty emulated pwrite with a stat instead of a rewrite', async () => {
+    const write = vi.fn()
+    const stat = vi
+      .fn()
+      .mockResolvedValueOnce(new FileStat({ name: 'a.txt', type: FileType.FILE }))
+      .mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+      .mockResolvedValueOnce(new FileStat({ name: 'a.txt', type: FileType.DIRECTORY }))
+    const table = makeTable({ write, stat })
+    const op = makeGenericOps('x', table).find((o) => o.name === 'pwrite')
+    const index = {} as never
+    await op?.fn(ACCESSOR, PATH, [new Uint8Array(), 0], { index })
+    expect(stat).toHaveBeenCalledWith(ACCESSOR, PATH, index)
+    expect(write).not.toHaveBeenCalled()
+    await op?.fn(ACCESSOR, PATH, [new Uint8Array(), 0], {})
+    expect(write).toHaveBeenCalledWith(ACCESSOR, PATH, new Uint8Array())
+    await expect(op?.fn(ACCESSOR, PATH, [new Uint8Array(), 0], {})).rejects.toMatchObject({
+      code: 'EISDIR',
+    })
+    expect(table.readBytes).not.toHaveBeenCalled()
+    expect(write).toHaveBeenCalledTimes(1)
+  })
+
   it('a native pwrite skips the emulation', async () => {
     const write = vi.fn()
     const pwrite = vi.fn()

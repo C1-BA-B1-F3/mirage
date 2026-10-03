@@ -197,6 +197,37 @@ describe('MountCore', () => {
     expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('Xbcdefgh')
   })
 
+  it('lands only the runs that failed when a flush is retried', async () => {
+    const vfs = new RAMVFS()
+    const ws = new Workspace({ '/data/': vfs }, { mode: MountMode.WRITE })
+    await ws.shell('printf abcdefgh > /data/f')
+    const realPwrite = ws.vfs.pwrite.bind(ws.vfs)
+    const pwrite = vi
+      .spyOn(ws.vfs, 'pwrite')
+      .mockImplementationOnce(realPwrite)
+      .mockRejectedValueOnce(errnoError('EACCES', 'denied'))
+    const core = new MountCore(ws.vfs)
+    const enc = new TextEncoder()
+    const fd = await core.open('/data/f', fsConstants.O_WRONLY)
+    await core.write('/data/f', fd, enc.encode('Y'), 5)
+    await core.write('/data/f', fd, enc.encode('X'), 0)
+    await expect(core.flush('/data/f', fd)).rejects.toMatchObject({ code: 'EACCES' })
+    await realPwrite('/data/f', enc.encode('W'), 5)
+    await core.flush('/data/f', fd)
+    expect(new TextDecoder().decode(vfs.store.files.get('/f'))).toBe('XbcdeWgh')
+    expect(pwrite).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the errno of a failed direct write', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell('printf abcdefgh > /data/f')
+    vi.spyOn(ws.vfs, 'pwrite').mockRejectedValueOnce(errnoError('EACCES', 'denied'))
+    const core = new MountCore(ws.vfs)
+    await expect(core.write('/data/f', -1, new TextEncoder().encode('X'), 0)).rejects.toMatchObject(
+      { code: 'EACCES' },
+    )
+  })
+
   it('reports a file with its real size', async () => {
     const core = await mkCore()
     const attr = await core.getattr('/data/greeting.txt')

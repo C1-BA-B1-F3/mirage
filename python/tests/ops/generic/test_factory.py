@@ -177,9 +177,6 @@ async def test_emulated_empty_append_stats_instead_of_rewriting():
 
 @pytest.mark.asyncio
 async def test_emulated_empty_pwrite_stats_instead_of_rewriting():
-    # https://github.com/strukto-ai/mirage/issues/1419
-    # A zero-length pwrite on an existing file must make no read and no
-    # write call; on a missing file it creates the empty file.
     table = make_table(write=AsyncMock())
     table.stat.side_effect = [
         FileStat(name="a.txt", type=FileType.FILE),

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { rmSync } from 'node:fs'
-import { readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { open, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -261,6 +261,7 @@ async function main(): Promise<void> {
   const data = new RAMVFS()
   data.store.dirs.add('/')
   data.store.files.set('/a.txt', enc.encode('alpha\n'))
+  data.store.files.set('/s.txt', enc.encode('.'.repeat(20)))
   const logs = new RAMVFS()
   logs.store.dirs.add('/')
   logs.store.files.set('/b.txt', enc.encode('beta\n'))
@@ -294,6 +295,18 @@ async function main(): Promise<void> {
     await writeFile(`${dataMp}/t.txt`, 'BB\n')
     result.overwrite_short_size = (await stat(`${dataMp}/t.txt`)).size
     result.overwrite_short_body = (await readFile(`${dataMp}/t.txt`, 'utf8')).trim()
+    // Sparse writes on one handle stay separate runs until close, arriving
+    // here from the highest offset down; they land in arrival order, so the
+    // last write over offset 4 wins.
+    const sparse = await open(`${dataMp}/s.txt`, 'r+')
+    try {
+      for (let i = 9; i >= 0; i--)
+        await sparse.write(enc.encode(String.fromCharCode(97 + i)), 0, 1, 2 * i)
+      await sparse.write(enc.encode('Z'), 0, 1, 4)
+    } finally {
+      await sparse.close()
+    }
+    result.sparse_writes_body = await readFile(`${dataMp}/s.txt`, 'utf8')
     result.data_pinned = dataMp === pinned
     result.distinct_mounts = dataMp !== logsMp
 

@@ -4,6 +4,7 @@
   "logs_size_b": 5,
   "overwrite_short_size": 3,
   "overwrite_short_body": "BB",
+  "sparse_writes_body": "a.b.Z.d.e.f.g.h.i.j.",
   "data_pinned": true,
   "distinct_mounts": true,
   "data_mode_is_write": true,

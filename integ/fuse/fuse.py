@@ -336,6 +336,7 @@ def main() -> None:
     data = RAMVFS()
     data._store.dirs.add("/")
     data._store.files["/a.txt"] = b"alpha\n"
+    data._store.files["/s.txt"] = b"." * 20
     logs = RAMVFS()
     logs._store.dirs.add("/")
     logs._store.files["/b.txt"] = b"beta\n"
@@ -376,6 +377,17 @@ def main() -> None:
         result["overwrite_short_size"] = os.path.getsize(f"{data_mp}/t.txt")
         with open(f"{data_mp}/t.txt", "rb") as fh:
             result["overwrite_short_body"] = fh.read().decode().strip()
+        # Sparse writes on one handle stay separate runs until close,
+        # arriving here from the highest offset down; they land in
+        # arrival order, so the last write over offset 4 wins.
+        with open(f"{data_mp}/s.txt", "r+b", buffering=0) as fh:
+            for i in range(9, -1, -1):
+                fh.seek(2 * i)
+                fh.write(bytes([ord("a") + i]))
+            fh.seek(4)
+            fh.write(b"Z")
+        with open(f"{data_mp}/s.txt", "rb") as fh:
+            result["sparse_writes_body"] = fh.read().decode()
         result["data_pinned"] = data_mp == pinned
         result["distinct_mounts"] = data_mp != logs_mp
 

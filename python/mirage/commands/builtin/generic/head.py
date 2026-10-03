@@ -258,7 +258,7 @@ async def head_generic(
             show_headers=show_headers,
             zero_terminated=parsed.zero_terminated,
         ), io
-    source = resolve_source(opts.stdin, "head: missing operand")
+    source = resolve_source(opts.stdin)
     body = head(
         source,
         n=parsed.lines,

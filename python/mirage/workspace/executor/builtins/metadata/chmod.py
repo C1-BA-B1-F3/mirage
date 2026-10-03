@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.commands.spec.usage import (
+    missing_operand_error,
+    unknown_option_error,
+)
 from mirage.runtime.types import DispatchFn
-from mirage.types import FileType, PathSpec
+from mirage.types import FileType, PathSpec, word_text
 from mirage.utils.mode import DEFAULT_DIR_MODE, DEFAULT_FILE_MODE, parse_chmod
 from mirage.workspace.executor.builtins.metadata.metadata import (
     apply_attrs,
@@ -52,9 +56,12 @@ async def handle_chmod(
     """
     flags, _values, operands, bad = split_value_flags(args, "Rvf", "")
     if bad is not None:
-        return fail("chmod", f"chmod: invalid option -- '{bad}'\n", 2)
+        message, code = unknown_option_error("chmod", bad)
+        return fail("chmod", message.decode(), code)
     if len(operands) < 2:
-        return fail("chmod", "chmod: missing operand\n", 2)
+        last = word_text(operands[0]) if operands else None
+        error = missing_operand_error("chmod", last)
+        return fail("chmod", f"{error}\n", error.exit_code)
     mode_text = operand_text(operands[0])
     if parse_chmod(mode_text, 0) is None:
         return fail("chmod", f"chmod: invalid mode: '{mode_text}'\n", 1)

@@ -43,6 +43,8 @@ export function makeTee<A extends Accessor>(vfs: string, io: CommandIO<A>): Regi
       opts,
       (p) => readStream(accessor, p),
       (p, d) => writeBytes(accessor, p, d),
+      undefined,
+      (p) => io.stat(accessor, p, opts.index ?? undefined),
     )
   }
 

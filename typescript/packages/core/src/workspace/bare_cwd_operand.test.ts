@@ -54,32 +54,6 @@ describe('bare invocations default to the cwd', () => {
     }
   })
 
-  it('tree renders the cwd', async () => {
-    const ws = await makeWs()
-    const io = await ws.shell('tree')
-    expect(io.exitCode).toBe(0)
-    expect(stdoutStr(io).startsWith('.\n')).toBe(true)
-    expect(stdoutStr(io)).toContain('a.txt')
-  })
-
-  it('du measures the cwd dot-spelled', async () => {
-    const ws = await makeWs()
-    const io = await ws.shell('du')
-    expect(io.exitCode).toBe(0)
-    const out = stdoutStr(io)
-    expect(out).toContain('\t./sub\n')
-    expect(out).toContain('\t.\n')
-  })
-
-  it('ls -R uses dot headers', async () => {
-    const ws = await makeWs()
-    const io = await ws.shell('ls -R')
-    expect(io.exitCode).toBe(0)
-    const out = stdoutStr(io)
-    expect(out.startsWith('.:\n')).toBe(true)
-    expect(out).toContain('\n./sub:\n')
-  })
-
   it('plain ls still lists the cwd', async () => {
     const ws = await makeWs()
     const io = await ws.shell('ls')

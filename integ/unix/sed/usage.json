@@ -36,9 +36,8 @@
       }
     },
     {
-      "id": "sed_no_input_files",
+      "id": "sed_without_stdin_reads_empty_input",
       "seq": 960031,
-      "note": "GNU 9.7's spelling and exit 4 for -i with no operands; mirage reuses them with no stdin either, having no terminal to read.",
       "targets": [
         "ram",
         "disk",
@@ -65,9 +64,9 @@
       ],
       "command": "sed 's/a/b/'",
       "expect": {
-        "exit": 4,
+        "exit": 0,
         "stdout": "",
-        "stderr": "sed: no input files\n"
+        "stderr": ""
       }
     }
   ]

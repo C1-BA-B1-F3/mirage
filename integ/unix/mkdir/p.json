@@ -101,6 +101,53 @@
       "flags": [
         "p"
       ]
+    },
+    {
+      "id": "mkdir_pv_reports_every_made_name_as_typed",
+      "seq": 601063,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && mkdir -pv r10mk/a/b && mkdir -pv r10mk/a/c && mkdir -pv sub && mkdir -v r10mk2 && cd sub && mkdir -pv ../r10mk3/x; cd /data && rm -r r10mk r10mk2 r10mk3)",
+      "expect": {
+        "exit": 0,
+        "stdout": "mkdir: created directory 'r10mk'\nmkdir: created directory 'r10mk/a'\nmkdir: created directory 'r10mk/a/b'\nmkdir: created directory 'r10mk/a/c'\nmkdir: created directory 'r10mk2'\nmkdir: created directory '../r10mk3'\nmkdir: created directory '../r10mk3/x'\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "mkdir_pv_names_a_dotted_walk_as_typed",
+      "seq": 601064,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(cd /data && mkdir -pv r10new/nope/../m; echo rc=$?; mkdir -pv r10new/nope2/../m; echo rc=$?; mkdir -pv r10a/../r10a/b; echo rc=$?); rm -r /data/r10new /data/r10a",
+      "expect": {
+        "exit": 0,
+        "stdout": "mkdir: created directory 'r10new'\nmkdir: created directory 'r10new/nope'\nmkdir: created directory 'r10new/nope/../m'\nrc=0\nmkdir: created directory 'r10new/nope2'\nrc=0\nmkdir: created directory 'r10a'\nmkdir: created directory 'r10a/../r10a/b'\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

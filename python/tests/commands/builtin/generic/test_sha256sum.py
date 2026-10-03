@@ -43,7 +43,7 @@ async def _drain(stdout) -> bytes:
 async def test_sha256sum_check_failing():
     stat, read_stream = _backend(
         {
-            "/manifest.sha256": b"deadbeef  /file.txt\n",
+            "/manifest.sha256": b"0" * 64 + b"  /file.txt\n",
             "/file.txt": b"actual content",
         }
     )

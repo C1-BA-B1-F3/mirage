@@ -242,7 +242,7 @@ async def grep(
     )
     io = IOResult(exit_code=1, stderr=warning or None)
     if not paths:
-        source = resolve_source(stdin, GREP_NO_PATTERN, error_cls=UsageError)
+        source = resolve_source(stdin)
         return grep_input(
             source,
             pat,

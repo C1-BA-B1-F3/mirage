@@ -36,6 +36,40 @@
       "flags": [
         "E"
       ]
+    },
+    {
+      "id": "cat_E_marks_only_newlines",
+      "seq": 326,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cat -E /data/no_nl.txt; echo; printf '\\000\\001\\n\\002\\003\\n' | cat -E | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": "no trailing newline\n 00 01 24 0a 02 03 24 0a\n",
+        "stderr": ""
+      }
     }
   ]
 }

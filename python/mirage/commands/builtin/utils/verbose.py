@@ -13,9 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.types import PathSpec
+from mirage.utils.errors import operand_spelling
 
 
-def removal_lines(entries: list[tuple[PathSpec, bool]]) -> list[str]:
+def removal_lines(
+    entries: list[tuple[PathSpec, bool]], operand: PathSpec
+) -> list[str]:
     """Render GNU ``rm -v`` lines for a removed tree, deepest entry first.
 
     GNU prints one line per removed entry in a depth-first, children-first
@@ -31,6 +34,8 @@ def removal_lines(entries: list[tuple[PathSpec, bool]]) -> list[str]:
     Args:
         entries (list[tuple[PathSpec, bool]]): ``(path, is_dir)`` pairs from
             ``walk``; order is ignored.
+        operand (PathSpec): The removed operand, whose spelling each line
+            is named by.
 
     Returns:
         list[str]: One verbose line per entry, children before parents.
@@ -40,11 +45,11 @@ def removal_lines(entries: list[tuple[PathSpec, bool]]) -> list[str]:
     for path, is_dir in ordered:
         # Object stores hand back directory paths with a trailing slash; GNU
         # never prints one, so normalize (root "/" excepted).
-        virtual = path.virtual.rstrip("/") or "/"
+        shown = operand_spelling(path.virtual.rstrip("/") or "/", operand)
         if is_dir:
-            lines.append(f"removed directory '{virtual}'")
+            lines.append(f"removed directory '{shown}'")
         else:
-            lines.append(f"removed '{virtual}'")
+            lines.append(f"removed '{shown}'")
     return lines
 
 

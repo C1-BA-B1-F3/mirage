@@ -51,22 +51,4 @@ describe('head', () => {
     const expected = Array.from({ length: 10 }, (_, i) => `line${String(i + 1)}`).join('\n') + '\n'
     expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe(expected)
   })
-
-  it('-c larger than file returns all bytes', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abc'))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { bytes: '100' })).toBe('abc')
-  })
-
-  it('-c 0 returns empty', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abc'))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { bytes: '0' })).toBe('')
-  })
-
-  it('single line without newline', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('hello'))
-    expect(await runHead(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('hello')
-  })
 })

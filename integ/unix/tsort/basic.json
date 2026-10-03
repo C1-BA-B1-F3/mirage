@@ -33,6 +33,74 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "tsort_reports_each_loop_and_breaks_it",
+      "seq": 552,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\nb a\\n' | tsort; echo rc=$?; printf 'x y\\na b\\nb c\\nc a\\n' | tsort; echo rc=$?; printf 'a a\\n' | tsort; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nrc=1\nx\ny\na\nb\nc\nrc=1\na\nrc=0\n",
+        "stderr": "tsort: -: input contains a loop:\ntsort: a\ntsort: b\ntsort: -: input contains a loop:\ntsort: a\ntsort: b\ntsort: c\n"
+      }
+    },
+    {
+      "id": "tsort_orders_like_gnu",
+      "seq": 553,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'z y\\na b\\n' | tsort; printf 'b a\\nc a\\n' | tsort",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nz\nb\ny\nb\nc\na\n",
+        "stderr": ""
+      }
     }
   ]
 }

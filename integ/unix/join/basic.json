@@ -106,6 +106,37 @@
         "o",
         "v"
       ]
+    },
+    {
+      "id": "join_gnu_field_splitting_and_headers",
+      "seq": 601181,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10j && touch /data/r10j/a && (cd /data/r10j && printf '1 a\\015\\n2 b\\015\\n' > a && printf '1 x\\n2 y\\n' > b && join a b; echo rc=$?; printf '1 a  \\n2 b\\t\\n' > a && printf '1 x \\n2 y\\n' > b && join a b; echo rc=$?; printf 'A 1\\n_ 2\\n' > a && printf '_ y\\n' > b && join -i a b; echo rc=$?; printf '\\303\\211 1\\n' > a && printf '\\303\\251 x\\n' > b && join -i -a1 -a2 a b; echo rc=$?; printf 'id name\\n1 a\\n2 b\\n' > a && printf 'id val\\n2 y\\n3 z\\n' > b && join --header -a1 -a2 a b; echo rc=$?; printf 'k h\\nb 1\\na 2\\n' > a && printf 'k g\\na x\\n' > b && join --header a b; echo rc=$?); rm -r /data/r10j",
+      "expect": {
+        "exit": 0,
+        "stdout": "1 a\r x\n2 b\r y\nrc=0\n1 a x\n2 b y\nrc=0\n_ 2 y\nrc=0\nÉ 1\né x\nrc=0\nid name val\n1 a\n2 b y\n3 z\nrc=0\nk h g\nrc=1\n",
+        "stderr": "join: a:3: is not sorted: a 2\njoin: input is not in sorted order\n"
+      }
     }
   ]
 }

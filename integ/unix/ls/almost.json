@@ -74,6 +74,40 @@
         "A",
         "a"
       ]
+    },
+    {
+      "id": "ls_hides_dotfiles_unless_asked",
+      "seq": 960062,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10dot/d && touch /data/r10dot/.h /data/r10dot/v /data/r10dot/d/.x && ls /data/r10dot; ls -a /data/r10dot; ls -A /data/r10dot; ls -R /data/r10dot; rm -r /data/r10dot",
+      "expect": {
+        "exit": 0,
+        "stdout": "d\nv\n.\n..\n.h\nd\nv\n.h\nd\nv\n/data/r10dot:\nd\nv\n\n/data/r10dot/d:\n",
+        "stderr": ""
+      }
     }
   ]
 }

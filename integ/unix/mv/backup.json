@@ -213,6 +213,38 @@
         "gdrive-folder",
         "box"
       ]
+    },
+    {
+      "id": "mv_numbered_backup_moves_both_same_name_sources",
+      "seq": 613096,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10mb/x /data/r10mb/y /data/r10mb/d && echo X > /data/r10mb/x/a && echo Y > /data/r10mb/y/a && mv --backup=numbered /data/r10mb/x/a /data/r10mb/y/a /data/r10mb/d; echo rc=$?; cat /data/r10mb/d/a /data/r10mb/d/a.~1~; rm -r /data/r10mb",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\nY\nX\n",
+        "stderr": ""
+      }
     }
   ]
 }

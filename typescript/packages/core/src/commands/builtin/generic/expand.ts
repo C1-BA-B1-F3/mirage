@@ -326,10 +326,7 @@ export async function expandGeneric(
     const result: ByteSource = ENC.encode(applyExpand(text, tabs, initialOnly))
     return [result, io]
   }
-  const stdinData = await readStdinAsync(opts.stdin)
-  if (stdinData === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('expand: missing operand\n') })]
-  }
+  const stdinData = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
   const text = DEC.decode(stdinData)
   const result: ByteSource = ENC.encode(applyExpand(text, tabs, initialOnly))
   return [result, new IOResult()]

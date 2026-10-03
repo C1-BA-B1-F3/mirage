@@ -85,6 +85,7 @@ export const BUILDER: Builder = {
                   p,
                   idx,
                 ),
+                p,
               )
             }
             await rmR(accessor, p)
@@ -100,14 +101,14 @@ export const BUILDER: Builder = {
               continue
             }
             await rmdir(accessor, p, idx)
-            entryLines = [`removed directory '${p.virtual}'`]
+            entryLines = [`removed directory '${p.rawPath}'`]
           } else {
             errors.push(`rm: cannot remove '${p.rawPath}': Is a directory`)
             continue
           }
         } else {
           await unlink(accessor, p)
-          entryLines = [`removed '${p.virtual}'`]
+          entryLines = [`removed '${p.rawPath}'`]
         }
       } catch (err) {
         if (!isFsError(err)) throw err

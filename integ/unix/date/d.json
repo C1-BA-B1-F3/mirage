@@ -247,6 +247,37 @@
         "stdout": "",
         "stderr": "date: invalid date 'x\\303\\251'\n"
       }
+    },
+    {
+      "id": "date_meridiem_and_unknown_directives",
+      "seq": 962393,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d @50000 '+%P|%^P|%5P|%p|%v|%_v|%Ey|%Od|%E'",
+      "expect": {
+        "exit": 0,
+        "stdout": "pm|pm|   pm|PM|%v|%_v|70|01|%E\n",
+        "stderr": ""
+      }
     }
   ]
 }

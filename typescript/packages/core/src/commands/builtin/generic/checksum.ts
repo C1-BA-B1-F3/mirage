@@ -177,12 +177,23 @@ async function checkFile(
   return [stdout, stderr, failed ? 1 : 0]
 }
 
+// GNU reads a check line as properly formatted only when its digest has the
+// algorithm's full length in hex.
+const HEX_DIGITS: Readonly<Record<string, number>> = {
+  MD5: 32,
+  SHA1: 40,
+  SHA256: 64,
+  SHA384: 96,
+  SHA512: 128,
+}
+
 function parseCheckLine(line: string, name: string): [string, string] | null {
   const tagged = new RegExp(`^${algorithmName(name)} \\((.*)\\) = ([0-9a-fA-F]+)$`).exec(line)
-  if (tagged !== null) return [tagged[2]?.toLowerCase() ?? '', tagged[1] ?? '']
-  const match = /^([0-9a-fA-F]+) [ *](.*)$/.exec(line)
+  const match = tagged ?? /^([0-9a-fA-F]+) [ *](.*)$/.exec(line)
   if (match === null) return null
-  return [match[1]?.toLowerCase() ?? '', match[2] ?? '']
+  const [digest = '', file = ''] = tagged !== null ? [tagged[2], tagged[1]] : [match[1], match[2]]
+  if (digest.length !== (HEX_DIGITS[algorithmName(name)] ?? digest.length)) return null
+  return [digest.toLowerCase(), file]
 }
 
 export async function checksumGeneric(

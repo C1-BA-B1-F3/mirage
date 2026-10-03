@@ -136,6 +136,6 @@ describe('uniq', () => {
     const vfs = new RAMVFS()
     const r = await runUniq(vfs, [], { skip_fields: '2junk' })
     expect(r.exitCode).toBe(1)
-    expect(r.stderr).toBe("uniq: invalid count: '2junk'\n")
+    expect(r.stderr).toBe('uniq: 2junk: invalid number of fields to skip\n')
   })
 })

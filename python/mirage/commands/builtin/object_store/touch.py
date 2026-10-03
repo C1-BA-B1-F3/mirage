@@ -18,8 +18,10 @@ from typing import Any
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, Operation
 from mirage.commands.config import CommandOpts, command
+from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.usage import usage_hint
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -43,7 +45,9 @@ def make_touch(vfs: str, io: CommandIO) -> Callable[..., Any]:
         opts: CommandOpts,
     ) -> tuple[ByteSource | None, IOResult]:
         if not paths:
-            raise ValueError("touch: missing operand")
+            raise UsageError(
+                f"touch: missing file operand\n{usage_hint('touch')}", 1
+            )
         fl = FlagView(opts.flags, spec=SPECS["touch"])
         paths = await resolve_glob(accessor, paths, opts.index)
         writes: dict[str, ByteSource] = {}

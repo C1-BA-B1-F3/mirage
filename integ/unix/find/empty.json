@@ -68,6 +68,38 @@
         "stdout": "/data/sle/vac\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "find_empty_type_d_lists_only_empty_directories",
+      "seq": 296,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10fe/e /data/r10fe/d && touch /data/r10fe/d/f && find /data/r10fe -empty -type d; find /data/r10fe -empty | sort; rm -r /data/r10fe",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/r10fe/e\n/data/r10fe/d/f\n/data/r10fe/e\n",
+        "stderr": ""
+      }
     }
   ]
 }

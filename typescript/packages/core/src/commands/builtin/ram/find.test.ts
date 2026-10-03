@@ -49,17 +49,6 @@ async function runFind(
   return { lines, exitCode: ioResult.exitCode, runs: ioResult.matchedRuns }
 }
 
-describe('find', () => {
-  it('-empty with -type d', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/tmp')
-    vfs.store.dirs.add('/tmp/emptydir')
-    vfs.store.files.set('/tmp/a.txt', ENC.encode('x'))
-    const r = await runFind(vfs, [PathSpec.fromStrPath('/tmp')], { empty: true, type: 'd' })
-    expect(r.lines.slice().sort()).toEqual(['/tmp/emptydir'])
-  })
-})
-
 describe('find -printf', () => {
   // The action layer renders -printf per row, beside the other actions,
   // so the handler hands back the rows as selected: one run per start

@@ -1,13 +1,22 @@
+import errno
+import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
+from mirage.commands.builtin.utils.paths import (
+    absent_dest_strerror,
+    entry_kind,
+)
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import PathSpec
+from mirage.types import PathSpec, StatFn
 from mirage.utils.errors import fs_error_line, fs_strerror
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +100,36 @@ async def write_one(
     return data
 
 
+async def open_refusal(
+    stat: StatFn, path: PathSpec, opened: list[PathSpec]
+) -> OSError | None:
+    """The error GNU's open of an output would meet, or None.
+
+    GNU opens the outputs in order, so each earlier one is a regular file
+    by now: an output under one of them is ``Not a directory``.
+
+    Args:
+        stat (StatFn): Stats a path; raises when missing.
+        path (PathSpec): the output operand.
+        opened (list[PathSpec]): the outputs opened before it.
+    """
+    if any(
+        path.virtual.startswith(f"{o.virtual.rstrip('/')}/") for o in opened
+    ):
+        return NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR))
+    exists, is_dir = await entry_kind(stat, path)
+    if is_dir:
+        return IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR))
+    if exists:
+        return None
+    strerror = await absent_dest_strerror(stat, path)
+    if strerror is None:
+        return None
+    if strerror == os.strerror(errno.ENOTDIR):
+        return NotADirectoryError(errno.ENOTDIR, strerror)
+    return FileNotFoundError(errno.ENOENT, strerror)
+
+
 async def write_output(
     paths: list[PathSpec],
     raw: bytes,
@@ -98,6 +137,7 @@ async def write_output(
     read_stream: Callable[..., AsyncIterator[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     append_bytes: Callable[..., Awaitable[None]] | None = None,
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Copy ``raw`` to every operand, GNU-style.
 
@@ -116,12 +156,15 @@ async def write_output(
     named on stderr and the command exits 1. ``Exception`` rather than
     ``BaseException`` keeps cancellation propagating.
 
-    Deliberate divergence: GNU opens every operand up front, so under
-    ``exit`` an *open* failure aborts before any data is written. A mount
-    has no open/write split — ``write_bytes`` is one call — so the
-    operands before the failure are already written. The two agree
-    whenever the failure is at write time, which is what a remote backend
-    reports.
+    GNU opens every operand up front, so under ``exit`` an *open*
+    failure aborts before any data is written, the outputs opened before
+    it left empty. A mount has no open/write split (``write_bytes`` is one
+    call), so with ``stat`` in hand the open is probed first: a missing
+    or non-directory parent, or a directory operand. A probe the backend
+    will not answer (a stat its credentials refuse) is no verdict, so
+    that output is opened for real, by writing it nothing, once the
+    outputs before it are opened. Opening an earlier output can fail
+    first, and then it is the one reported.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -130,10 +173,60 @@ async def write_output(
         read_stream (Callable): backend read, for the emulated append.
         write_bytes (Callable): backend whole-file write.
         append_bytes (Callable | None): backend native append, if wired.
+        stat (StatFn | None): Stats a path, for the probed open.
     """
     writes: dict[str, ByteSource] = {}
     cache: list[str] = []
     errors: list[bytes] = []
+    if parsed.stop_on_error and stat is not None:
+        opened: set[str] = set()
+        for index, path in enumerate(paths):
+            probed = True
+            refusal: Exception | None = None
+            try:
+                refusal = await open_refusal(stat, path, paths[:index])
+            except Exception as exc:
+                logger.debug("tee: probing %s failed: %s", path.virtual, exc)
+                probed = False
+            if probed and refusal is None:
+                continue
+            failed: PathSpec = path
+            for prior in paths[:index]:
+                if prior.mount_path in opened:
+                    continue
+                try:
+                    if not (
+                        parsed.append and (await entry_kind(stat, prior))[0]
+                    ):
+                        await write_bytes(prior, b"")
+                        writes[prior.mount_path] = b""
+                        cache.append(prior.mount_path)
+                except Exception as exc:
+                    failed, refusal = prior, exc
+                    break
+                opened.add(prior.mount_path)
+            if refusal is None:
+                try:
+                    data = await write_one(
+                        path,
+                        b"",
+                        parsed,
+                        read_stream,
+                        write_bytes,
+                        append_bytes,
+                    )
+                except Exception as exc:
+                    refusal = exc
+                else:
+                    writes[path.mount_path] = b"" if data is None else data
+                    opened.add(path.mount_path)
+                    continue
+            return None, IOResult(
+                exit_code=1,
+                stderr=error_line(failed, refusal),
+                writes=writes,
+                cache=cache,
+            )
     for path in paths:
         try:
             data = await write_one(
@@ -145,7 +238,7 @@ async def write_output(
                 break
             continue
         writes[path.mount_path] = raw if data is None else data
-        if data is not None:
+        if data is not None and path.mount_path not in cache:
             cache.append(path.mount_path)
     if errors:
         return raw, IOResult(
@@ -163,6 +256,7 @@ async def tee(
     append_bytes: Callable[..., Awaitable[None]] | None = None,
     stdin: ByteSource | None = None,
     flags: Mapping[str, FlagValue] | None = None,
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(flags or {})
     raw = await read_stdin_async(stdin)
@@ -171,7 +265,7 @@ async def tee(
     if not paths:
         return raw, IOResult()
     return await write_output(
-        paths, raw, parsed, read_stream, write_bytes, append_bytes
+        paths, raw, parsed, read_stream, write_bytes, append_bytes, stat
     )
 
 
@@ -181,5 +275,6 @@ __all__ = [
     "TeeFlags",
     "write_output",
     "write_one",
+    "open_refusal",
     "error_line",
 ]

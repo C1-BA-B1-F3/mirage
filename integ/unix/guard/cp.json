@@ -239,6 +239,38 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "guard_cp_refusals_name_operands_as_typed",
+      "seq": 639,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && mkdir -p r10g/s && cp a.txt a.txt; echo rc=$?; cp -r r10g r10g/s; echo rc=$?; cp -r r10g a.txt; echo rc=$?; cp r10g r10gx; echo rc=$?; rm -r r10g)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\nrc=1\n",
+        "stderr": "cp: 'a.txt' and 'a.txt' are the same file\ncp: cannot copy a directory, 'r10g', into itself, 'r10g/s/r10g'\ncp: cannot overwrite non-directory 'a.txt' with directory 'r10g'\ncp: -r not specified; omitting directory 'r10g'\n"
+      }
     }
   ]
 }

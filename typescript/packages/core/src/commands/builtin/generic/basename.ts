@@ -14,6 +14,7 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { extraOperandError, missingOperandError } from '../../spec/usage.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { CommandFn } from '../../config.ts'
 import { gnuBasename } from '../../../utils/path.ts'
@@ -25,6 +26,8 @@ export const basenameFn: CommandFn = (_accessor, _paths, texts, opts) => {
   const suffixValue = fl.asStr('suffix')
   const suffix = typeof suffixValue === 'string' ? suffixValue : undefined
   const multiple = fl.asBool('multiple') || suffix !== undefined
+  if (texts.length === 0) throw missingOperandError('basename', null)
+  if (!multiple && texts.length > 2) throw extraOperandError('basename', texts[2] ?? '')
   const lines =
     suffix !== undefined
       ? texts.map((text) => gnuBasename(text, suffix))

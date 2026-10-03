@@ -17,11 +17,16 @@ from typing import Any
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, Operation
-from mirage.commands.builtin.generic_bind.builders.mkdir import make_directory
+from mirage.commands.builtin.generic_bind.builders.mkdir import (
+    created_lines,
+    created_names,
+    make_directory,
+)
 from mirage.commands.builtin.utils.slash_links import mkdir_link_refusal
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.usage import missing_operand_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -46,7 +51,7 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
         parents = fl.as_bool("parents")
         verbose = fl.as_bool("verbose")
         if not paths:
-            raise ValueError("mkdir: missing operand")
+            raise missing_operand_error("mkdir", None)
         paths = await resolve_glob(accessor, paths, opts.index)
         lines: list[str] = []
         errors: list[str] = []
@@ -62,6 +67,9 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 if refusal is not None:
                     errors.append(refusal)
                 continue
+            names = (
+                await created_names(path, parents, links) if verbose else []
+            )
             failed = await make_directory(
                 mkdir_impl, accessor, path, parents, links
             )
@@ -69,8 +77,7 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 errors.append(failed)
                 continue
             writes[path.mount_path] = b""
-            if verbose:
-                lines.append(f"mkdir: created directory '{path.virtual}'")
+            lines.extend(created_lines(names))
         output = ("\n".join(lines) + "\n").encode() if lines else None
         stderr = ("\n".join(errors) + "\n").encode() if errors else None
         return output, IOResult(

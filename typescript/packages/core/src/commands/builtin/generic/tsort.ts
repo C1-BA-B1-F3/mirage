@@ -23,49 +23,102 @@ import { compareCodePoints } from '../../../utils/sort.ts'
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
 
-function getOrCreate(
-  graph: Map<string, Set<string>>,
-  inDegree: Map<string, number>,
-  node: string,
-): Set<string> {
-  const existing = graph.get(node)
-  if (existing !== undefined) return existing
-  const created = new Set<string>()
-  graph.set(node, created)
-  inDegree.set(node, 0)
-  return created
+// One node, GNU tsort's `struct item`: predecessors not yet printed, the
+// successors oldest relation first (GNU links them newest first, so every walk
+// runs from the end), and the link a loop trace follows.
+// Mirrors Python's _Item.
+interface Item {
+  readonly name: string
+  count: number
+  readonly successors: Item[]
+  qlink: Item | null
+  printed: boolean
 }
 
-function topologicalSort(pairs: readonly (readonly [string, string])[]): [string[], boolean] {
-  const graph = new Map<string, Set<string>>()
-  const inDegree = new Map<string, number>()
+// Trace one loop as GNU's `detect_loop` does and drop one relation; returns
+// the loop's members in the order GNU reports them. Mirrors Python's
+// _break_loop.
+function breakLoop(tree: readonly Item[]): string[] {
+  let loop: Item | null = null
+  for (;;) {
+    for (const k of tree) {
+      if (k.count <= 0) continue
+      if (loop === null) {
+        loop = k
+        continue
+      }
+      for (let index = k.successors.length - 1; index >= 0; index--) {
+        const successor = k.successors[index]
+        if (successor !== loop) continue
+        if (k.qlink === null) {
+          k.qlink = loop
+          loop = k
+          break
+        }
+        const members: string[] = []
+        let node: Item | null = loop
+        while (node !== null) {
+          members.push(node.name)
+          const after: Item | null = node.qlink
+          if (node === k) {
+            successor.count -= 1
+            k.successors.splice(index, 1)
+            break
+          }
+          node.qlink = null
+          node = after
+        }
+        while (node !== null) {
+          const after: Item | null = node.qlink
+          node.qlink = null
+          node = after
+        }
+        return members
+      }
+    }
+  }
+}
+
+// GNU tsort's order, and every loop it had to break on the way. Mirrors
+// Python's _topological_sort.
+function topologicalSort(pairs: readonly (readonly [string, string])[]): [string[], string[][]] {
+  const items = new Map<string, Item>()
+  const itemOf = (name: string): Item => {
+    let found = items.get(name)
+    if (found === undefined) {
+      found = { name, count: 0, successors: [], qlink: null, printed: false }
+      items.set(name, found)
+    }
+    return found
+  }
   for (const [a, b] of pairs) {
-    const adj = getOrCreate(graph, inDegree, a)
-    getOrCreate(graph, inDegree, b)
-    if (!adj.has(b)) {
-      adj.add(b)
-      inDegree.set(b, (inDegree.get(b) ?? 0) + 1)
+    const j = itemOf(a)
+    const k = itemOf(b)
+    if (a !== b) {
+      k.count += 1
+      j.successors.push(k)
     }
   }
-  const queue: string[] = []
-  for (const [node, deg] of inDegree) {
-    if (deg === 0) queue.push(node)
-  }
-  const result: string[] = []
-  let head = 0
-  while (head < queue.length) {
-    const node = queue[head] ?? ''
-    head += 1
-    result.push(node)
-    const neighbors = [...(graph.get(node) ?? new Set<string>())].sort(compareCodePoints)
-    for (const nb of neighbors) {
-      const d = (inDegree.get(nb) ?? 0) - 1
-      inDegree.set(nb, d)
-      if (d === 0) queue.push(nb)
+  const tree = [...items.keys()].sort(compareCodePoints).map((name) => itemOf(name))
+  const order: string[] = []
+  const loops: string[][] = []
+  let remaining = tree.length
+  while (remaining > 0) {
+    const queue = tree.filter((k) => k.count === 0 && !k.printed)
+    for (const head of queue) {
+      order.push(head.name)
+      head.printed = true
+      remaining -= 1
+      for (let index = head.successors.length - 1; index >= 0; index--) {
+        const successor = head.successors[index]
+        if (successor === undefined) continue
+        successor.count -= 1
+        if (successor.count === 0) queue.push(successor)
+      }
     }
+    if (remaining > 0) loops.push(breakLoop(tree))
   }
-  const hasCycle = result.length !== graph.size
-  return [result, hasCycle]
+  return [order, loops]
 }
 
 export async function tsortGeneric(
@@ -95,11 +148,16 @@ export async function tsortGeneric(
   for (let i = 0; i < tokens.length; i += 2) {
     pairs.push([tokens[i] ?? '', tokens[i + 1] ?? ''])
   }
-  const [sorted, hasCycle] = topologicalSort(pairs)
-  if (hasCycle) {
-    const out: ByteSource = ENC.encode('tsort: cycle detected\n')
-    return [out, new IOResult({ exitCode: 1 })]
-  }
-  const result: ByteSource = ENC.encode(sorted.length > 0 ? sorted.join('\n') + '\n' : '')
-  return [result, new IOResult()]
+  const [order, loops] = topologicalSort(pairs)
+  const result: ByteSource = ENC.encode(order.map((name) => `${name}\n`).join(''))
+  if (loops.length === 0) return [result, new IOResult()]
+  const name = paths[0]?.rawPath ?? '-'
+  const report = loops
+    .map(
+      (members) =>
+        `tsort: ${name}: input contains a loop:\n` +
+        members.map((member) => `tsort: ${member}\n`).join(''),
+    )
+    .join('')
+  return [result, new IOResult({ exitCode: 1, stderr: ENC.encode(report) })]
 }

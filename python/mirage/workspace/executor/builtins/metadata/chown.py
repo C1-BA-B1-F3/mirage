@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.commands.spec.usage import (
+    missing_operand_error,
+    unknown_option_error,
+)
 from mirage.runtime.types import DispatchFn
-from mirage.types import PathSpec
+from mirage.types import PathSpec, word_text
 from mirage.workspace.executor.builtins.metadata.metadata import (
     apply_attrs,
     apply_link_attrs,
@@ -52,9 +56,12 @@ async def handle_chown(
     """
     flags, _values, operands, bad = split_value_flags(args, "Rvfh", "")
     if bad is not None:
-        return fail("chown", f"chown: invalid option -- '{bad}'\n", 2)
+        message, code = unknown_option_error("chown", bad)
+        return fail("chown", message.decode(), code)
     if len(operands) < 2:
-        return fail("chown", "chown: missing operand\n", 2)
+        last = word_text(operands[0]) if operands else None
+        error = missing_operand_error("chown", last)
+        return fail("chown", f"{error}\n", error.exit_code)
     owner_text = operand_text(operands[0])
     uid, gid = parse_owner(owner_text)
     if uid is None and gid is None:

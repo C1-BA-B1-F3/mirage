@@ -41,19 +41,11 @@ async def _wrap_bytes(data: bytes) -> AsyncIterator[bytes]:
     yield data
 
 
-def resolve_source(
-    stdin: ByteSource | None,
-    error_msg: str | None = None,
-    error_cls: type[Exception] = ValueError,
-) -> AsyncIterator[bytes]:
+def resolve_source(stdin: ByteSource | None) -> AsyncIterator[bytes]:
     if stdin is not None:
         if isinstance(stdin, bytes):
             return _wrap_bytes(stdin)
         return stdin
-    if error_msg is not None:
-        # error_cls picks the severity: UsageError for usage errors (exit 2),
-        # the ValueError default for data/operand errors (exit 1).
-        raise error_cls(error_msg)
     # GNU semantics: no stdin behaves like empty input (/dev/null)
     return _wrap_bytes(b"")
 

@@ -20,9 +20,7 @@ async def md5(
     stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     if not paths:
-        data = await read_stdin_async(stdin)
-        if data is None:
-            raise ValueError("md5: missing operand")
+        data = await read_stdin_async(stdin) or b""
         digest = hashlib.md5(data).hexdigest()
         return f"{digest}  -\n".encode(), IOResult()
     outputs: list[str] = []

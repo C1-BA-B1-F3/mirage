@@ -8,6 +8,6 @@ async def _unused_read_bytes(path):
 
 
 @pytest.mark.asyncio
-async def test_rev_missing_input_raises():
-    with pytest.raises(ValueError, match="missing operand"):
-        await rev([], read_bytes=_unused_read_bytes)
+async def test_rev_without_stdin_reads_empty_input():
+    out, io = await rev([], read_bytes=_unused_read_bytes)
+    assert (out, io.exit_code) == (b"", 0)

@@ -14,6 +14,7 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { missingOperandError } from '../../spec/usage.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { CommandFn } from '../../config.ts'
 import { gnuDirname } from '../../../utils/path.ts'
@@ -21,6 +22,7 @@ import { gnuDirname } from '../../../utils/path.ts'
 const ENC = new TextEncoder()
 
 export const dirnameFn: CommandFn = (_accessor, _paths, texts, opts) => {
+  if (texts.length === 0) throw missingOperandError('dirname', null)
   const lines = texts.map((t) => gnuDirname(t))
   const fl = new FlagView(opts.flags, specOf('dirname'))
   const separator = fl.asBool('zero') ? '\0' : '\n'

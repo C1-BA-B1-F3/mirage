@@ -33,6 +33,40 @@
         "stdout": "hello\nworld\nfoo\nbar\nbaz\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "tail_defaults_to_ten_lines_and_keeps_edges",
+      "seq": 8,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 15 > /data/r10long.txt; tail /data/r10long.txt; tail -n +13 /data/r10long.txt; tail /data/no_nl.txt; echo; tail /data/empty.txt | wc -c; tail -c +0 /data/a.txt | wc -c; tail -c 100 /data/a.txt | wc -c; tail -c 0 /data/a.txt | wc -c; rm /data/r10long.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n13\n14\n15\nno trailing newline\n0\n24\n24\n0\n",
+        "stderr": ""
+      }
     }
   ]
 }

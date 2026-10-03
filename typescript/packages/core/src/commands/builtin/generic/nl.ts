@@ -259,7 +259,7 @@ const INT_MAX = 2n ** 31n - 1n
 const INTMAX_MAX = 2n ** 63n - 1n
 const INTMAX_MIN = -(2n ** 63n)
 
-// Where the sub-minimum side of -w and -l switches from the ERANGE wording to
+// Where the sub-minimum side of -w switches from the ERANGE wording to
 // the EOVERFLOW one, measured by bisection on coreutils 9.4 / glibc 2.39 /
 // x86-64: `-w -1073741824` is ERANGE and `-w -1073741825` is EOVERFLOW,
 // deterministically and whatever else the line carries. -2**30 matches no
@@ -267,8 +267,8 @@ const INTMAX_MIN = -(2n ** 63n)
 // gnulib artifact of that platform rather than a rule with a reason; it is
 // the value here most likely to move elsewhere.
 //
-// It belongs to -w and -l ALONE. -v and -i switch at the type boundary
-// instead (`-i -9223372036854775808` numbers happily and only
+// It belongs to -w ALONE (GNU 9.7 reads -l unsigned). -v and -i switch at
+// the type boundary instead (`-i -9223372036854775808` numbers happily and only
 // -9223372036854775809 is refused), so they carry INTMAX_MIN here and the
 // ERANGE clause is unreachable for them.
 const WIDTH_OVERFLOW_LOW = -(2n ** 30n)
@@ -293,21 +293,22 @@ const WIDTH_OVERFLOW_LOW = -(2n ** 30n)
 // The ranges differ per option and split the four two ways. `-v` and `-i`
 // take the whole signed range, so GNU numbers from a negative start and counts
 // up, `-i -2` genuinely decrements, and zero is legal; neither ever produces
-// the ERANGE clause, because their overflowLow IS their low. `-w` and `-l`
-// must be at least 1, and `-w` additionally tops out at INT_MAX where `-l`
-// tops out at INTMAX_MAX. All four spell a leading `+` the way GNU does, as a
+// the ERANGE clause, because their overflowLow IS their low. `-w` must be at
+// least 1 and tops out at INT_MAX. `-l` is unsigned in GNU 9.7: any value from
+// 0 up is taken, a huge one clamped, and a negative one is out of range
+// however large. All four spell a leading `+` the way GNU does, as a
 // sign on an otherwise unsigned value.
 function numberError(
   label: string,
   raw: string | undefined,
   low: bigint,
-  high: bigint,
-  overflowLow: bigint,
+  high: bigint | null,
+  overflowLow: bigint | null,
 ): string | null {
   if (raw === undefined) return null
   if (!NUMBER.test(raw)) return `nl: ${label}: '${quoteText(raw)}'`
   const value = BigInt(raw)
-  if (value > high || value < overflowLow) {
+  if ((high !== null && value > high) || (overflowLow !== null && value < overflowLow)) {
     return `nl: ${label}: '${quoteText(raw)}': ${EOVERFLOW}`
   }
   if (value < low) return `nl: ${label}: '${quoteText(raw)}': ${ERANGE}`
@@ -318,11 +319,19 @@ function numberError(
 // inclusive range GNU accepts, and where the refusal switches to the
 // EOVERFLOW wording. The order here is for reading only — which option gets
 // to speak is decided by the command line, never by this table.
-const NUMERIC_OPTIONS: readonly (readonly [string, string, bigint, bigint, bigint])[] = [
+// `-l` is unsigned in GNU 9.7: any value from 0 up is taken, a huge one
+// clamped, and a negative one is out of range however large.
+const NUMERIC_OPTIONS: readonly (readonly [
+  string,
+  string,
+  bigint,
+  bigint | null,
+  bigint | null,
+])[] = [
   ['starting_line_number', 'invalid starting line number', INTMAX_MIN, INTMAX_MAX, INTMAX_MIN],
   ['line_increment', 'invalid line number increment', INTMAX_MIN, INTMAX_MAX, INTMAX_MIN],
   ['number_width', 'invalid line number field width', 1n, INT_MAX, WIDTH_OVERFLOW_LOW],
-  ['join_blank_lines', 'invalid line number of blank lines', 1n, INTMAX_MAX, WIDTH_OVERFLOW_LOW],
+  ['join_blank_lines', 'invalid line number of blank lines', 0n, null, null],
 ]
 
 // The three style options and the message each one words its refusal with.
@@ -417,7 +426,7 @@ function patternError(dest: string, raw: string): string | null {
 // Returns the stderr text, one newline-terminated line per error, or null
 // when GNU accepts every value.
 function optionErrors(fl: FlagView): string | null {
-  const camps = new Map<string, readonly [string, bigint, bigint, bigint]>(
+  const camps = new Map<string, readonly [string, bigint, bigint | null, bigint | null]>(
     NUMERIC_OPTIONS.map(([dest, label, low, high, overflowLow]) => [
       dest,
       [label, low, high, overflowLow] as const,
@@ -551,7 +560,7 @@ export async function nlGeneric(
     ]
   }
   try {
-    const source = resolveSource(opts.stdin, 'nl: missing operand')
+    const source = resolveSource(opts.stdin)
     // The IOResult is handed back before the stream is drained, so the
     // overflow abort reports by mutating it as it goes.
     const io = new IOResult()

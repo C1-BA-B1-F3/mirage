@@ -53,7 +53,7 @@ _INT_MAX = 2**31 - 1
 _INTMAX_MAX = 2**63 - 1
 _INTMAX_MIN = -(2**63)
 
-# Where the sub-minimum side of `-w` and `-l` switches from the ERANGE
+# Where the sub-minimum side of `-w` switches from the ERANGE
 # wording to the EOVERFLOW one, measured by bisection on coreutils 9.4 /
 # glibc 2.39 / x86-64: `-w -1073741824` is ERANGE and `-w -1073741825`
 # is EOVERFLOW, deterministically and whatever else the line carries.
@@ -61,10 +61,10 @@ _INTMAX_MIN = -(2**63)
 # as an unexplained gnulib artifact of that platform rather than a rule
 # with a reason; it is the value here most likely to move elsewhere.
 #
-# It belongs to `-w` and `-l` ALONE. `-v` and `-i` switch at the type
-# boundary instead (`-i -9223372036854775808` numbers happily and only
-# `-9223372036854775809` is refused), so they carry _INTMAX_MIN here and
-# the ERANGE clause is unreachable for them.
+# It belongs to `-w` ALONE (GNU 9.7 reads `-l` unsigned). `-v` and `-i`
+# switch at the type boundary instead (`-i -9223372036854775808` numbers
+# happily and only `-9223372036854775809` is refused), so they carry
+# _INTMAX_MIN here and the ERANGE clause is unreachable for them.
 _WIDTH_OVERFLOW_LOW = -(2**30)
 
 
@@ -84,7 +84,11 @@ class NlFlags:
 
 
 def _number_error(
-    label: str, raw: str | None, low: int, high: int, overflow_low: int
+    label: str,
+    raw: str | None,
+    low: int,
+    high: int | None,
+    overflow_low: int | None,
 ) -> str | None:
     """GNU ``nl``'s refusal for one of its four numeric options.
 
@@ -108,21 +112,24 @@ def _number_error(
     The ranges differ per option and split the four two ways. ``-v`` and
     ``-i`` take the whole signed range, so GNU numbers from a negative
     start and counts up, ``-i -2`` genuinely decrements, and zero is
-    legal; neither ever produces the ERANGE clause. ``-w`` and ``-l``
-    must be at least 1, and ``-w`` additionally tops out at ``INT_MAX``
-    where ``-l`` tops out at ``INTMAX_MAX``. All four spell a leading
-    ``+`` the way GNU does, as a sign on an otherwise unsigned value.
+    legal; neither ever produces the ERANGE clause. ``-w`` must be at
+    least 1 and tops out at ``INT_MAX``. ``-l`` is unsigned in GNU 9.7:
+    any value from 0 up is taken, a huge one clamped, and a negative one
+    is out of range however large. All four spell a leading ``+`` the
+    way GNU does, as a sign on an otherwise unsigned value.
 
     Args:
         label (str): the option's own message text, e.g. "invalid
             starting line number".
         raw (str | None): the raw option value, or None when unset.
         low (int): the smallest value GNU accepts for this option.
-        high (int): the largest value GNU accepts for this option.
-        overflow_low (int): the value below which the refusal takes the
-            EOVERFLOW wording rather than the ERANGE one. Equal to
-            ``low`` for the two signed options, which is what makes
-            their ERANGE clause unreachable.
+        high (int | None): the largest value GNU accepts for this
+            option, None when GNU clamps instead.
+        overflow_low (int | None): the value below which the refusal
+            takes the EOVERFLOW wording rather than the ERANGE one, None
+            when it never does. Equal to ``low`` for the two signed
+            options, which is what makes their ERANGE clause
+            unreachable.
 
     Returns:
         str | None: the single stderr line to print, or None when the
@@ -133,7 +140,9 @@ def _number_error(
     if _NUMBER.fullmatch(raw) is None:
         return f"nl: {label}: '{quote_text(raw)}'"
     value = int(raw)
-    if value > high or value < overflow_low:
+    if (high is not None and value > high) or (
+        overflow_low is not None and value < overflow_low
+    ):
         return f"nl: {label}: '{quote_text(raw)}': {_EOVERFLOW}"
     if value < low:
         return f"nl: {label}: '{quote_text(raw)}': {_ERANGE}"
@@ -144,7 +153,7 @@ def _number_error(
 # the inclusive range GNU accepts, and where the refusal switches to the
 # EOVERFLOW wording. The order here is for reading only -- which option
 # gets to speak is decided by the command line, never by this tuple.
-_NUMERIC_OPTIONS: tuple[tuple[str, str, int, int, int], ...] = (
+_NUMERIC_OPTIONS: tuple[tuple[str, str, int, int | None, int | None], ...] = (
     (
         "starting_line_number",
         "invalid starting line number",
@@ -169,9 +178,9 @@ _NUMERIC_OPTIONS: tuple[tuple[str, str, int, int, int], ...] = (
     (
         "join_blank_lines",
         "invalid line number of blank lines",
-        1,
-        _INTMAX_MAX,
-        _WIDTH_OVERFLOW_LOW,
+        0,
+        None,
+        None,
     ),
 )
 
@@ -650,7 +659,7 @@ async def nl(
     io = IOResult()
     if paths:
         return _nl_multi(paths, read_stream, config, io), io
-    source = resolve_source(stdin, "nl: missing operand")
+    source = resolve_source(stdin)
     return _nl_stream(source, config, NlState(start), io), io
 
 

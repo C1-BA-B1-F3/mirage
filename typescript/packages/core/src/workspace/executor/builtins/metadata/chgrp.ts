@@ -12,7 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { PathSpec } from '../../../../types.ts'
+import { PathSpec, wordText } from '../../../../types.ts'
+import { missingOperandError, unknownOptionError } from '../../../../commands/spec/usage.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { expandOperands, fail, finish, splitValueFlags } from '../shared.ts'
@@ -37,10 +38,15 @@ export async function handleChgrp(
   args: readonly (string | PathSpec)[],
 ): Promise<Result> {
   const { flags, operands, bad } = splitValueFlags(args, 'Rvfh', '')
-  if (bad !== null) return fail('chgrp', `chgrp: invalid option -- '${bad}'\n`, 2)
-  if (operands.length < 2) return fail('chgrp', 'chgrp: missing operand\n', 2)
+  if (bad !== null) {
+    const [message, code] = unknownOptionError('chgrp', bad)
+    return fail('chgrp', new TextDecoder().decode(message), code)
+  }
   const first = operands[0]
-  if (first === undefined) return fail('chgrp', 'chgrp: missing operand\n', 2)
+  if (operands.length < 2 || first === undefined) {
+    const error = missingOperandError('chgrp', first === undefined ? null : wordText(first))
+    return fail('chgrp', `${error.message}\n`, error.exitCode)
+  }
   const groupText = first instanceof PathSpec ? first.virtual : first
   const gid = parseGroup(groupText)
   if (gid === null) {

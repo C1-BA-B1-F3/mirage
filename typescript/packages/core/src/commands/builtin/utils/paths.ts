@@ -16,8 +16,15 @@ import type { LinkView, StatPath } from '../../../ops/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import type { FileStat } from '../../../types.ts'
 import { FileType, LINK_TARGET_KEY, PathSpec, type StatFn } from '../../../types.ts'
-import { dotWalkError, eexist, enoent, isMissingPath, type FsError } from '../../../utils/errors.ts'
-import { rekey } from '../../../utils/key_prefix.ts'
+import {
+  dotWalkError,
+  eexist,
+  enoent,
+  isMissingPath,
+  operandSpelling,
+  type FsError,
+} from '../../../utils/errors.ts'
+import { rekey, respelled } from '../../../utils/key_prefix.ts'
 import {
   CycleError,
   dotPrefixes,
@@ -70,10 +77,19 @@ export function typedSpec(word: string | PathSpec, cwd: string): PathSpec {
   })
 }
 
-// A path on `root`'s mount, keyed the way `root` is. Mirrors Python's
-// descendant_path.
+// `path` spelled from its operand as typed, the way GNU names it. Mirrors
+// Python's spelled_from.
+export function spelledFrom(path: PathSpec, operand: PathSpec): PathSpec {
+  return respelled(path, operandSpelling(path.virtual, operand))
+}
+
+// A path on `root`'s mount, keyed and spelled the way `root` is. Mirrors
+// Python's descendant_path.
 export function descendantPath(root: PathSpec, virtual: string): PathSpec {
-  return PathSpec.fromStrPath(virtual, rekey(root.virtual, root.vfsPath, virtual))
+  return spelledFrom(
+    PathSpec.fromStrPath(virtual, rekey(root.virtual, root.vfsPath, virtual)),
+    root,
+  )
 }
 
 // Probe a path once for {exists, isDir}. ENOTDIR counts as "does not exist":

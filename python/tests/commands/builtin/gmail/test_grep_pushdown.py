@@ -51,8 +51,8 @@ async def test_grep_without_word_flag_skips_native_search():
     # bare literal would under-report. Only -w may take it.
     accessor = AsyncMock()
     # Falling through to the per-message scan is the point. The stubbed
-    # glob resolves to no files, which the generic command reports as a
-    # usage error; what matters is that the native path was not taken.
+    # glob resolves to no files, which leaves the generic command an empty
+    # stdin and no match; what matters is that the native path was not taken.
     with (
         patch(
             "mirage.commands.builtin.gmail.grep.search_messages",
@@ -63,13 +63,13 @@ async def test_grep_without_word_flag_skips_native_search():
             new=AsyncMock(return_value=[]),
         ),
     ):
-        with pytest.raises(UsageError):
-            await grep(
-                accessor,
-                [_label_scope()],
-                ["hello"],
-                CommandOpts(index=RAMIndexCacheStore()),
-            )
+        _, io = await grep(
+            accessor,
+            [_label_scope()],
+            ["hello"],
+            CommandOpts(index=RAMIndexCacheStore()),
+        )
+    assert io.exit_code == 1
     spy.assert_not_awaited()
 
 

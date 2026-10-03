@@ -1,8 +1,10 @@
+import errno
+
 import pytest
 
 from mirage.commands.builtin.generic.tee import TeeFlags, parse_flags, tee
 from mirage.io.stream import materialize
-from mirage.types import MountMode, PathSpec
+from mirage.types import FileStat, FileType, MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -135,6 +137,101 @@ async def test_output_error_exit_stops_at_the_first_failure():
     )
     assert written == {"/p": b"x"}
     assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_an_output_that_fails_to_empty_is_the_one_reported():
+    written, write = _sink(frozenset({"/denied"}))
+
+    async def _stat(p: PathSpec) -> FileStat:
+        kind = FileType.DIRECTORY if p.virtual == "/dir" else FileType.FILE
+        return FileStat(name=p.virtual[1:], type=kind)
+
+    source, io = await tee(
+        [_spec("/good"), _spec("/denied"), _spec("/dir")],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={"output_error": "exit"},
+        stat=_stat,
+    )
+    assert source is None
+    assert written == {"/good": b""}
+    assert (io.writes, io.cache) == ({"/good": b""}, ["/good"])
+    assert io.exit_code == 1
+    assert await materialize(io.stderr) == b"tee: /denied: disk full\n"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_probe_leaves_the_open_to_the_write():
+    written, write = _sink()
+
+    async def _stat(p: PathSpec) -> FileStat:
+        if p.virtual == "/locked":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return FileStat(name=p.virtual[1:], type=FileType.FILE)
+
+    source, io = await tee(
+        [_spec("/good"), _spec("/locked")],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={"output_error": "exit"},
+        stat=_stat,
+    )
+    assert await materialize(source) == b"x"
+    assert written == {"/good": b"x", "/locked": b"x"}
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outputs,append,refused,written,stderr",
+    [
+        (
+            ["/good", "/locked"],
+            False,
+            {"/locked"},
+            {"/good": b""},
+            b"tee: /locked: disk full\n",
+        ),
+        (
+            ["/locked", "/gone/x"],
+            True,
+            set(),
+            {"/locked": b""},
+            b"tee: /gone/x: No such file or directory\n",
+        ),
+        (["/bad", "/locked"], False, {"/bad"}, {}, b"tee: /bad: disk full\n"),
+    ],
+)
+async def test_an_unprobed_output_is_opened_in_order_before_any_data(
+    outputs, append, refused, written, stderr
+):
+    sunk, write = _sink(frozenset(refused))
+
+    async def _stat(p: PathSpec) -> FileStat:
+        if p.virtual == "/locked":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        if p.virtual.startswith("/gone"):
+            raise FileNotFoundError(errno.ENOENT, "No such file or directory")
+        return FileStat(name=p.virtual[1:], type=FileType.FILE)
+
+    source, io = await tee(
+        [_spec(o) for o in outputs],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={"output_error": "exit", "append": append},
+        stat=_stat,
+    )
+    assert source is None
+    assert sunk == written
+    assert io.exit_code == 1
+    assert await materialize(io.stderr) == stderr
 
 
 @pytest.mark.asyncio

@@ -31,6 +31,35 @@
       "flags": [
         "v"
       ]
+    },
+    {
+      "id": "rm_v_names_entries_as_typed",
+      "seq": 601031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && echo r > r10rv.txt && mkdir -p r10rvd/s && echo q > r10rvd/s/f && rm -v r10rv.txt && rm -rv r10rvd)",
+      "expect": {
+        "exit": 0,
+        "stdout": "removed 'r10rv.txt'\nremoved 'r10rvd/s/f'\nremoved directory 'r10rvd/s'\nremoved directory 'r10rvd'\n",
+        "stderr": ""
+      }
     }
   ]
 }

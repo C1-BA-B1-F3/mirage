@@ -13,8 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { PathSpec } from '../../../types.ts'
-import { enoent } from '../../../utils/errors.ts'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { eacces, enoent } from '../../../utils/errors.ts'
 import { parseFlags, writeOutput } from './tee.ts'
 
 const DEC = new TextDecoder()
@@ -106,6 +106,86 @@ describe('writeOutput', () => {
     expect(s.written).toEqual({ '/p': 'x' })
     expect(io.exitCode).toBe(1)
   })
+
+  it('reports the output that fails while being emptied, keeping the records', async () => {
+    const s = sink(new Set(['/denied']))
+    const stat = (p: PathSpec): Promise<FileStat> =>
+      Promise.resolve(
+        new FileStat({
+          name: p.virtual.slice(1),
+          type: p.virtual === '/dir' ? FileType.DIRECTORY : FileType.FILE,
+        }),
+      )
+    const [out, io] = await writeOutput(
+      paths('/good', '/denied', '/dir'),
+      ENC.encode('x'),
+      { append: false, stopOnError: true },
+      noStream,
+      s.write,
+      undefined,
+      stat,
+    )
+    expect(out).toBeNull()
+    expect(s.written).toEqual({ '/good': '' })
+    expect([Object.keys(io.writes), io.cache]).toEqual([['/good'], ['/good']])
+    expect(io.exitCode).toBe(1)
+    expect(DEC.decode(io.stderr as Uint8Array)).toBe('tee: /denied: disk full\n')
+  })
+
+  it('leaves the open to the write when the probe is refused', async () => {
+    const s = sink()
+    const stat = (p: PathSpec): Promise<FileStat> =>
+      p.virtual === '/locked'
+        ? Promise.reject(eacces(p))
+        : Promise.resolve(new FileStat({ name: p.virtual.slice(1), type: FileType.FILE }))
+    const [out, io] = await writeOutput(
+      paths('/good', '/locked'),
+      ENC.encode('x'),
+      { append: false, stopOnError: true },
+      noStream,
+      s.write,
+      undefined,
+      stat,
+    )
+    expect(out).not.toBeNull()
+    expect(s.written).toEqual({ '/good': 'x', '/locked': 'x' })
+    expect(io.exitCode).toBe(0)
+  })
+
+  it.each([
+    [['/good', '/locked'], false, ['/locked'], { '/good': '' }, 'tee: /locked: disk full\n'],
+    [
+      ['/locked', '/gone/x'],
+      true,
+      [],
+      { '/locked': '' },
+      'tee: /gone/x: No such file or directory\n',
+    ],
+    [['/bad', '/locked'], false, ['/bad'], {}, 'tee: /bad: disk full\n'],
+  ] as const)(
+    'opens an unprobed output in order before any data: %o',
+    async (outputs, append, refused, written, stderr) => {
+      const s = sink(new Set(refused))
+      const stat = (p: PathSpec): Promise<FileStat> => {
+        if (p.virtual === '/locked') return Promise.reject(eacces(p))
+        if (p.virtual.startsWith('/gone')) return Promise.reject(enoent(p))
+        return Promise.resolve(new FileStat({ name: p.virtual.slice(1), type: FileType.FILE }))
+      }
+      const [out, io] = await writeOutput(
+        paths(...outputs),
+        ENC.encode('x'),
+        { append, stopOnError: true },
+        noStream,
+        s.write,
+        undefined,
+        stat,
+      )
+      expect(out).toBeNull()
+      expect(s.written).toEqual(written)
+      expect(io.exitCode).toBe(1)
+      expect(DEC.decode(io.stderr as Uint8Array)).toBe(stderr)
+    },
+  )
 
   it('diagnoses every failing operand', async () => {
     const s = sink(new Set(['/b1', '/b2']))

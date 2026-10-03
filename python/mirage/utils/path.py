@@ -434,6 +434,7 @@ def drop_trailing_segments(path: str, count: int) -> str:
         drop_trailing_segments("a/b/c", 1)   -> "a/b"
         drop_trailing_segments("/x/y/z", 2)  -> "/x"
         drop_trailing_segments("a/b", 5)     -> "a/b"   # clamped
+        drop_trailing_segments("a//b//c", 2) -> "a"
 
     Args:
         path (str): The path as typed.
@@ -441,11 +442,12 @@ def drop_trailing_segments(path: str, count: int) -> str:
     """
     if count <= 0:
         return path
-    parts = path.rstrip("/").split("/")
-    if count >= len([part for part in parts if part]):
+    if count >= len([part for part in path.split("/") if part]):
         return path
-    joined = "/".join(parts[:-count])
-    return joined if joined else "/"
+    head = path.rstrip("/")
+    for _ in range(count):
+        head = head[: head.rfind("/")].rstrip("/")
+    return head or "/"
 
 
 def gnu_basename(path: str, suffix: str | None = None) -> str:

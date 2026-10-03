@@ -73,6 +73,36 @@
       "flags": [
         "f"
       ]
+    },
+    {
+      "id": "rg_e_and_f_patterns_union",
+      "seq": 289,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'hello\\n' > /data/r10pat; rg -e world -f /data/r10pat /data/a.txt; echo rc=$?; rm /data/r10pat",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\nworld\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

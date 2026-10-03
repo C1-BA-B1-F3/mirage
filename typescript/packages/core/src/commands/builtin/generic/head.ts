@@ -207,7 +207,7 @@ export async function headGeneric(
     ]
   }
   try {
-    const source = resolveSource(opts.stdin, 'head: missing operand')
+    const source = resolveSource(opts.stdin)
     const body = headStream(source, parsed.lines, parsed.bytesMode, parsed.zeroTerminated)
     // -v heads a stdin nobody named with the name it gives `-`.
     const header = ENC.encode(`==> ${STDIN_HEADER_NAME} <==\n`)

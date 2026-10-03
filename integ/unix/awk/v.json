@@ -73,6 +73,40 @@
       "flags": [
         "v"
       ]
+    },
+    {
+      "id": "awk_v_last_assignment_wins",
+      "seq": 173,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk -v x=first -v x=second '{print x}' /data/one_byte.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "second\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -13,39 +13,47 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { PathSpec } from '../../../types.ts'
+import { respelled } from '../../../utils/key_prefix.ts'
 import { removalLines } from './verbose.ts'
 
+const at = (virtual: string): PathSpec => PathSpec.fromStrPath(virtual)
+
 describe('removalLines', () => {
-  it('emits children before parents on a chain', () => {
+  it('emits children before parents on a chain, spelled as typed', () => {
     expect(
-      removalLines([
-        { path: '/data/lin', isDir: true },
-        { path: '/data/lin/sub', isDir: true },
-        { path: '/data/lin/sub/z.txt', isDir: false },
-      ]),
-    ).toEqual([
-      "removed '/data/lin/sub/z.txt'",
-      "removed directory '/data/lin/sub'",
-      "removed directory '/data/lin'",
-    ])
+      removalLines(
+        [
+          { path: '/data/lin', isDir: true },
+          { path: '/data/lin/sub', isDir: true },
+          { path: '/data/lin/sub/z.txt', isDir: false },
+        ],
+        respelled(at('/data/lin'), 'lin'),
+      ),
+    ).toEqual(["removed 'lin/sub/z.txt'", "removed directory 'lin/sub'", "removed directory 'lin'"])
   })
 
   it('is deterministic regardless of input order', () => {
     expect(
-      removalLines([
-        { path: '/data/t', isDir: true },
-        { path: '/data/t/b.txt', isDir: false },
-        { path: '/data/t/a.txt', isDir: false },
-      ]),
+      removalLines(
+        [
+          { path: '/data/t', isDir: true },
+          { path: '/data/t/b.txt', isDir: false },
+          { path: '/data/t/a.txt', isDir: false },
+        ],
+        at('/data/t'),
+      ),
     ).toEqual(["removed '/data/t/b.txt'", "removed '/data/t/a.txt'", "removed directory '/data/t'"])
   })
 
   it('renders a single file, strips trailing slashes, and handles an empty list', () => {
-    expect(removalLines([{ path: '/data/f.txt', isDir: false }])).toEqual(["removed '/data/f.txt'"])
-    expect(removalLines([{ path: '/data/dir///', isDir: true }])).toEqual([
+    expect(removalLines([{ path: '/data/f.txt', isDir: false }], at('/data/f.txt'))).toEqual([
+      "removed '/data/f.txt'",
+    ])
+    expect(removalLines([{ path: '/data/dir///', isDir: true }], at('/data/dir'))).toEqual([
       "removed directory '/data/dir'",
     ])
-    expect(removalLines([])).toEqual([])
+    expect(removalLines([], at('/data/e'))).toEqual([])
   })
 })
 
@@ -56,12 +64,15 @@ describe('removalLines ordering is by code point, reversed', () => {
   // descendant always precedes its directory under the reverse.
   it('still reports children before parents across a branching tree', () => {
     expect(
-      removalLines([
-        { path: '/data/t', isDir: true },
-        { path: '/data/t/ab', isDir: false },
-        { path: '/data/t/a', isDir: true },
-        { path: '/data/t/a/b.txt', isDir: false },
-      ]),
+      removalLines(
+        [
+          { path: '/data/t', isDir: true },
+          { path: '/data/t/ab', isDir: false },
+          { path: '/data/t/a', isDir: true },
+          { path: '/data/t/a/b.txt', isDir: false },
+        ],
+        at('/data/t'),
+      ),
     ).toEqual([
       "removed '/data/t/ab'",
       "removed '/data/t/a/b.txt'",
@@ -77,11 +88,14 @@ describe('removalLines ordering is by code point, reversed', () => {
   // the two orders apart.
   it('orders an astral name by code point, not by UTF-16 code unit', () => {
     expect(
-      removalLines([
-        { path: '/d/z', isDir: false },
-        { path: '/d/\u{1D11E}', isDir: false },
-        { path: '/d/\uFFFD', isDir: false },
-      ]),
+      removalLines(
+        [
+          { path: '/d/z', isDir: false },
+          { path: '/d/\u{1D11E}', isDir: false },
+          { path: '/d/\uFFFD', isDir: false },
+        ],
+        at('/d'),
+      ),
     ).toEqual(["removed '/d/\u{1D11E}'", "removed '/d/\uFFFD'", "removed '/d/z'"])
   })
 })

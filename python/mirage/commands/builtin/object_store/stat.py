@@ -25,6 +25,7 @@ from mirage.commands.builtin.generic_bind.adapter import (
 )
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.usage import missing_operand_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -54,7 +55,7 @@ def make_stat(vfs: str, io: CommandIO) -> Callable[..., Any]:
         opts: CommandOpts,
     ) -> tuple[ByteSource | None, IOResult]:
         if not paths:
-            raise ValueError("stat: missing operand")
+            raise missing_operand_error("stat", None)
         resolved = await resolve_glob(accessor, paths, opts.index)
         stat_fn = bound_op(stat_core, accessor, opts.index)
         overlay = opts.ns.stat_overlay if opts.ns is not None else None

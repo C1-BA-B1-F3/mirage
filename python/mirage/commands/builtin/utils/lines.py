@@ -2,8 +2,8 @@ from collections.abc import Callable, Sequence
 from typing import AnyStr
 
 
-def split_lines(text: str) -> list[str]:
-    lines = text.split("\n")
+def split_lines(text: str, sep: str = "\n") -> list[str]:
+    lines = text.split(sep)
     if lines and lines[-1] == "":
         lines.pop()
     return lines

@@ -93,7 +93,12 @@ export interface TruncateFlags {
 export function parseFlags(bag: Record<string, FlagValue>): TruncateFlags {
   const fl = new FlagView(bag, specOf('truncate'))
   const size = fl.asStr('size')
-  if (size === undefined) throw new Error("truncate: you must specify either '--size' or '-s'")
+  if (size === undefined) {
+    throw new UsageError(
+      `truncate: you must specify either '--size' or '--reference'${TRY_HELP}`,
+      1,
+    )
+  }
   parseSize(size, 0)
   return { size, noCreate: fl.asBool('no_create') }
 }

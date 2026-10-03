@@ -247,15 +247,22 @@ export async function numfmtGeneric(
   const fromMode = fl.asStr('from') ?? 'none'
   const suffix = fl.asStr('suffix') ?? ''
   const grouping = fl.asBool('grouping')
-  let output: string[]
-  if (texts.length > 0) {
-    output = texts.map((value) => convertField(value, toMode, fromMode, suffix, grouping))
-  } else {
-    const data = DEC.decode(await materialize(resolveSource(opts.stdin)))
-    output = splitLinesNoEnds(data).map((line) =>
-      convertLine(line, toMode, fromMode, suffix, grouping),
-    )
+  const [fields, convert] =
+    texts.length > 0
+      ? [texts, convertField]
+      : [splitLinesNoEnds(DEC.decode(await materialize(resolveSource(opts.stdin)))), convertLine]
+  let printed = ''
+  for (const value of fields) {
+    try {
+      printed += convert(value, toMode, fromMode, suffix, grouping)
+    } catch (err) {
+      if (!(err instanceof UsageError)) throw err
+      // GNU aborts at the first invalid number, after printing the ones
+      // before it.
+      const out = printed === '' ? null : ENC.encode(printed)
+      return [out, new IOResult({ exitCode: err.exitCode, stderr: ENC.encode(`${err.message}\n`) })]
+    }
+    printed += '\n'
   }
-  if (output.length === 0) return [new Uint8Array(0), new IOResult()]
-  return [ENC.encode(output.join('\n') + '\n'), new IOResult()]
+  return [ENC.encode(printed), new IOResult()]
 }

@@ -30,6 +30,7 @@ from mirage.commands.builtin.utils.paths import (
     absent_dest_strerror,
     descendant_path,
     nearest_ancestor,
+    spelled_from,
 )
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
@@ -742,12 +743,12 @@ def overwrite_type_error(
     if src_is_dir and not target_is_dir:
         return (
             f"{cmd_name}: cannot overwrite non-directory "
-            f"'{target.virtual}' with directory '{src.virtual}'"
+            f"'{target.raw_path}' with directory '{src.raw_path}'"
         )
     if not src_is_dir and target_is_dir:
         return (
             f"{cmd_name}: cannot overwrite directory "
-            f"'{target.virtual}' with non-directory '{src.virtual}'"
+            f"'{target.raw_path}' with non-directory '{src.raw_path}'"
         )
     return None
 
@@ -787,7 +788,7 @@ async def overwrite_gate(
     if policy.no_clobber or policy.update == "none":
         return False
     if policy.update == "none-fail":
-        errors.append(f"{policy.cmd_name}: not replacing '{target.virtual}'")
+        errors.append(f"{policy.cmd_name}: not replacing '{target.raw_path}'")
         return False
     if policy.update == "older":
         try:
@@ -850,7 +851,7 @@ async def _duplicate_for_backup(
         return True
     if strategy.dir_copy is None:
         errors.append(
-            f"{cmd_name}: cannot backup '{target.virtual}': "
+            f"{cmd_name}: cannot backup '{target.raw_path}': "
             "Operation not supported"
         )
         return False
@@ -885,7 +886,7 @@ async def _restore_backup_link(
     except FS_ERRORS as exc:
         errors.append(
             f"{cmd_name}: cannot restore backup "
-            f"'{backup.virtual}': {fs_strerror(exc)}"
+            f"'{backup.raw_path}': {fs_strerror(exc)}"
         )
 
 
@@ -931,7 +932,7 @@ async def make_backup(
     except FS_ERRORS as exc:
         errors.append(
             f"{policy.cmd_name}: cannot backup "
-            f"'{target.virtual}': {fs_strerror(exc)}"
+            f"'{target.raw_path}': {fs_strerror(exc)}"
         )
         return None, False
     if backup is None:
@@ -953,7 +954,7 @@ async def make_backup(
     except FS_ERRORS as exc:
         errors.append(
             f"{policy.cmd_name}: cannot backup "
-            f"'{target.virtual}': {fs_strerror(exc)}"
+            f"'{target.raw_path}': {fs_strerror(exc)}"
         )
         return None, False
     finally:
@@ -982,9 +983,9 @@ def transfer_line(
         target (PathSpec): Destination entry.
         backup (PathSpec | None): Backup made for this overwrite.
     """
-    line = f"'{src.virtual}' -> '{target.virtual}'"
+    line = f"'{src.raw_path}' -> '{target.raw_path}'"
     if backup is not None:
-        line += f" (backup: '{backup.virtual}')"
+        line += f" (backup: '{backup.raw_path}')"
     return line
 
 
@@ -1015,11 +1016,12 @@ async def _tree_lines(
     files = await strategy.find(src, type="f")
     lines: list[str] = []
     for entry_mount in sorted({src_base, *dirs, *files}):
-        entry = mounted_path(src, entry_mount)
-        entry_dst = mounted_path(
-            target, dst_base + entry_mount[len(src_base) :]
+        entry = spelled_from(mounted_path(src, entry_mount), src)
+        entry_dst = spelled_from(
+            mounted_path(target, dst_base + entry_mount[len(src_base) :]),
+            target,
         )
-        lines.append(f"'{entry.virtual}' -> '{entry_dst.virtual}'")
+        lines.append(f"'{entry.raw_path}' -> '{entry_dst.raw_path}'")
     return lines
 
 
@@ -1073,12 +1075,13 @@ async def _mirror_dirs(
     # used to come out in a different order run to run -- and in a different
     # order from TypeScript, whose Set keeps insertion order.
     for entry_mount in sorted(set(mounts), key=lambda p: (len(p), p)):
-        entry_dst = mounted_path(
-            target, dst_base + entry_mount[len(src_base) :]
+        entry_dst = spelled_from(
+            mounted_path(target, dst_base + entry_mount[len(src_base) :]),
+            target,
         )
         if lines is not None:
-            entry = mounted_path(src, entry_mount)
-            lines.append(f"'{entry.virtual}' -> '{entry_dst.virtual}'")
+            entry = spelled_from(mounted_path(src, entry_mount), src)
+            lines.append(f"'{entry.raw_path}' -> '{entry_dst.raw_path}'")
         if await is_directory(stat, entry_dst):
             continue
         try:
@@ -1086,7 +1089,7 @@ async def _mirror_dirs(
         except FS_ERRORS as exc:
             errors.append(
                 f"cp: cannot create directory "
-                f"'{entry_dst.virtual}': {fs_strerror(exc)}"
+                f"'{entry_dst.raw_path}': {fs_strerror(exc)}"
             )
             return False
         writes[entry_dst.mount_path] = b""
@@ -1108,11 +1111,12 @@ async def walk(
     has since vanished (e.g. on S3). Used only by the primitive (no native
     ``copy``) path; backends that inject ``copy``/``find`` never reach it.
 
-    A directory the session may not open, or an entry it may not stat
-    (a rule refused it below the operand), is GNU's ``cannot access`` /
-    ``cannot stat`` line when ``errors`` is given and the walk goes on
-    without its contents; with no channel the refusal propagates rather
-    than leave a silent gap.
+    A folder a backend lists with a trailing slash (box, dropbox,
+    gdrive) is walked without it. A directory the session may not open,
+    or an entry it may not stat (a rule refused it below the operand), is
+    GNU's ``cannot access`` / ``cannot stat`` line when ``errors`` is
+    given and the walk goes on without its contents; with no channel the
+    refusal propagates rather than leave a silent gap.
 
     Args:
         readdir (Callable): Lists a directory's full child paths.
@@ -1136,12 +1140,12 @@ async def walk(
             if errors is None:
                 raise
             errors.append(
-                f"{cmd_name}: cannot access '{directory.virtual}': "
+                f"{cmd_name}: cannot access '{directory.raw_path}': "
                 f"{fs_strerror(exc)}"
             )
             continue
         for child_virtual in children:
-            child = descendant_path(root, child_virtual)
+            child = descendant_path(root, child_virtual.rstrip("/"))
             if links is not None and links.stat_at(child.virtual) is not None:
                 continue
             try:
@@ -1150,7 +1154,7 @@ async def walk(
                 if errors is None:
                     raise
                 errors.append(
-                    f"{cmd_name}: cannot stat '{child.virtual}': "
+                    f"{cmd_name}: cannot stat '{child.raw_path}': "
                     f"{fs_strerror(exc)}"
                 )
                 continue
@@ -1229,14 +1233,14 @@ async def copy_entries(
                         writes[entry_dst.mount_path] = b""
                     if lines is not None:
                         lines.append(
-                            f"'{entry.virtual}' -> '{entry_dst.virtual}'"
+                            f"'{entry.raw_path}' -> '{entry_dst.raw_path}'"
                         )
             except FS_ERRORS as exc:
                 # GNU stops this source: the children of a directory it
                 # could not create cannot land.
                 errors.append(
                     f"{cmd_name}: cannot create directory "
-                    f"'{entry_dst.virtual}': {fs_strerror(exc)}"
+                    f"'{entry_dst.raw_path}': {fs_strerror(exc)}"
                 )
                 return False, wrote_any
             continue
@@ -1282,7 +1286,7 @@ async def copy_entries(
             data = await strategy.read_bytes(entry)
         except FS_ERRORS as exc:
             errors.append(
-                f"{cmd_name}: cannot open '{entry.virtual}' "
+                f"{cmd_name}: cannot open '{entry.raw_path}' "
                 f"for reading: {fs_strerror(exc)}"
             )
             copied_all = False
@@ -1293,7 +1297,7 @@ async def copy_entries(
         except FS_ERRORS as exc:
             errors.append(
                 f"{cmd_name}: cannot create regular file "
-                f"'{entry_dst.virtual}': {fs_strerror(exc)}"
+                f"'{entry_dst.raw_path}': {fs_strerror(exc)}"
             )
             copied_all = False
             continue
@@ -1392,9 +1396,29 @@ async def cp(
     reads: dict[str, ByteSource] = {}
     lines: list[str] = []
     errors: list[str] = []
+    warned = 0
+    seen: set[str] = set()
+    created: set[str] = set()
+    guards_created = not (
+        flags.no_clobber
+        or update_gates(flags.update)
+        or flags.backup == "numbered"
+    )
     for src, target in copy_targets(
         sources, dst, dst_is_dir, dst_exists, dst_err
     ):
+        if (
+            dst_is_dir
+            and key_of(src) in seen
+            and not backup_displaces(flags.backup)
+        ):
+            errors.append(
+                f"cp: warning: source file '{src.raw_path}' "
+                "specified more than once"
+            )
+            warned += 1
+            continue
+        seen.add(key_of(src))
         link = (
             typed_link(copies.links, src, copies.cwd)
             if copies is not None and flags.dereference is CopyDeref.NEVER
@@ -1413,10 +1437,17 @@ async def cp(
             )
             if named == landing:
                 errors.append(
-                    f"cp: '{named}' and '{landing}' are the same file"
+                    f"cp: '{src.raw_path}' and '{target.raw_path}' "
+                    "are the same file"
                 )
                 continue
-            await make_link(
+            if guards_created and key_of(target) in created:
+                errors.append(
+                    f"cp: will not overwrite just-created '{target.raw_path}' "
+                    f"with '{src.raw_path}'"
+                )
+                continue
+            if await make_link(
                 copies,
                 replace(PathSpec.from_str_path(named), raw_path=src.raw_path),
                 replace(
@@ -1427,7 +1458,8 @@ async def cp(
                 writes,
                 errors,
                 lines if flags.verbose else None,
-            )
+            ):
+                created.add(key_of(target))
             continue
         src_exists, src_is_dir, src_err = await source_kind(stat, src)
         if not src_exists:
@@ -1451,18 +1483,18 @@ async def cp(
             continue
         if key_of(src) == key_of(target):
             errors.append(
-                f"cp: '{src.virtual}' and '{target.virtual}' are the same file"
+                f"cp: '{src.raw_path}' and '{target.raw_path}' are the same file"
             )
             continue
         if flags.recursive and key_of(target).startswith(key_of(src) + "/"):
             errors.append(
-                f"cp: cannot copy a directory, '{src.virtual}', "
-                f"into itself, '{target.virtual}'"
+                f"cp: cannot copy a directory, '{src.raw_path}', "
+                f"into itself, '{target.raw_path}'"
             )
             continue
         if not flags.recursive and src_is_dir:
             errors.append(
-                f"cp: -r not specified; omitting directory '{src.virtual}'"
+                f"cp: -r not specified; omitting directory '{src.raw_path}'"
             )
             continue
         if not flags.no_target_dir and target.virtual == dst.virtual:
@@ -1596,9 +1628,12 @@ async def cp(
             ):
                 continue
             for entry_mount in await strategy.find(src, type="f"):
-                entry = mounted_path(src, entry_mount)
-                entry_dst = mounted_path(
-                    target, dst_base + entry_mount[len(src_base) :]
+                entry = spelled_from(mounted_path(src, entry_mount), src)
+                entry_dst = spelled_from(
+                    mounted_path(
+                        target, dst_base + entry_mount[len(src_base) :]
+                    ),
+                    target,
                 )
                 if not await overwrite_gate(
                     policy, stat, entry, entry_dst, errors
@@ -1633,6 +1668,12 @@ async def cp(
                     reads,
                 )
             continue
+        if guards_created and key_of(target) in created:
+            errors.append(
+                f"cp: will not overwrite just-created '{target.raw_path}' "
+                f"with '{src.raw_path}'"
+            )
+            continue
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue
         backup, ok = await make_backup(
@@ -1647,7 +1688,7 @@ async def cp(
                 data = await strategy.read_bytes(src)
             except FS_ERRORS as exc:
                 errors.append(
-                    f"cp: cannot open '{src.virtual}' "
+                    f"cp: cannot open '{src.raw_path}' "
                     f"for reading: {fs_strerror(exc)}"
                 )
                 continue
@@ -1656,7 +1697,7 @@ async def cp(
             except FS_ERRORS as exc:
                 errors.append(
                     f"cp: cannot create regular file "
-                    f"'{target.virtual}': {fs_strerror(exc)}"
+                    f"'{target.raw_path}': {fs_strerror(exc)}"
                 )
                 continue
             reads[src.virtual] = data
@@ -1666,10 +1707,11 @@ async def cp(
             except FS_ERRORS as exc:
                 errors.append(
                     f"cp: cannot create regular file "
-                    f"'{target.virtual}': {fs_strerror(exc)}"
+                    f"'{target.raw_path}': {fs_strerror(exc)}"
                 )
                 continue
         writes[target.mount_path] = b""
+        created.add(key_of(target))
         if flags.verbose:
             lines.append(transfer_line(src, target, backup))
     output = "\n".join(lines) + "\n" if lines else None
@@ -1681,5 +1723,5 @@ async def cp(
         reads=dict(reads),
         cache=list(reads),
         stderr=stderr,
-        exit_code=1 if errors else 0,
+        exit_code=1 if len(errors) > warned else 0,
     )

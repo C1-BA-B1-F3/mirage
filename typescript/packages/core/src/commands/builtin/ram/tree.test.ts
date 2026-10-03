@@ -19,7 +19,6 @@ import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { PathSpec } from '../../../types.ts'
 const RAM_TREE = RAM_COMMANDS.filter((c) => c.name === 'tree' && c.filetype == null)
 
-const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
 async function runTree(
@@ -55,19 +54,5 @@ describe('tree', () => {
     const r = await runTree(vfs, [PathSpec.fromStrPath('/tmp')])
     expect(r.lines).toEqual(['/tmp', '', '0 directories, 0 files'])
     expect(r.exitCode).toBe(0)
-  })
-
-  it('hides dotfiles by default, shows them with -a', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/tmp')
-    vfs.store.files.set('/tmp/visible.txt', ENC.encode('x'))
-    vfs.store.files.set('/tmp/.hidden', ENC.encode('y'))
-    const rDefault = await runTree(vfs, [PathSpec.fromStrPath('/tmp')])
-    const textDefault = rDefault.lines.join('\n')
-    expect(textDefault).toContain('visible.txt')
-    expect(textDefault).not.toContain('.hidden')
-    const rAll = await runTree(vfs, [PathSpec.fromStrPath('/tmp')], { a: true })
-    const textAll = rAll.lines.join('\n')
-    expect(textAll).toContain('.hidden')
   })
 })

@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { rekey } from '../../../utils/key_prefix.ts'
+import { descendantPath } from './paths.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
-import { FileType, PathSpec, type StatFn } from '../../../types.ts'
+import { FileType, type PathSpec, type StatFn } from '../../../types.ts'
 import { ELOOP_STRERROR, eloop, enoent, enotdir, isMissingPath } from '../../../utils/errors.ts'
 
 // The destination verdicts GNU meets at the destination's own stat, before
@@ -31,8 +31,7 @@ export function backendKeyDefault(path: PathSpec): string {
 }
 
 function childPath(parent: PathSpec, name: string): PathSpec {
-  const child = `${rstripSlash(parent.virtual)}/${name}`
-  return PathSpec.fromStrPath(child, rekey(parent.virtual, parent.vfsPath, child))
+  return descendantPath(parent, `${rstripSlash(parent.virtual)}/${name}`)
 }
 
 // Multiple sources require the directory form, and GNU distinguishes why it

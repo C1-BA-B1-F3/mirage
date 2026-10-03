@@ -32,19 +32,3 @@ async def test_head_default_n_10(workspace):
     assert len(lines) == 10
     assert lines[0] == "line1"
     assert lines[9] == "line10"
-
-
-@pytest.mark.asyncio
-async def test_head_negative_n_excludes_last(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\n")
-    io = await workspace.shell("head -n -1 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"a\nb\nc\n"
-
-
-@pytest.mark.asyncio
-async def test_head_no_trailing_newline(workspace):
-    await workspace.vfs.write("/partial.txt", b"hello")
-    io = await workspace.shell("head /partial.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"hello"

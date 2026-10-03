@@ -287,6 +287,38 @@
         "stdout": "f\ny\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "cp_P_refuses_a_just_created_link",
+      "seq": 1301030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix",
+        "ssh"
+      ],
+      "command": "mkdir -p /data/r10lx /data/r10ly /data/r10ld /data/r10le && ln -s t1 /data/r10lx/l && ln -s t2 /data/r10ly/l && cp -P /data/r10lx/l /data/r10ly/l /data/r10ld; echo rc=$?; readlink /data/r10ld/l; cp -P --backup=numbered /data/r10lx/l /data/r10ly/l /data/r10le; echo rc=$?; readlink /data/r10le/l /data/r10le/l.~1~; rm -r /data/r10lx /data/r10ly /data/r10ld /data/r10le",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nt1\nrc=0\nt2\nt1\n",
+        "stderr": "cp: will not overwrite just-created '/data/r10ld/l' with '/data/r10ly/l'\n"
+      }
     }
   ]
 }

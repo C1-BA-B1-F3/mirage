@@ -30,6 +30,7 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { lsModeString } from '../utils/formatting.ts'
 import { groupName, identityOf, ownerName, type Identity } from '../utils/identity.ts'
 import { formatRecords } from '../utils/output.ts'
+import { missingOperandError } from '../../spec/usage.ts'
 
 const ENC = new TextEncoder()
 
@@ -357,9 +358,7 @@ export async function statGeneric(
   stat: (p: PathSpec) => Promise<FileStat>,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('stat'))
-  if (paths.length === 0) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('stat: missing operand\n') })]
-  }
+  if (paths.length === 0) throw missingOperandError('stat', null)
   const fmt = fl.asStr('c') ?? fl.asStr('f') ?? null
   const lines: string[] = []
   let err = ''

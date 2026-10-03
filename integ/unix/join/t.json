@@ -36,6 +36,37 @@
       "flags": [
         "t"
       ]
+    },
+    {
+      "id": "join_gnu_tab_and_line_delimiters",
+      "seq": 332,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10j && touch /data/r10j/a && (cd /data/r10j && printf '1:a::c\\n2::b\\n3:c\\n' > a && printf '1:x:\\n2:y\\n:z\\n' > b && join -t : -e X a b; echo rc=$?; printf 'x y\\nz w\\n' > a && printf 'x y\\nz\\n' > b && join -t '' -a1 -a2 -o 0,1.1 a b; echo rc=$?; printf 'x y\\n' > a && printf 'x y\\n' > b && join -t $'\\n' -o 0,1.1,2.1 a b; echo rc=$?; printf '1\\303\\251a\\n' > a && printf '1\\303\\251x\\n' > b && join -t é a b; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -t : -t , a b; echo rc=$?; printf '1\\na\\0002 b\\000' > a && printf '1 x\\n\\0002\\ny\\000' > b && join -z a b; echo rc=$?); rm -r /data/r10j",
+      "expect": {
+        "exit": 0,
+        "stdout": "1:a:X:c:x:X\n2:X:b:y\nrc=0\nx y x y\nz \nz w z w\nrc=0\nx y\nx y\nx y\nrc=0\nrc=1\nrc=1\n1 a x\u00002 b y\u0000rc=0\n",
+        "stderr": "join: multi-character tab '\\303\\251'\njoin: incompatible tabs\n"
+      }
     }
   ]
 }

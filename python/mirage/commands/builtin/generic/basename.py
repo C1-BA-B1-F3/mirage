@@ -1,3 +1,7 @@
+from mirage.commands.spec.usage import (
+    extra_operand_error,
+    missing_operand_error,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.utils.path import gnu_basename
 
@@ -8,6 +12,10 @@ async def basename(
     suffix: str | None = None,
     zero: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
+    if not texts:
+        raise missing_operand_error("basename", None)
+    if suffix is None and not multiple and len(texts) > 2:
+        raise extra_operand_error("basename", texts[2])
     if suffix is not None:
         lines = [gnu_basename(text, suffix) for text in texts]
     elif len(texts) == 2 and not multiple:

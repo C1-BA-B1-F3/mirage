@@ -3,18 +3,156 @@
     {
       "id": "nl_tier2_logical_sections",
       "seq": 910020,
-      "targets": ["ram", "opfs", "disk", "redis", "s3", "databricks", "gridfs", "s3-prefix", "databricks-prefix", "gridfs-prefix", "hf", "hf-prefix", "dropbox", "dropbox-root", "onedrive", "sharepoint", "sharepoint-prefix", "ssh", "nextcloud", "gdrive", "gdrive-folder", "box"],
+      "targets": [
+        "ram",
+        "opfs",
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
       "command": "printf '!:!:!:\nhead\n!:!:\nbody\n!:\nfoot\n' | nl --section-delimiter=! --header-numbering=a --body-numbering=a --footer-numbering=a --number-format=rz --number-width=2 --number-separator=:",
-      "expect": { "exit": 0, "stdout": "\n01:head\n\n01:body\n\n01:foot\n", "stderr": "" },
-      "flags": ["section-delimiter", "header-numbering", "body-numbering", "footer-numbering", "number-format", "number-width", "number-separator"]
+      "expect": {
+        "exit": 0,
+        "stdout": "\n01:head\n\n01:body\n\n01:foot\n",
+        "stderr": ""
+      },
+      "flags": [
+        "section-delimiter",
+        "header-numbering",
+        "body-numbering",
+        "footer-numbering",
+        "number-format",
+        "number-width",
+        "number-separator"
+      ]
     },
     {
       "id": "nl_tier2_blank_join_no_renumber",
       "seq": 910021,
-      "targets": ["ram", "opfs", "disk", "redis", "s3", "databricks", "gridfs", "s3-prefix", "databricks-prefix", "gridfs-prefix", "hf", "hf-prefix", "dropbox", "dropbox-root", "onedrive", "sharepoint", "sharepoint-prefix", "ssh", "nextcloud", "gdrive", "gdrive-folder", "box"],
+      "targets": [
+        "ram",
+        "opfs",
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
       "command": "printf '!:!:\na\n\n\n!:\nb\n' | nl --section-delimiter=! --body-numbering=a --footer-numbering=a --join-blank-lines=2 --no-renumber --number-width=1 --number-separator=:",
-      "expect": { "exit": 0, "stdout": "\n1:a\n  \n2:\n\n3:b\n", "stderr": "" },
-      "flags": ["section-delimiter", "body-numbering", "footer-numbering", "join-blank-lines", "no-renumber", "number-width", "number-separator"]
+      "expect": {
+        "exit": 0,
+        "stdout": "\n1:a\n  \n2:\n\n3:b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "section-delimiter",
+        "body-numbering",
+        "footer-numbering",
+        "join-blank-lines",
+        "no-renumber",
+        "number-width",
+        "number-separator"
+      ]
+    },
+    {
+      "id": "nl_gnu_body_regex_refusals",
+      "seq": 910022,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -b 'p[' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[^' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[a' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[:alpha:]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[a-' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[:' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\(' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\(b' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\)' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\)' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\1' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\9' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\(a\\)\\2' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p\\(a\\1\\)' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[:bogus:]]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[.ab.]]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[..]]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[=ab=]]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{1,' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{2,1\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{x\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{ 1\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{-1\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{1,,2\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{1,2,3\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{32768\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{0,32768\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{100000\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[:alpha:]-z]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[z-[:alpha:]]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[[=a=]-z]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[a-c-e]' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[' -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -b 'p[' 2>&1; echo rc=$?; printf 'x\\n' | nl -h bogus -b 'p[' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'p[' -h bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -b 'p[' 2>&1; echo rc=$?; printf 'x\\n' | nl -n bogus -f 'p\\)' 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "nl: Invalid regular expression\nrc=1\nnl: Invalid regular expression\nrc=1\nnl: Unmatched [, [^, [:, [., or [=\nrc=1\nnl: Unmatched [, [^, [:, [., or [=\nrc=1\nnl: Unmatched [, [^, [:, [., or [=\nrc=1\nnl: Unmatched [, [^, [:, [., or [=\nrc=1\nnl: Unmatched [, [^, [:, [., or [=\nrc=1\nnl: Unmatched ( or \\(\nrc=1\nnl: Unmatched ( or \\(\nrc=1\nnl: Unmatched ) or \\)\nrc=1\nnl: Unmatched ) or \\)\nrc=1\nnl: Trailing backslash\nrc=1\nnl: Invalid back reference\nrc=1\nnl: Invalid back reference\nrc=1\nnl: Invalid back reference\nrc=1\nnl: Invalid back reference\nrc=1\nnl: Invalid character class name\nrc=1\nnl: Invalid collation character\nrc=1\nnl: Invalid collation character\nrc=1\nnl: Invalid collation character\nrc=1\nnl: Unmatched \\{\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Invalid content of \\{\\}\nrc=1\nnl: Regular expression too big\nrc=1\nnl: Regular expression too big\nrc=1\nnl: Regular expression too big\nrc=1\nnl: Invalid range end\nrc=1\nnl: Invalid range end\nrc=1\nnl: Invalid range end\nrc=1\nnl: Invalid range end\nrc=1\nnl: Invalid regular expression\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid header numbering style: 'bogus'\nnl: Invalid regular expression\nrc=1\nnl: Invalid regular expression\nrc=1\nnl: invalid body numbering style: 'bogus'\nnl: Invalid regular expression\nrc=1\nnl: invalid line numbering format: 'bogus'\nnl: Unmatched ) or \\)\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nl_gnu_body_regex_matches",
+      "seq": 910023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '*a\\n' | nl -b 'p*' 2>&1; echo rc=$?; printf '*a\\n' | nl -b 'p**' 2>&1; echo rc=$?; printf '+\\n' | nl -b 'p\\+' 2>&1; echo rc=$?; printf '?\\n' | nl -b 'p\\?' 2>&1; echo rc=$?; printf '{1}\\n' | nl -b 'p\\{1\\}' 2>&1; echo rc=$?; printf '{2,1}\\n' | nl -b 'p\\{2,1\\}' 2>&1; echo rc=$?; printf '{x}\\n' | nl -b 'p\\{x\\}' 2>&1; echo rc=$?; printf '{32768}\\n' | nl -b 'p\\{32768\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{,3\\}' 2>&1; echo rc=$?; printf 'x\\n' | nl -b 'pa\\{,\\}' 2>&1; echo rc=$?; printf 'q\\n' | nl -b 'p[^z-a]' 2>&1; echo rc=$?; printf 'e\\n' | nl -b 'p[a-cd-f]' 2>&1; echo rc=$?; printf -- '-\\n' | nl -b 'p[a-c-]' 2>&1; echo rc=$?; printf 'ab\\n' | nl -b 'p\\(a\\)b' 2>&1; echo rc=$?; printf '(a)\\n' | nl -b 'p(a)' 2>&1; echo rc=$?; printf 'a+b\\n' | nl -b pa+b 2>&1; echo rc=$?; printf 'a?\\n' | nl -b 'pa?' 2>&1; echo rc=$?; printf 'a{2}\\n' | nl -b 'pa{2}' 2>&1; echo rc=$?; printf 'a|b\\n' | nl -b 'pa|b' 2>&1; echo rc=$?; printf 'b\\n' | nl -b 'pa\\|b' 2>&1; echo rc=$?; printf 'aa\\n' | nl -b 'pa\\{2\\}' 2>&1; echo rc=$?; printf '_x\\n' | nl -b 'p\\wx' 2>&1; echo rc=$?; printf 'x y\\n' | nl -b 'p\\<x' 2>&1; echo rc=$?; printf 'aa\\n' | nl -b 'p\\(a\\)\\1' 2>&1; echo rc=$?; printf 'q\\n' | nl -b 'p[[:alpha:]]' 2>&1; echo rc=$?; printf '7\\n' | nl -b 'p[[:digit:]]' 2>&1; echo rc=$?; printf 'a\\n' | nl -b 'p[[=a=]]' 2>&1; echo rc=$?; printf 'm\\n' | nl -b 'p[[.a.]-z]' 2>&1; echo rc=$?; printf ']\\n' | nl -b 'p[]]' 2>&1; echo rc=$?; printf 'foo\\n' | nl -b po 2>&1; echo rc=$?; printf 'xfooy\\n' | nl -b pfoo 2>&1; echo rc=$?; printf 'foo\\n' | nl -b 'po$' 2>&1; echo rc=$?; printf 'foo\\n' | nl -b 'p^f' 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "     1\t*a\nrc=0\n     1\t*a\nrc=0\n     1\t+\nrc=0\n     1\t?\nrc=0\n     1\t{1}\nrc=0\n     1\t{2,1}\nrc=0\n     1\t{x}\nrc=0\n     1\t{32768}\nrc=0\n     1\tx\nrc=0\n     1\tx\nrc=0\n     1\tq\nrc=0\n     1\te\nrc=0\n     1\t-\nrc=0\n     1\tab\nrc=0\n     1\t(a)\nrc=0\n     1\ta+b\nrc=0\n     1\ta?\nrc=0\n     1\ta{2}\nrc=0\n     1\ta|b\nrc=0\n     1\tb\nrc=0\n     1\taa\nrc=0\n     1\t_x\nrc=0\n     1\tx y\nrc=0\n     1\taa\nrc=0\n     1\tq\nrc=0\n     1\t7\nrc=0\n     1\ta\nrc=0\n     1\tm\nrc=0\n     1\t]\nrc=0\n     1\tfoo\nrc=0\n     1\txfooy\nrc=0\n     1\tfoo\nrc=0\n     1\tfoo\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -291,7 +291,7 @@ export async function wcGeneric(
   }
   let source: AsyncIterable<Uint8Array>
   try {
-    source = resolveSource(opts.stdin, 'wc: missing operand')
+    source = resolveSource(opts.stdin)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]

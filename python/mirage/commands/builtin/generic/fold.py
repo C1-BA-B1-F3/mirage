@@ -96,9 +96,7 @@ async def fold(
             )
         return b"".join(parts), IOResult()
 
-    stdin_raw = await read_stdin_async(stdin)
-    if stdin_raw is None:
-        raise ValueError("fold: missing operand")
+    stdin_raw = await read_stdin_async(stdin) or b""
     if count_bytes:
         return _fold_bytes(stdin_raw, width), IOResult()
     return map_lines(

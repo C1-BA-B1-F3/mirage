@@ -6,6 +6,7 @@ from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.commands.spec.usage import missing_operand_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -19,7 +20,7 @@ async def readlink(
     n: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     if not paths:
-        raise ValueError("readlink: missing operand")
+        raise missing_operand_error("readlink", None)
     normalize = f or e or m
     results: list[str] = []
     for p in paths:
@@ -60,7 +61,7 @@ async def readlink_generic(
     opts: CommandOpts,
 ) -> tuple[ByteSource | None, IOResult]:
     if not paths:
-        raise ValueError("readlink: missing operand")
+        raise missing_operand_error("readlink", None)
     parsed = parse_flags(opts.flags)
     return await readlink(
         paths,

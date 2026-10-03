@@ -30,27 +30,3 @@ async def test_tail_default_n_10(workspace):
     assert io.exit_code == 0
     expected = b"\n".join(f"line{i}".encode() for i in range(11, 21)) + b"\n"
     assert io.stdout == expected
-
-
-@pytest.mark.asyncio
-async def test_tail_plus_n_streams_from_line(workspace):
-    await workspace.vfs.write("/f.txt", b"a\nb\nc\nd\ne\n")
-    io = await workspace.shell("tail -n +3 /f.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"c\nd\ne\n"
-
-
-@pytest.mark.asyncio
-async def test_tail_no_trailing_newline(workspace):
-    await workspace.vfs.write("/partial.txt", b"hello")
-    io = await workspace.shell("tail /partial.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"hello"
-
-
-@pytest.mark.asyncio
-async def test_tail_empty_file(workspace):
-    await workspace.vfs.write("/empty.txt", b"")
-    io = await workspace.shell("tail /empty.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b""

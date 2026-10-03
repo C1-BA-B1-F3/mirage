@@ -54,6 +54,7 @@ def make_tee(vfs: str, io: CommandIO) -> Callable[..., Any]:
             write_bytes=partial(write_bytes, accessor),
             stdin=opts.stdin,
             flags=opts.flags,
+            stat=partial(io.stat, accessor, index=opts.index),
         )
 
     wrapped: Callable[..., Any] = command(

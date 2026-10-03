@@ -15,6 +15,7 @@
 import errno
 import os
 from collections.abc import Callable
+from dataclasses import replace
 
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
@@ -25,6 +26,7 @@ from mirage.utils.errors import (
     DotWalkNotDir,
     eexist,
     enoent,
+    operand_spelling,
 )
 from mirage.utils.key_prefix import rekey
 from mirage.utils.path import (
@@ -153,15 +155,28 @@ async def stat_or_enoent(stat_path: StatPath, path: PathSpec) -> FileStat:
     return row
 
 
+def spelled_from(path: PathSpec, operand: PathSpec) -> PathSpec:
+    """``path`` spelled from its operand as typed, the way GNU names it.
+
+    Args:
+        path (PathSpec): A path at, under or above ``operand``.
+        operand (PathSpec): The operand the command was given.
+    """
+    return replace(path, raw_path=operand_spelling(path.virtual, operand))
+
+
 def descendant_path(root: PathSpec, virtual: str) -> PathSpec:
-    """A path on ``root``'s mount, keyed the way ``root`` is.
+    """A path on ``root``'s mount, keyed and spelled the way ``root`` is.
 
     Args:
         root (PathSpec): A path whose backend key is known.
         virtual (str): The path to key, on the same mount.
     """
-    return PathSpec.from_str_path(
-        virtual, rekey(root.virtual, root.vfs_path, virtual)
+    return spelled_from(
+        PathSpec.from_str_path(
+            virtual, rekey(root.virtual, root.vfs_path, virtual)
+        ),
+        root,
     )
 
 

@@ -42,14 +42,21 @@ interface UniqFlags {
   zeroTerminated: boolean
 }
 
-function parseCount(value: ParsedFlagValue | undefined): number | null {
+// GNU's size_opt reads a count with xstrtoimax: leading C whitespace, a sign
+// and decimal digits, nothing after them.
+const COUNT_WORD = /^[ \t\n\v\f\r]*[+-]?[0-9]+$/
+const SKIP_FIELDS = 'fields to skip'
+const SKIP_CHARS = 'bytes to skip'
+const CHECK_CHARS = 'bytes to compare'
+
+// GNU's size_opt: a decimal count, never negative, any size (a huge one is
+// clamped, as GNU clamps it to SIZE_MAX).
+function parseCount(value: ParsedFlagValue | undefined, what: string): number | null {
   if (value === undefined || value === false) return null
-  if (typeof value !== 'string') throw new Error(`uniq: invalid count: '${String(value)}'`)
-  const normalized = value.trim()
-  if (!/^[+-]?\d+$/.test(normalized)) throw new Error(`uniq: invalid count: '${value}'`)
-  const count = Number(normalized)
-  if (!Number.isSafeInteger(count) || count < 0) throw new Error(`uniq: invalid count: '${value}'`)
-  return count
+  const text = String(value)
+  const count = COUNT_WORD.test(text) ? Number(text.trim()) : Number.NaN
+  if (!(count >= 0)) throw new Error(`uniq: ${text}: invalid number of ${what}`)
+  return Math.min(count, Number.MAX_SAFE_INTEGER)
 }
 
 // GNU's `delimit_method_string` and `grouping_method_string`, in
@@ -104,9 +111,9 @@ function parseFlags(bag: Record<string, FlagValue>): UniqFlags {
     count,
     duplicatesOnly,
     uniqueOnly,
-    skipFields: parseCount(fl.asStr('skip_fields')) ?? 0,
-    skipChars: parseCount(fl.asStr('skip_chars')) ?? 0,
-    checkChars: parseCount(fl.asStr('check_chars')),
+    skipFields: parseCount(fl.asStr('skip_fields'), SKIP_FIELDS) ?? 0,
+    skipChars: parseCount(fl.asStr('skip_chars'), SKIP_CHARS) ?? 0,
+    checkChars: parseCount(fl.asStr('check_chars'), CHECK_CHARS),
     ignoreCase: fl.asBool('ignore_case'),
     allRepeated,
     group,
@@ -120,7 +127,7 @@ function isBlank(char: string | undefined): boolean {
 
 function skipFields(text: string, count: number): string {
   let index = 0
-  for (let field = 0; field < count; field += 1) {
+  for (let field = 0; field < count && index < text.length; field += 1) {
     while (index < text.length && isBlank(text[index])) index += 1
     while (index < text.length && !isBlank(text[index])) index += 1
   }

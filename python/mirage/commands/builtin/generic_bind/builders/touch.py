@@ -19,8 +19,10 @@ from mirage.commands.builtin.generic_bind.adapter import (
     Operation,
 )
 from mirage.commands.config import CommandOpts
+from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.usage import usage_hint
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
@@ -35,7 +37,9 @@ async def touch(
 ) -> tuple[ByteSource | None, IOResult]:
     c = FlagView(opts.flags, spec=SPECS["touch"]).as_bool("c")
     if not ops.is_mounted(accessor) or not paths:
-        raise ValueError("touch: missing operand")
+        raise UsageError(
+            f"touch: missing file operand\n{usage_hint('touch')}", 1
+        )
     paths = await ops.resolve_glob(accessor, paths, opts.index)
     exists = ops.require(Operation.EXISTS)
     write = ops.require(Operation.WRITE)

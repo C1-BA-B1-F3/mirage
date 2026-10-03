@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
+from dataclasses import replace
 
 from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.usage import argmatch_error
@@ -85,8 +86,11 @@ def sibling_path(path: PathSpec, appended: str) -> PathSpec:
         appended (str): Text appended to the full name (e.g. ``~``).
     """
     virtual = path.virtual.rstrip("/") + appended
-    return PathSpec.from_str_path(
-        virtual, rekey(path.virtual, path.vfs_path, virtual)
+    return replace(
+        PathSpec.from_str_path(
+            virtual, rekey(path.virtual, path.vfs_path, virtual)
+        ),
+        raw_path=(path.raw_path.rstrip("/") or path.raw_path) + appended,
     )
 
 

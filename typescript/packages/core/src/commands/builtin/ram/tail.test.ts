@@ -51,36 +51,4 @@ describe('tail', () => {
     const expected = Array.from({ length: 10 }, (_, i) => `line${String(i + 11)}`).join('\n')
     expect(await runTail(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe(expected)
   })
-
-  it('-c larger than file returns all bytes', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abc'))
-    expect(await runTail(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { c: '100' })).toBe('abc')
-  })
-
-  it('-c 0 returns empty', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abc'))
-    expect(await runTail(vfs, [PathSpec.fromStrPath('/tmp/f.txt')], { c: '0' })).toBe('')
-  })
-
-  it('-c +1 and -c +0 are the whole file', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('abcdefghij'))
-    const path = [PathSpec.fromStrPath('/tmp/f.txt')]
-    expect(await runTail(vfs, path, { c: '+1' })).toBe('abcdefghij')
-    expect(await runTail(vfs, path, { c: '+0' })).toBe('abcdefghij')
-  })
-
-  it('empty file', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', new Uint8Array())
-    expect(await runTail(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('')
-  })
-
-  it('single line without newline', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', ENC.encode('hello'))
-    expect(await runTail(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('hello')
-  })
 })

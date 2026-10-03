@@ -20,6 +20,7 @@ from mirage.commands.builtin.utils.paths import (
     dot_refusal,
     typed_spec,
 )
+from mirage.commands.spec.usage import unknown_option_error, usage_hint
 from mirage.context import DEFAULT_UMASK
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
@@ -69,9 +70,12 @@ async def handle_touch(
     """
     flags, values, operands, bad = split_value_flags(args, "acmh", "tdr")
     if bad is not None:
-        return fail("touch", f"touch: invalid option -- '{bad}'\n", 2)
+        message, code = unknown_option_error("touch", bad)
+        return fail("touch", message.decode(), code)
     if not operands:
-        return fail("touch", "touch: missing file operand\n", 1)
+        return fail(
+            "touch", f"touch: missing file operand\n{usage_hint('touch')}\n"
+        )
 
     try:
         stamp = parse_touch_stamp(values.get("t"), values.get("d"))

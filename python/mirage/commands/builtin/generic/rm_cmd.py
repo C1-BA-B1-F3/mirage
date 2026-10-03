@@ -107,7 +107,7 @@ def make_rm(
                 continue
             removed[p.mount_path] = b""
             if v:
-                verbose_parts.append(f"removed '{p.virtual}'")
+                verbose_parts.append(f"removed '{p.raw_path}'")
         output = format_optional_records(verbose_parts) if v else None
         stderr = ("\n".join(errors) + "\n").encode() if errors else None
         return output, IOResult(

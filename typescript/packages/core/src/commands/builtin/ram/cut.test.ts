@@ -78,7 +78,7 @@ describe('cut', () => {
     expect(await runCut(ENC.encode('abcdef\n'), { characters: '1-3,2-4' })).toBe('abcd\n')
   })
 
-  it('missing stdin returns error', async () => {
+  it('no stdin reads empty input', async () => {
     const vfs = new RAMVFS()
     const cmd = RAM_CUT[0]
     if (cmd === undefined) throw new Error('cut not registered')
@@ -89,15 +89,8 @@ describe('cut', () => {
       cwd: '/',
     })
     if (result === null) throw new Error('result null')
-    const [, ioResult] = result
-    expect(ioResult.exitCode).toBe(1)
-    const stderr = ioResult.stderr
-    const errBytes =
-      stderr === null
-        ? new Uint8Array()
-        : stderr instanceof Uint8Array
-          ? stderr
-          : await materialize(stderr)
-    expect(DEC.decode(errBytes)).toMatch(/missing operand/)
+    const [out, ioResult] = result
+    expect(ioResult.exitCode).toBe(0)
+    expect(out === null ? 0 : (await materialize(out)).length).toBe(0)
   })
 })

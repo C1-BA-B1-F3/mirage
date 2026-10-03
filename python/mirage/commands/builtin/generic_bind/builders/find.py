@@ -74,9 +74,12 @@ async def find(
     # exactly the visible tree and reports the refusal where GNU does;
     # same trade du makes for its summarize fast path. Per operand, not
     # per session: a hidden .env under /repo must not force find on
-    # /s3 off its native op.
+    # /s3 off its native op. -empty takes the walk too: a native op
+    # judges a directory from its own listing, and the object stores, ssh
+    # and gdrive call every directory non-empty.
     if (
         ops.find is None
+        or "-empty" in texts
         or path_rules_active()
         or any(hidden_paths_intersect(p.virtual) for p in resolved)
     ):

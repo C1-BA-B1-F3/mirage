@@ -208,12 +208,14 @@ describe('stream utils', () => {
 
   it('resolveSource wraps bytes as iterable', async () => {
     const chunks: string[] = []
-    for await (const c of resolveSource(encode('xy'), 'missing')) chunks.push(decode(c))
+    for await (const c of resolveSource(encode('xy'))) chunks.push(decode(c))
     expect(chunks).toEqual(['xy'])
   })
 
-  it('resolveSource throws on null', () => {
-    expect(() => resolveSource(null, 'missing operand')).toThrow('missing operand')
+  it('resolveSource reads no stdin as empty input', async () => {
+    const chunks: string[] = []
+    for await (const c of resolveSource(null)) chunks.push(decode(c))
+    expect(chunks).toEqual([''])
   })
 
   it('wrapBytes yields once', async () => {

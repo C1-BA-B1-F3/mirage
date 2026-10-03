@@ -250,11 +250,9 @@ describe('stat -c directive formatting', () => {
   })
 
   it('reports missing operand', async () => {
-    const result = await statGeneric([], opts('%n'), () => Promise.resolve(fs()))
-    if (result === null) throw new Error('statGeneric returned null')
-    const [, io] = result
-    expect(io.exitCode).toBe(1)
-    expect(DEC.decode(await materialize(io.stderr))).toContain('missing operand')
+    await expect(statGeneric([], opts('%n'), () => Promise.resolve(fs()))).rejects.toThrow(
+      "stat: missing operand\nTry 'stat --help' for more information.",
+    )
   })
 })
 

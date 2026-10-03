@@ -143,9 +143,7 @@ async def fmt(
             )
         return "".join(parts).encode(), IOResult()
 
-    raw = await read_stdin_async(stdin)
-    if raw is None:
-        raise ValueError("fmt: missing operand")
+    raw = await read_stdin_async(stdin) or b""
     text = raw.decode(errors="replace")
     return _fmt_text(
         text, width, goal, prefix, split_only, tagged, crown

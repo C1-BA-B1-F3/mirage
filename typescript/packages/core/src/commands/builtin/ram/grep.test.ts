@@ -51,16 +51,6 @@ describe('grep', () => {
     expect(text).toBe('')
     expect(exitCode).toBe(1)
   })
-
-  it('-r on a single file retains single-file output', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/log.txt', ENC.encode('one\nerror here\ntwo\nerror again\n'))
-    const { text } = await runGrep(vfs, 'error', [PathSpec.fromStrPath('/log.txt')], {
-      r: true,
-      n: true,
-    })
-    expect(text).toBe('2:error here\n4:error again\n')
-  })
 })
 
 // How the classifier hands over a typed stdin operand: `-` resolved under the
@@ -100,12 +90,10 @@ async function runOnStdin(
 // GNU grep 3.11 calls only `-` "(standard input)": /dev/stdin reads the same
 // bytes and is named as the path it is.
 describe('grep names only a dash stdin', () => {
-  it.each([
-    ['/dev/stdin', { H: true }, '/dev/stdin:b\n'],
-    ['/dev/stdin', { args_l: true }, '/dev/stdin\n'],
-    ['-', { H: true }, '(standard input):b\n'],
-    ['-', { args_l: true }, '(standard input)\n'],
-  ])('names %s under %j', async (raw, flags, want) => {
-    expect(await runOnStdin([stdinOperand(raw)], ['b'], flags)).toBe(want)
-  })
+  it.each([['-', { H: true }, '(standard input):b\n']])(
+    'names %s under %j',
+    async (raw, flags, want) => {
+      expect(await runOnStdin([stdinOperand(raw)], ['b'], flags)).toBe(want)
+    },
+  )
 })

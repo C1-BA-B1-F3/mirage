@@ -48,6 +48,7 @@ async def tee(
         append_bytes=(None if append is None else partial(append, accessor)),
         stdin=opts.stdin,
         flags=opts.flags,
+        stat=bound_op(ops.stat, accessor, opts.index),
     )
 
 

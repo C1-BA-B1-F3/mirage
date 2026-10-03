@@ -89,7 +89,7 @@ export function makeRm<A extends Accessor>(
           continue
         }
         writes[p.mountPath] = new Uint8Array()
-        if (verbose) verboseParts.push(`removed '${p.virtual}'`)
+        if (verbose) verboseParts.push(`removed '${p.rawPath}'`)
       }
       const output: ByteSource | null = verbose ? formatRecords(verboseParts) : null
       const stderr = errors.length > 0 ? ENC.encode(errors.join('\n') + '\n') : undefined

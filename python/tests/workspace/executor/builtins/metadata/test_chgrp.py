@@ -46,7 +46,7 @@ async def test_chgrp_changes_only_group_keeping_chown_owner():
 @pytest.mark.asyncio
 async def test_chgrp_error_shapes():
     ws = _make_ws()
-    assert (await _run(ws, "chgrp staff"))[0] == 2
+    assert (await _run(ws, "chgrp staff"))[0] == 1
     assert (await _run(ws, "chgrp '' /data/f.txt"))[0] == 1
     code, _, err = await _run(ws, "chgrp staff /data/nope.txt")
     assert code == 1

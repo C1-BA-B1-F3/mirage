@@ -394,9 +394,7 @@ async def expand(
             "".join(texts), stops, initial_only
         ).encode(), IOResult()
 
-    raw = await read_stdin_async(stdin)
-    if raw is None:
-        raise ValueError("expand: missing operand")
+    raw = await read_stdin_async(stdin) or b""
     text = raw.decode(errors="replace")
     return apply_expand(text, stops, initial_only).encode(), IOResult()
 

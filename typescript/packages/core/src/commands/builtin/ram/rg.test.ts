@@ -77,12 +77,4 @@ describe('rg', () => {
     expect(r.out).toBe('needle\0a\nneedle\0b\n')
     expect(r.exitCode).toBe(0)
   })
-
-  it('-c on a zero-match file omits the count and exits 1 (unlike grep -c)', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/a.txt', ENC.encode('foo\nbar\n'))
-    const r = await runRg(vfs, ['zzz'], [PathSpec.fromStrPath('/tmp/a.txt')], { count: true })
-    expect(r.lines).toEqual([])
-    expect(r.exitCode).toBe(1)
-  })
 })

@@ -153,10 +153,7 @@ export async function fmtGeneric(
     )
     return [result, io]
   }
-  const stdinData = await readStdinAsync(opts.stdin)
-  if (stdinData === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('fmt: missing operand\n') })]
-  }
+  const stdinData = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
   const text = DEC.decode(stdinData)
   const result: ByteSource = ENC.encode(
     fmtText(text, width, goal, prefix, splitOnly, tagged, crown),

@@ -13,9 +13,19 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import type { PathSpec } from '../../../types.ts'
+import type { PathSpec, StatFn } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { fsErrorLine, isEnoent, isFsError } from '../../../utils/errors.ts'
+import {
+  eisdir,
+  enoent,
+  enotdir,
+  fsErrorLine,
+  isEnoent,
+  isFsError,
+  type FsError,
+} from '../../../utils/errors.ts'
+import { absentDestStrerror, entryKind } from '../utils/paths.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -50,12 +60,13 @@ export async function teeGeneric(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
   append?: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  stat?: StatFn,
 ): Promise<CommandFnResult> {
   const parsed = parseFlags(opts.flags)
   const stdinData = await readStdinAsync(opts.stdin)
   const raw: Uint8Array = stdinData ?? ENC.encode(texts.join(' '))
   if (paths.length === 0) return [raw, new IOResult()]
-  return writeOutput(paths, raw, parsed, stream, write, append)
+  return writeOutput(paths, raw, parsed, stream, write, append, stat)
 }
 
 /**
@@ -116,6 +127,31 @@ async function writeOne(
  * written. The two agree whenever the failure is at write time, which is what a
  * remote backend reports.
  */
+// GNU's diagnostic for one unwritable operand. Mirrors Python's error_line.
+function errorLine(path: PathSpec, err: unknown): string {
+  if (isFsError(err)) return fsErrorLine('tee', path, err)
+  return `tee: ${path.mountPath}: ${err instanceof Error ? err.message : String(err)}\n`
+}
+
+// The error GNU's open of an output would meet, or null. GNU opens the
+// outputs in order, so each earlier one is a regular file by now: an output
+// under one of them is `Not a directory`. Mirrors Python's open_refusal.
+export async function openRefusal(
+  stat: StatFn,
+  path: PathSpec,
+  opened: readonly PathSpec[],
+): Promise<FsError | null> {
+  if (opened.some((o) => path.virtual.startsWith(`${rstripSlash(o.virtual)}/`))) {
+    return enotdir(path)
+  }
+  const { exists, isDir } = await entryKind(stat, path)
+  if (isDir) return eisdir(path)
+  if (exists) return null
+  const strerror = await absentDestStrerror(stat, path)
+  if (strerror === null) return null
+  return strerror === 'Not a directory' ? enotdir(path) : enoent(path)
+}
+
 export async function writeOutput(
   paths: PathSpec[],
   raw: Uint8Array,
@@ -123,25 +159,71 @@ export async function writeOutput(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
   append?: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  stat?: StatFn,
 ): Promise<[ByteSource | null, IOResult]> {
   const writes: Record<string, ByteSource> = {}
   const cache: string[] = []
   const errors: string[] = []
+  // GNU opens every output before it reads a byte: under exit the first open
+  // failure ends the run with nothing written, the outputs before it made
+  // empty. A mount write is one call, so the open is probed first. A probe
+  // the backend will not answer (a stat its credentials refuse) is no
+  // verdict, so that output is opened for real, by writing it nothing, once
+  // the outputs before it are opened. Opening an earlier output can fail
+  // first, and then it is the one reported.
+  if (parsed.stopOnError && stat !== undefined) {
+    const opened = new Set<string>()
+    for (const [index, path] of paths.entries()) {
+      let probed = true
+      let refusal: unknown = null
+      try {
+        refusal = await openRefusal(stat, path, paths.slice(0, index))
+      } catch (err) {
+        console.warn(`tee: probing ${path.virtual} failed: ${String(err)}`)
+        probed = false
+      }
+      if (probed && refusal === null) continue
+      let failed = path
+      for (const prior of paths.slice(0, index)) {
+        if (opened.has(prior.mountPath)) continue
+        try {
+          if (!(parsed.append && (await entryKind(stat, prior)).exists)) {
+            await write(prior, new Uint8Array(0))
+            writes[prior.mountPath] = new Uint8Array(0)
+            cache.push(prior.mountPath)
+          }
+        } catch (err) {
+          failed = prior
+          refusal = err
+          break
+        }
+        opened.add(prior.mountPath)
+      }
+      if (refusal === null) {
+        try {
+          const data = await writeOne(path, new Uint8Array(0), parsed, stream, write, append)
+          writes[path.mountPath] = data ?? new Uint8Array(0)
+          opened.add(path.mountPath)
+          continue
+        } catch (err) {
+          refusal = err
+        }
+      }
+      const stderr = ENC.encode(errorLine(failed, refusal))
+      return [null, new IOResult({ exitCode: 1, stderr, writes, cache })]
+    }
+  }
   for (const path of paths) {
     let data: Uint8Array | null
     try {
       data = await writeOne(path, raw, parsed, stream, write, append)
     } catch (err) {
-      errors.push(
-        isFsError(err)
-          ? fsErrorLine('tee', path, err)
-          : `tee: ${path.mountPath}: ${err instanceof Error ? err.message : String(err)}\n`,
-      )
+      errors.push(errorLine(path, err))
       if (parsed.stopOnError) break
       continue
     }
     writes[path.mountPath] = data ?? raw
-    if (data !== null) cache.push(path.mountPath)
+    if (data !== null && !cache.includes(path.mountPath)) cache.push(path.mountPath)
   }
   if (errors.length > 0) {
     return [raw, new IOResult({ exitCode: 1, stderr: ENC.encode(errors.join('')), writes, cache })]

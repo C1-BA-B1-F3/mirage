@@ -58,6 +58,22 @@
       "flags": [
         "mode"
       ]
+    },
+    {
+      "id": "mkdir_missing_operand_names_the_hint",
+      "seq": 910044,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir; echo rc=$?; mkdir -p; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\n",
+        "stderr": "mkdir: missing operand\nTry 'mkdir --help' for more information.\nmkdir: missing operand\nTry 'mkdir --help' for more information.\n"
+      }
     }
   ]
 }

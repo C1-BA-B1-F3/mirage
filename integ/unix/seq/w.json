@@ -68,6 +68,68 @@
         "w",
         "2"
       ]
+    },
+    {
+      "id": "seq_f_takes_one_floating_directive",
+      "seq": 601223,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "for f in %03d x%sy '%g%g' abc % %5 %lg %i; do seq -f \"$f\" 1; echo rc=$?; done 2>&1; seq -f %e 1; seq -f '%-5gX' 2; seq -f 'a%%b%g' 1; seq -f %Lg 1; seq -f %.g 1; seq -f %#g 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "seq: format '%03d' has unknown %d directive\nrc=1\nseq: format 'x%sy' has unknown %s directive\nrc=1\nseq: format '%g%g' has too many % directives\nrc=1\nseq: format 'abc' has no % directive\nrc=1\nseq: format '%' ends in %\nrc=1\nseq: format '%5' ends in %\nrc=1\nseq: format '%lg' has unknown %l directive\nrc=1\nseq: format '%i' has unknown %i directive\nrc=1\n1.000000e+00\n1    X\n2    X\na%b1\n1\n1\n1.00000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "seq_f_hex_applies_flags_width_and_precision",
+      "seq": 601224,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq -f '%+20.2a' 1 1; seq -f '%-12ax' 2 2; seq -f '%012.1a' 3 3; seq -f '% a' 1 1; seq -f '%#a' 1 1; seq -f '%.0a' 3 3; seq -f '%.3A' 3 3",
+      "expect": {
+        "exit": 0,
+        "stdout": "          +0x1.00p+0\n0x1p+1      x\n0x00001.8p+1\n 0x1p+0\n0x1.p+0\n0x2p+1\n0X1.800P+1\n",
+        "stderr": ""
+      }
     }
   ]
 }

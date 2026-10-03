@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from decimal import ROUND_HALF_EVEN, ROUND_UP, Context, Decimal
 
 from mirage.commands.builtin.utils.lines import split_lines
@@ -257,21 +258,25 @@ async def numfmt(
     suffix: str = "",
     grouping: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
+    convert: Callable[[str, str, str, str, bool], str]
     if texts:
-        output = [
-            _convert_field(value, to_mode, from_mode, suffix, grouping)
-            for value in texts
-        ]
+        fields, convert = list(texts), _convert_field
     else:
         raw = await read_stdin_async(stdin)
         data = raw.decode(errors="replace") if raw is not None else ""
-        output = [
-            _convert_line(line, to_mode, from_mode, suffix, grouping)
-            for line in split_lines(data)
-        ]
-    if not output:
-        return b"", IOResult()
-    return ("\n".join(output) + "\n").encode(), IOResult()
+        fields, convert = split_lines(data), _convert_line
+    printed = ""
+    for value in fields:
+        try:
+            printed += convert(value, to_mode, from_mode, suffix, grouping)
+        except UsageError as exc:
+            # GNU aborts at the first invalid number, after printing the
+            # ones before it.
+            return printed.encode() or None, IOResult(
+                exit_code=exc.exit_code, stderr=f"{exc}\n".encode()
+            )
+        printed += "\n"
+    return printed.encode(), IOResult()
 
 
 __all__ = ["numfmt"]

@@ -12,14 +12,170 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import math
+import re
+from dataclasses import dataclass
+
 from mirage.accessor.base import Accessor
 from mirage.commands.config import CommandOpts, command
+from mirage.commands.errors import UsageError
+from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName
-from mirage.commands.spec.usage import extra_operand_error
+from mirage.commands.spec.usage import (
+    extra_operand_error,
+    missing_operand_error,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+
+# GNU seq's long_double_format: one floating directive, its flags and an
+# optional L, with nothing but %% around it.
+FORMAT_DIRECTIVE = re.compile(r"([-+#0 ']*)([0-9]*)(?:\.([0-9]*))?(L?)")
+FLOAT_CONVERSIONS = "efgaEFGA"
+
+
+@dataclass(frozen=True)
+class SeqFormat:
+    """A ``-f`` format GNU accepts, split around its one directive.
+
+    Args:
+        prefix (str): the text before the directive, ``%%`` kept.
+        flags (str): the directive's flags.
+        width (str): its field width, or empty.
+        precision (str | None): its precision digits, or None.
+        conversion (str): the floating conversion character.
+        suffix (str): the text after the directive, ``%%`` kept.
+    """
+
+    prefix: str
+    flags: str
+    width: str
+    precision: str | None
+    conversion: str
+    suffix: str
+
+
+def _lone_percent(text: str) -> int:
+    """Index of the first ``%`` that is not half of ``%%``, or -1.
+
+    Args:
+        text (str): the format text to scan.
+    """
+    i = 0
+    while i < len(text):
+        if text[i] == "%":
+            if text[i + 1 : i + 2] != "%":
+                return i
+            i += 2
+            continue
+        i += 1
+    return -1
+
+
+def parse_format(fmt: str) -> SeqFormat:
+    """GNU seq's ``-f`` check: exactly one floating ``%`` directive.
+
+    Args:
+        fmt (str): the format as typed.
+    """
+    shown = f"'{quote_text(fmt)}'"
+    start = _lone_percent(fmt)
+    if start < 0:
+        raise UsageError(f"seq: format {shown} has no % directive", 1)
+    match = FORMAT_DIRECTIVE.match(fmt, start + 1)
+    end = match.end() if match else start + 1
+    if end >= len(fmt):
+        raise UsageError(f"seq: format {shown} ends in %", 1)
+    if fmt[end] not in FLOAT_CONVERSIONS:
+        raise UsageError(
+            f"seq: format {shown} has unknown %{fmt[end]} directive", 1
+        )
+    suffix = fmt[end + 1 :]
+    if _lone_percent(suffix) >= 0:
+        raise UsageError(f"seq: format {shown} has too many % directives", 1)
+    flags, width, precision, _ = (
+        match.groups() if match else ("", "", None, "")
+    )
+    return SeqFormat(fmt[:start], flags, width, precision, fmt[end], suffix)
+
+
+def _hex_float(value: float, spec: SeqFormat) -> str:
+    """``value`` through a ``%a`` directive, as glibc renders it.
+
+    The hex digits round half to even at the precision without
+    renormalizing (``%.0a`` of 3 is ``0x2p+1``), ``#`` keeps the point
+    and ``0`` pads after ``0x``. GNU's value is a long double, so a value
+    needing more than a double's 53 bits shows fewer digits here.
+
+    Args:
+        value (float): the value to print.
+        spec (SeqFormat): the parsed format.
+    """
+    flags = spec.flags
+    sign = (
+        "-"
+        if math.copysign(1.0, value) < 0
+        else "+"
+        if "+" in flags
+        else " "
+        if " " in flags
+        else ""
+    )
+    magnitude = abs(float(value))
+    zero = False
+    if not math.isfinite(magnitude):
+        body = "nan" if math.isnan(magnitude) else "inf"
+    else:
+        mantissa, exponent = magnitude.hex().split("p")
+        lead, _, digits = mantissa[2:].partition(".")
+        if spec.precision is None:
+            digits = digits.rstrip("0")
+        else:
+            places = int(spec.precision or "0")
+            if places >= len(digits):
+                digits = digits.ljust(places, "0")
+            else:
+                kept = int(lead + digits[:places], 16)
+                rest = int(digits[places:], 16)
+                half = 8 << 4 * (len(digits) - places - 1)
+                if rest > half or (rest == half and kept % 2):
+                    kept += 1
+                text = f"{kept:0{places + 1}x}"
+                lead, digits = (
+                    text[: len(text) - places],
+                    text[len(text) - places :],
+                )
+        point = "." if digits or "#" in flags else ""
+        body = f"0x{lead}{point}{digits}p{int(exponent):+d}"
+        zero = "0" in flags and "-" not in flags
+    if spec.conversion == "A":
+        body = body.upper()
+    width = int(spec.width or "0")
+    if "-" in flags:
+        return (sign + body).ljust(width)
+    if zero:
+        return sign + body[:2] + body[2:].rjust(width - len(sign) - 2, "0")
+    return (sign + body).rjust(width)
+
+
+def render(spec: SeqFormat, value: float) -> str:
+    """One value through a ``-f`` format, as C's printf renders it.
+
+    Args:
+        spec (SeqFormat): the parsed format.
+        value (float): the value to print.
+    """
+    if spec.conversion in "aA":
+        body = _hex_float(value, spec)
+    else:
+        precision = "" if spec.precision is None else "." + spec.precision
+        directive = "%" + spec.flags.replace("'", "") + spec.width + precision
+        body = (directive + spec.conversion) % value
+    return (
+        spec.prefix.replace("%%", "%") + body + spec.suffix.replace("%%", "%")
+    )
 
 
 def _seq_generate(
@@ -43,7 +199,8 @@ def _seq_generate(
             values.append(cur)
             cur += step
     if fmt is not None:
-        parts = [fmt % v for v in values]
+        spec = parse_format(fmt)
+        parts = [render(spec, v) for v in values]
     elif width:
         w = max((len(str(v)) for v in values), default=1)
         parts = [str(v).zfill(w) for v in values]
@@ -60,6 +217,8 @@ async def seq(
     opts: CommandOpts,
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["seq"])
+    if not texts:
+        raise missing_operand_error(CommandName.SEQ, None)
     if len(texts) > 3:
         raise extra_operand_error(CommandName.SEQ, texts[3])
     sep = fl.as_str("s")

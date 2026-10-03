@@ -19,6 +19,7 @@ import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { lstripSlash } from '../../../utils/slash.ts'
+import { missingOperandError } from '../../spec/usage.ts'
 
 const ENC = new TextEncoder()
 
@@ -42,9 +43,7 @@ export function readlinkGeneric(
   _texts: string[],
   opts: CommandOpts,
 ): CommandFnResult {
-  if (paths.length === 0) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('readlink: missing operand\n') })]
-  }
+  if (paths.length === 0) throw missingOperandError('readlink', null)
   const fl = new FlagView(opts.flags, specOf('readlink'))
   const normalize = fl.asBool('f') || fl.asBool('e') || fl.asBool('m')
   const noNewline = fl.asBool('n')

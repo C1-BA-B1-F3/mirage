@@ -204,7 +204,7 @@ export async function catGeneric(
     return [out, io]
   }
   try {
-    const source = resolveSource(opts.stdin, 'cat: missing operand')
+    const source = resolveSource(opts.stdin)
     const out: ByteSource = wantsDisplay ? displayLines(source, display) : source
     return [out, new IOResult()]
   } catch (err) {

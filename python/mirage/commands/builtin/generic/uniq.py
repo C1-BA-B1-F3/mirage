@@ -22,6 +22,12 @@ from mirage.types import PathSpec, StatFn
 # declaration order, which is what each option lists back. No aliases in
 # either, so one candidate per line.
 ALL_REPEATED_ARGS = ("none", "prepend", "separate")
+# GNU's size_opt reads a count with xstrtoimax: leading C whitespace, a
+# sign and decimal digits, nothing after them.
+COUNT_WORD = re.compile(r"[ \t\n\v\f\r]*[+-]?[0-9]+")
+SKIP_FIELDS = "fields to skip"
+SKIP_CHARS = "bytes to skip"
+CHECK_CHARS = "bytes to compare"
 GROUP_ARGS = ("prepend", "append", "separate", "both")
 
 
@@ -39,16 +45,19 @@ class UniqFlags:
     zero_terminated: bool = False
 
 
-def _parse_count(value: str | None) -> int | None:
+def _parse_count(value: str | None, what: str) -> int | None:
+    """GNU's ``size_opt``: a decimal count, never negative, any size.
+
+    Args:
+        value (str | None): the option's value as typed.
+        what (str): what the count counts, for GNU's refusal
+            (``fields to skip``).
+    """
     if value is None:
         return None
-    normalized = value.strip()
-    if re.fullmatch(r"[+-]?[0-9]+", normalized) is None:
-        raise ValueError(f"uniq: invalid count: '{value}'")
-    count = int(normalized)
-    if count < 0:
-        raise ValueError(f"uniq: invalid count: '{value}'")
-    return count
+    if COUNT_WORD.fullmatch(value) is None or int(value) < 0:
+        raise ValueError(f"uniq: {value}: invalid number of {what}")
+    return int(value)
 
 
 def _method_word(option: str, value: str, allowed: tuple[str, ...]) -> str:
@@ -100,10 +109,10 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> UniqFlags:
         count=count,
         duplicates_only=duplicates_only,
         unique_only=unique_only,
-        skip_fields=_parse_count(fl.as_str("skip_fields")) or 0,
-        skip_chars=_parse_count(fl.as_str("skip_chars")) or 0,
+        skip_fields=_parse_count(fl.as_str("skip_fields"), SKIP_FIELDS) or 0,
+        skip_chars=_parse_count(fl.as_str("skip_chars"), SKIP_CHARS) or 0,
         ignore_case=fl.as_bool("ignore_case"),
-        check_chars=_parse_count(fl.as_str("check_chars")),
+        check_chars=_parse_count(fl.as_str("check_chars"), CHECK_CHARS),
         all_repeated=all_repeated,
         group=group,
         zero_terminated=fl.as_bool("zero_terminated"),
@@ -113,6 +122,8 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> UniqFlags:
 def _skip_fields(text: str, count: int) -> str:
     index = 0
     for _ in range(count):
+        if index >= len(text):
+            break
         while index < len(text) and text[index] in " \t":
             index += 1
         while index < len(text) and text[index] not in " \t":
@@ -236,10 +247,10 @@ async def uniq(
                 count=count,
                 duplicates_only=duplicates_only,
                 unique_only=unique_only,
-                skip_fields=_parse_count(skip_fields) or 0,
-                skip_chars=_parse_count(skip_chars) or 0,
+                skip_fields=_parse_count(skip_fields, SKIP_FIELDS) or 0,
+                skip_chars=_parse_count(skip_chars, SKIP_CHARS) or 0,
                 ignore_case=ignore_case,
-                check_chars=_parse_count(check_chars),
+                check_chars=_parse_count(check_chars, CHECK_CHARS),
             )
         )
     except UsageError as exc:

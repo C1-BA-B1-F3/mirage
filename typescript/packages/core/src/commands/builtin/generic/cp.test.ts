@@ -228,13 +228,17 @@ describe('cpGeneric guards', () => {
     expect(files.get('/d/a.txt')).toEqual(new Uint8Array([1]))
   })
 
-  it('duplicate basenames without -n let the last win', async () => {
+  it('duplicate basenames keep the first copy', async () => {
     const files = new Map([
       ['/x/a.txt', new Uint8Array([1])],
       ['/y/a.txt', new Uint8Array([2])],
     ])
-    await run(files, new Set(['/d']), ['/x/a.txt', '/y/a.txt', '/d'])
-    expect(files.get('/d/a.txt')).toEqual(new Uint8Array([2]))
+    const [, io] = await run(files, new Set(['/d']), ['/x/a.txt', '/y/a.txt', '/d'])
+    expect(files.get('/d/a.txt')).toEqual(new Uint8Array([1]))
+    expect(io.exitCode).toBe(1)
+    expect(await io.stderrStr()).toBe(
+      "cp: will not overwrite just-created '/d/a.txt' with '/y/a.txt'\n",
+    )
   })
 
   it('records writes keyed by destination path', async () => {

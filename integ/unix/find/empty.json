@@ -83,8 +83,6 @@
         "s3-prefix",
         "databricks-prefix",
         "gridfs-prefix",
-        "hf",
-        "hf-prefix",
         "dropbox",
         "dropbox-root",
         "onedrive",

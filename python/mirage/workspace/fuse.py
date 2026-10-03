@@ -37,7 +37,8 @@ from mirage.workspace.session.session import SessionState
 class FuseManager:
     def __init__(self) -> None:
         self._mountpoint: str | None = None
-        # The path the kernel's mount table records, resolved at mount time.
+        # Where the kernel mounts: on Linux the path resolved at mount time,
+        # which the unmount looks up in the mount table.
         self._kernel_mountpoint: str | None = None
         self._thread: Thread | None = None
         # True only for tempfile mountpoints Mirage created and may delete.
@@ -96,10 +97,14 @@ class FuseManager:
             else:
                 self._mountpoint = tempfile.mkdtemp(prefix="mirage-")
             self._owns_mountpoint = True
-        self._kernel_mountpoint = canonical_mountpoint(self._mountpoint)
+        self._kernel_mountpoint = (
+            canonical_mountpoint(self._mountpoint)
+            if sys.platform == "linux"
+            else self._mountpoint
+        )
         self._thread = mount_background(
             ops,
-            self._mountpoint,
+            self._kernel_mountpoint,
             root_prefix=prefix,
             session=session,
             backend=resolved,

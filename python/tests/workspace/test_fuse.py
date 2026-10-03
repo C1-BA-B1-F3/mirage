@@ -95,7 +95,7 @@ class TestFuseManager:
             fm.unmount()
         assert fm.mountpoint == str(tmp_path)
 
-    def test_unmount_uses_the_path_resolved_at_mount(
+    def test_mounts_and_unmounts_the_path_resolved_at_mount(
         self, monkeypatch, tmp_path
     ):
         real = tmp_path / "real"
@@ -103,11 +103,13 @@ class TestFuseManager:
         link = tmp_path / "link"
         link.symlink_to(real)
         _fake_mount(monkeypatch)
+        mounted = Mock()
+        monkeypatch.setattr("mirage.workspace.fuse.mount_background", mounted)
+        monkeypatch.setattr(sys, "platform", "linux")
         ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
         fm = FuseManager()
         fm.setup(ws._ops, prefix="/a/", mountpoint=str(link / "mp"))
         link.unlink()
-        monkeypatch.setattr(sys, "platform", "linux")
         unmount = Mock()
         monkeypatch.setattr(
             "mirage.workspace.fuse.unmount_with_fusermount", unmount
@@ -115,6 +117,6 @@ class TestFuseManager:
 
         fm.unmount()
 
-        unmount.assert_called_once_with(
-            os.path.join(os.path.realpath(real), "mp")
-        )
+        resolved = os.path.join(os.path.realpath(real), "mp")
+        assert mounted.call_args.args[1] == resolved
+        unmount.assert_called_once_with(resolved)

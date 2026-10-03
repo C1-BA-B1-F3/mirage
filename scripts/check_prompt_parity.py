@@ -34,9 +34,7 @@ process.stdout.write(JSON.stringify(result));
 """
 
 
-def normalize(value: str, *, python: bool = False) -> str:
-    if python:
-        value = value.replace("{{", "{").replace("}}", "}")
+def normalize(value: str) -> str:
     return " ".join(value.split())
 
 
@@ -50,7 +48,7 @@ def python_prompts(path: Path) -> dict[str, str]:
                 value = ast.literal_eval(statement.value)
                 if not isinstance(value, str):
                     raise ValueError(f"{path}: {target.id} is not a string")
-                prompts[target.id] = normalize(value, python=True)
+                prompts[target.id] = normalize(value)
     if not prompts:
         raise ValueError(f"{path}: no prompt constants found")
     return prompts
@@ -133,9 +131,7 @@ def violations(gaps: dict[str, str], exceptions: dict[str, str]) -> list[str]:
 
 
 def selftest() -> None:
-    assert (
-        normalize(' {prefix}  {{"x": 1}} ', python=True) == '{prefix} {"x": 1}'
-    )
+    assert normalize(' {prefix}  {"x": 1} ') == '{prefix} {"x": 1}'
     assert normalize("a\\nb") != normalize("a\nb")
     assert normalize("a\n  b") == normalize("a b")
     assert violations({"core/a/WRITE_PROMPT": "missing"}, {})
@@ -153,11 +149,7 @@ def selftest() -> None:
         # Literal backslash-n, a backtick, braces and Unicode must survive
         # language decoding without losing their meaning.
         value = '{prefix} {"x": "é\\n`"}'
-        py.write_text(
-            "PROMPT = "
-            + repr(value.replace('{"', '{{"').replace('"}', '"}}'))
-            + "\n"
-        )
+        py.write_text("PROMPT = " + repr(value) + "\n")
         ts.write_text(
             "export const PROMPT: string = " + json.dumps(value) + "\n"
         )

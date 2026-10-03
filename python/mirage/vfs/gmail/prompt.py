@@ -36,11 +36,11 @@ PROMPT = """\
     <message-id>  Gmail message ID
 
   email JSON structure (mirage-processed, NOT the raw Gmail API response):
-    {{
+    {
       "id": "...",
       "thread_id": "...",
-      "from":    {{ "name": "...", "email": "..." }},
-      "to":      [ {{ "name": "...", "email": "..." }} ],
+      "from":    { "name": "...", "email": "..." },
+      "to":      [ { "name": "...", "email": "..." } ],
       "cc":      [ ... ],
       "subject": "...",
       "date":    "Mon, 3 May 2026 10:00:00 -0700",
@@ -48,10 +48,10 @@ PROMPT = """\
       "snippet":   "first ~200 chars from Gmail",
       "labels":  [ "INBOX", "IMPORTANT", ... ],
       "attachments": [
-        {{ "id": "...", "filename": "invoice.pdf",
-           "mime_type": "application/pdf", "size": 12345 }}
+        { "id": "...", "filename": "invoice.pdf",
+           "mime_type": "application/pdf", "size": 12345 }
       ]
-    }}
+    }
 
   Attachments: each message with attachments has a sibling directory at
   <subject>__<message-id>/ (same name as the .gmail.json file but without

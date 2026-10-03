@@ -16,7 +16,7 @@ from mirage.vfs.gmail.prompt import PROMPT, WRITE_PROMPT
 
 
 def test_prompt_includes_path_anatomy_and_processed_shape():
-    rendered = PROMPT.format(prefix="/gmail")
+    rendered = PROMPT.replace("{prefix}", "/gmail")
     assert "<label>" in rendered
     assert "INBOX" in rendered
     assert "after:/before:" in rendered
@@ -26,7 +26,7 @@ def test_prompt_includes_path_anatomy_and_processed_shape():
 
 
 def test_prompt_documents_file_per_message_layout():
-    rendered = PROMPT.format(prefix="/gmail")
+    rendered = PROMPT.replace("{prefix}", "/gmail")
     assert "<subject>__<message-id>.gmail.json" in rendered
     assert "<subject>__<message-id>/" in rendered
     assert "attachments dir" in rendered
@@ -34,7 +34,7 @@ def test_prompt_documents_file_per_message_layout():
 
 
 def test_prompt_mentions_grep_skips_binary_attachments():
-    rendered = PROMPT.format(prefix="/gmail")
+    rendered = PROMPT.replace("{prefix}", "/gmail")
     assert "grep" in rendered
     assert "binary" in rendered.lower()
 

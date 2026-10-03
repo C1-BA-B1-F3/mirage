@@ -31,34 +31,34 @@ PROMPT = """\
                those are still in owned/.
 
   gslide.json structure (matches the Google Slides API presentations.get response):
-    {{
+    {
       "presentationId": "...",
       "title": "...",
-      "pageSize": {{ "width": {{...}}, "height": {{...}} }},
+      "pageSize": { "width": {...}, "height": {...} },
       "slides": [
-        {{                                      # one element per slide
+        {                                      # one element per slide
           "objectId": "...",
           "pageElements": [
-            {{
+            {
               "objectId": "...",
-              "shape": {{
+              "shape": {
                 "shapeType": "TEXT_BOX",
-                "text": {{
+                "text": {
                   "textElements": [
-                    {{ "textRun": {{ "content": "the actual text\\n",
-                                   "style": {{...}} }} }}
+                    { "textRun": { "content": "the actual text\\n",
+                                   "style": {...} } }
                   ]
-                }}
-              }}
-            }},
-            {{ "image": {{...}} }},
-            {{ "table": {{...}} }}
+                }
+              }
+            },
+            { "image": {...} },
+            { "table": {...} }
           ]
-        }}
+        }
       ],
       "masters": [...],
       "layouts": [...]
-    }}
+    }
 
   Useful jq paths:
     .title

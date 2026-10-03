@@ -80,7 +80,7 @@ def _doc() -> dict:
 
 
 def test_prompt_includes_buckets_and_structure():
-    rendered = PROMPT.format(prefix="/gdocs")
+    rendered = PROMPT.replace("{prefix}", "/gdocs")
     assert "owned/" in rendered
     assert "shared/" in rendered
     assert "shared with you by others" in rendered
@@ -94,13 +94,13 @@ def test_prompt_includes_buckets_and_structure():
 def test_prompt_no_longer_promises_a_top_level_body():
     # includeTabsContent=true leaves the singleton fields empty, so the
     # old recipe would return nothing at all on a live document.
-    rendered = PROMPT.format(prefix="/gdocs")
+    rendered = PROMPT.replace("{prefix}", "/gdocs")
     assert OLD_FLAT_RECIPE not in rendered
     assert "There is no top-level .body" in rendered
 
 
 def test_prompt_recipes_are_the_ones_this_test_runs():
-    rendered = PROMPT.format(prefix="/gdocs")
+    rendered = PROMPT.replace("{prefix}", "/gdocs")
     for recipe in (ALL_TEXT, TAB_NAMES, TAB_COUNT, FIRST_TAB):
         assert recipe in rendered
 

@@ -42,9 +42,9 @@ Acting on it:
 - `rm` an event file to delete that event.
 - Everything else goes through the `gws calendar` CLI, which takes the ids
   the tree renders:
-  `gws calendar events insert --params '{{"calendarId":"primary"}}' --json ...`
-  `gws calendar events patch --params '{{"calendarId":"primary","eventId":"..."}}'`
-  `gws calendar freebusy query --json '{{"timeMin":...,"timeMax":...,"items":[{{"id":"primary"}}]}}'`
+  `gws calendar events insert --params '{"calendarId":"primary"}' --json ...`
+  `gws calendar events patch --params '{"calendarId":"primary","eventId":"..."}'`
+  `gws calendar freebusy query --json '{"timeMin":...,"timeMax":...,"items":[{"id":"primary"}]}'`
 - A written event must carry an explicit UTC offset or timeZone; an
   ambiguous local time is not interpreted for you.
 """

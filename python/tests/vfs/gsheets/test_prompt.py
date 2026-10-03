@@ -16,7 +16,7 @@ from mirage.vfs.gsheets.prompt import PROMPT, WRITE_PROMPT
 
 
 def test_prompt_includes_buckets_and_structure():
-    rendered = PROMPT.format(prefix="/gsheets")
+    rendered = PROMPT.replace("{prefix}", "/gsheets")
     assert "owned/" in rendered
     assert "shared/" in rendered
     assert "shared with you by others" in rendered

@@ -16,7 +16,7 @@ from mirage.vfs.gslides.prompt import PROMPT, WRITE_PROMPT
 
 
 def test_prompt_includes_buckets_and_structure():
-    rendered = PROMPT.format(prefix="/gslides")
+    rendered = PROMPT.replace("{prefix}", "/gslides")
     assert "owned/" in rendered
     assert "shared/" in rendered
     assert "shared with you by others" in rendered

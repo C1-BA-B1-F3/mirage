@@ -16,7 +16,7 @@ from mirage.vfs.gdrive.prompt import PROMPT
 
 
 def test_prompt_cross_references_per_service_shapes():
-    rendered = PROMPT.format(prefix="/gdrive")
+    rendered = PROMPT.replace("{prefix}", "/gdrive")
     assert ".gdoc.json" in rendered
     assert ".gsheet.json" in rendered
     assert ".gslide.json" in rendered

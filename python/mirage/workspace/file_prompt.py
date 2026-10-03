@@ -34,7 +34,9 @@ def build_file_prompt(mounts: list[MountEntry]) -> str:
         if not prompt:
             continue
         prefix = m.prefix.rstrip("/") or "/"
-        section = prompt.format(prefix=prefix) + "\n" + MODE_LINES[m.mode]
+        section = (
+            prompt.replace("{prefix}", prefix) + "\n" + MODE_LINES[m.mode]
+        )
         if m.mode != MountMode.READ and m.vfs.write_prompt:
             section += "\n" + m.vfs.write_prompt.replace("{prefix}", prefix)
         parts.append(section)

@@ -16,7 +16,7 @@ from mirage.vfs.linear.prompt import PROMPT, WRITE_PROMPT
 
 
 def test_prompt_includes_path_anatomy_and_normalized_shapes():
-    rendered = PROMPT.format(prefix="/linear")
+    rendered = PROMPT.replace("{prefix}", "/linear")
     assert "team.json:" in rendered
     assert "issue.json:" in rendered
     assert "comments.jsonl:" in rendered

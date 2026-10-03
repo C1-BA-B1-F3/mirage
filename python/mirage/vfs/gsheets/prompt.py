@@ -31,31 +31,31 @@ PROMPT = """\
                those are still in owned/.
 
   gsheet.json structure (matches the Google Sheets API spreadsheets.get response):
-    {{
+    {
       "spreadsheetId": "...",
       "spreadsheetUrl": "...",
-      "properties": {{ "title": "...", "locale": "...", "timeZone": "..." }},
+      "properties": { "title": "...", "locale": "...", "timeZone": "..." },
       "sheets": [
-        {{                                      # one element per tab
-          "properties": {{
+        {                                      # one element per tab
+          "properties": {
             "sheetId": 0, "title": "...", "index": 0,
-            "gridProperties": {{ "rowCount": 1000, "columnCount": 26 }}
-          }},
+            "gridProperties": { "rowCount": 1000, "columnCount": 26 }
+          },
           "data": [
-            {{
+            {
               "rowData": [
-                {{ "values": [
-                    {{ "formattedValue": "...",
-                      "userEnteredValue": {{...}},
-                      "effectiveValue": {{...}} }}
-                ]}}    # an empty cell is {{}}, a trailing one absent
+                { "values": [
+                    { "formattedValue": "...",
+                      "userEnteredValue": {...},
+                      "effectiveValue": {...} }
+                ]}    # an empty cell is {}, a trailing one absent
               ]
-            }}
+            }
           ]
-        }}
+        }
       ],
       "namedRanges": [...]
-    }}
+    }
 
   Useful jq paths:
     .properties.title

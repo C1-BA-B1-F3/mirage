@@ -32,43 +32,43 @@ PROMPT = """\
 
   gdoc.json structure (the Google Docs API documents.get response, read
   with includeTabsContent=true so every tab is present):
-    {{
+    {
       "documentId": "...",
       "title": "...",
       "tabs": [                          # one entry per top-level tab
-        {{
-          "tabProperties": {{
+        {
+          "tabProperties": {
             "tabId": "t.0",              # names a tab for gws docs write
             "title": "Tab 1",
             "index": 0
-          }},
-          "documentTab": {{
-            "body": {{
+          },
+          "documentTab": {
+            "body": {
               "content": [
-                {{                          # one element per block
-                  "paragraph": {{
+                {                          # one element per block
+                  "paragraph": {
                     "elements": [
-                      {{ "textRun": {{ "content": "the actual text\\n",
-                                     "textStyle": {{...}} }} }}
+                      { "textRun": { "content": "the actual text\\n",
+                                     "textStyle": {...} } }
                     ],
-                    "paragraphStyle": {{...}}
-                  }}
-                }},
-                {{ "table": {{...}} }},
-                {{ "sectionBreak": {{...}} }}
+                    "paragraphStyle": {...}
+                  }
+                },
+                { "table": {...} },
+                { "sectionBreak": {...} }
               ]
-            }},
-            "documentStyle": {{...}},
-            "namedStyles": {{...}}
-          }},
-          "childTabs": [ {{ ...same shape, nested to any depth... }} ]
+            },
+            "documentStyle": {...},
+            "namedStyles": {...}
+          },
+          "childTabs": [ { ...same shape, nested to any depth... } ]
                                        # a NESTED tab additionally carries
                                        # parentTabId and nestingLevel; a
                                        # root tab carries neither
-        }}
+        }
       ],
       "revisionId": "..."
-    }}
+    }
 
   There is no top-level .body. A tab-aware response leaves the singleton
   fields (.body, .documentStyle, .namedStyles) empty and hangs every

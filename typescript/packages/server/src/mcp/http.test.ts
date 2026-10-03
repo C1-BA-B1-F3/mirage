@@ -205,4 +205,14 @@ describe('the MCP door over HTTP', () => {
       content.length,
     )
   })
+
+  it('runs shell as a daemon job', async () => {
+    const { base } = await daemon()
+    const id = await createWorkspace(base)
+    await call(`${base}/v1/workspaces/${id}/mcp`, 'shell', { command: 'echo from-mcp' })
+    const jobs = (await (await fetch(`${base}/v1/jobs?workspaceId=${id}`)).json()) as {
+      command: string
+    }[]
+    expect(jobs.map((job) => job.command)).toContain('echo from-mcp')
+  })
 })

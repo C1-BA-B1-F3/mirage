@@ -15,7 +15,6 @@
 import { VERSION } from '@struktoai/mirage-core/version'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { fromJsonSchema, McpServer, type JsonSchemaType } from '@modelcontextprotocol/server'
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import {
   EDIT_DESCRIPTION,
   EDIT_INPUT,
@@ -126,14 +125,5 @@ export function createMirageMcpServer(
     (args) => operations.glob(args.pattern, args.path),
   )
 
-  return server
-}
-
-export async function serveMirageMcp(
-  workspace: Workspace,
-  options: MirageMcpServerOptions = {},
-): Promise<McpServer> {
-  const server = createMirageMcpServer(workspace, options)
-  await server.connect(new StdioServerTransport())
   return server
 }

@@ -110,7 +110,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   registerAsksRoutes(app, { registry })
   registerExecuteRoutes(app, { registry, jobs })
   registerJobsRoutes(app, { jobs })
-  const mcp = registerMcpRoutes(app, registry)
+  const mcp = registerMcpRoutes(app, registry, jobs)
   const ssh: SSHDoor = {
     config: options.sshConfig !== undefined ? options.sshConfig : resolveSSHConfig(),
     listener: null,
@@ -123,7 +123,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     // SSH never loads ssh2 or the node barrel the SFTP side needs.
     app.addHook('onReady', async () => {
       const { startSSHServer } = await import('./ssh/server.ts')
-      ssh.listener = await startSSHServer(registry, sshConfig)
+      ssh.listener = await startSSHServer(registry, sshConfig, mcp)
     })
   }
   app.addHook('onClose', async () => {

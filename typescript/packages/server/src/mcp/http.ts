@@ -17,13 +17,57 @@ import {
   DEFAULT_MAX_REQUEST_BODY_SIZE,
   type McpHttpHandler,
 } from '@modelcontextprotocol/server'
-import { MirageToolOperations } from '@struktoai/mirage-agents/tool_operations'
+import { ioToStr } from '@struktoai/mirage-agents/io_text'
+import { MirageToolOperations, type ToolResult } from '@struktoai/mirage-agents/tool_operations'
 import type { SessionState } from '@struktoai/mirage-core/workspace/session/session'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { ioResultToDict } from '../io_serde.ts'
+import { JobStatus, type JobTable } from '../jobs.ts'
 import type { WorkspaceEntry, WorkspaceRegistry } from '../registry.ts'
 import { createMirageMcpServer } from './server.ts'
 
 const MCP_PATH = '/v1/workspaces/:workspaceId/mcp'
+/**
+ * The tool table as the daemon serves it: through its own API.
+ *
+ * `shell` is a job, submitted to the daemon's job table the way
+ * `POST /execute` submits one, so an MCP command is listed by `/v1/jobs`,
+ * can be cancelled there, and is recorded like any other.
+ */
+class DaemonToolOperations extends MirageToolOperations {
+  constructor(
+    private readonly entry: WorkspaceEntry,
+    private readonly jobs: JobTable,
+    private readonly session: string,
+  ) {
+    super(entry.runner.ws, { sessionId: session })
+  }
+
+  override async shell(command: string): Promise<ToolResult> {
+    const ws = this.entry.runner.ws
+    let answer: ToolResult | undefined
+    let job = await this.jobs.submit(
+      this.entry.id,
+      command,
+      async (signal, executionScope) => {
+        const io = await ws.shell(command, { sessionId: this.session, executionScope, signal })
+        const payload = ioResultToDict(io)
+        answer = { content: [{ type: 'text', text: ioToStr(io) }] }
+        if (io.exitCode !== 0) answer.isError = true
+        return payload
+      },
+      this.session,
+    )
+    job = await this.jobs.wait(job.id)
+    if (job.status === JobStatus.CANCELED) {
+      return { content: [{ type: 'text', text: 'job canceled' }], isError: true }
+    }
+    if (job.status === JobStatus.FAILED || answer === undefined) {
+      return { content: [{ type: 'text', text: job.error ?? 'execute failed' }], isError: true }
+    }
+    return answer
+  }
+}
 
 /**
  * Serves every workspace's tools over MCP's streamable HTTP.
@@ -32,7 +76,9 @@ const MCP_PATH = '/v1/workspaces/:workspaceId/mcp'
  * session, or the one `?sessionId=` names, as `/execute` picks its
  * session. One tool table per workspace and live session outlives the requests,
  * so the read one request stamps guards the edit the next one makes; the
- * SDK builds a server per request around it.
+ * SDK builds a server per request around it. `fetch` answers a web
+ * request with no auth in front, for a door that already admitted its
+ * caller: the SSH relay.
  */
 export class McpDoor {
   private readonly served = new Map<
@@ -40,38 +86,18 @@ export class McpDoor {
     { entry: WorkspaceEntry; session: SessionState; handler: McpHttpHandler }
   >()
 
-  constructor(private readonly registry: WorkspaceRegistry) {}
+  constructor(
+    private readonly registry: WorkspaceRegistry,
+    private readonly jobs: JobTable,
+  ) {}
 
-  async handle(
-    req: FastifyRequest<{ Params: { workspaceId: string }; Querystring: { sessionId?: string } }>,
-    reply: FastifyReply,
-  ): Promise<FastifyReply> {
-    await this.dropStale()
-    const { workspaceId } = req.params
-    if (!this.registry.has(workspaceId)) {
-      return reply.status(404).send({ detail: 'workspace not found' })
-    }
-    const entry = this.registry.get(workspaceId)
-    const ws = entry.runner.ws
-    await ws.ensureSessionsLoaded()
-    const sessionId = req.query.sessionId ?? ws.defaultSessionId
-    const key = `${workspaceId}\u0000${sessionId}`
-    const session = ws.listSessions().find((s) => s.sessionId === sessionId)
-    if (session === undefined) {
-      await this.forget(key)
-      return reply.status(404).send({ detail: 'session not found' })
-    }
-    let served = this.served.get(key)
-    if (served?.session !== session) {
-      await this.forget(key)
-      const operations = new MirageToolOperations(ws, { sessionId })
-      served = {
-        entry,
-        session,
-        handler: createMcpHandler(() => createMirageMcpServer(ws, { operations })),
-      }
-      this.served.set(key, served)
-    }
+  async fetch(request: Request, parsedBody?: unknown): Promise<Response> {
+    const handler = await this.target(new URL(request.url))
+    if (typeof handler === 'string') return Response.json({ detail: handler }, { status: 404 })
+    return handler.fetch(request, parsedBody === undefined ? {} : { parsedBody })
+  }
+
+  async handle(req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
     const headers = new Headers()
     for (const [name, value] of Object.entries(req.headers)) {
       if (value === undefined) continue
@@ -81,11 +107,7 @@ export class McpDoor {
       method: req.method,
       headers,
     })
-    const response = await served.handler.fetch(
-      request,
-      req.body === undefined ? {} : { parsedBody: req.body },
-    )
-    return reply.send(response)
+    return reply.send(await this.fetch(request, req.body))
   }
 
   /** Close every handler; the app's `onClose` awaits it. */
@@ -93,6 +115,35 @@ export class McpDoor {
     const handlers = [...this.served.values()].map((s) => s.handler)
     this.served.clear()
     await Promise.all(handlers.map((h) => h.close()))
+  }
+
+  /**
+   * The handler a request's URL is for, or why there is none: the
+   * workspace or the session does not exist.
+   */
+  private async target(url: URL): Promise<McpHttpHandler | string> {
+    await this.dropStale()
+    const match = /^\/v1\/workspaces\/([^/]+)\/mcp$/.exec(url.pathname)
+    if (match === null) return 'not found'
+    const workspaceId = decodeURIComponent(match[1] ?? '')
+    if (!this.registry.has(workspaceId)) return 'workspace not found'
+    const entry = this.registry.get(workspaceId)
+    const ws = entry.runner.ws
+    await ws.ensureSessionsLoaded()
+    const sessionId = url.searchParams.get('sessionId') ?? ws.defaultSessionId
+    const key = `${workspaceId}\u0000${sessionId}`
+    const session = ws.listSessions().find((s) => s.sessionId === sessionId)
+    if (session === undefined) {
+      await this.forget(key)
+      return 'session not found'
+    }
+    const served = this.served.get(key)
+    if (served?.session === session) return served.handler
+    await this.forget(key)
+    const operations = new DaemonToolOperations(entry, this.jobs, sessionId)
+    const handler = createMcpHandler(() => createMirageMcpServer(ws, { operations }))
+    this.served.set(key, { entry, session, handler })
+    return handler
   }
 
   private async dropStale(): Promise<void> {
@@ -118,9 +169,13 @@ export class McpDoor {
  * Serve MCP at `/v1/workspaces/:workspaceId/mcp`, behind the app's host
  * check and auth as every other route is.
  */
-export function registerMcpRoutes(app: FastifyInstance, registry: WorkspaceRegistry): McpDoor {
-  const door = new McpDoor(registry)
-  app.route<{ Params: { workspaceId: string }; Querystring: { sessionId?: string } }>({
+export function registerMcpRoutes(
+  app: FastifyInstance,
+  registry: WorkspaceRegistry,
+  jobs: JobTable,
+): McpDoor {
+  const door = new McpDoor(registry, jobs)
+  app.route({
     method: ['GET', 'POST', 'DELETE'],
     url: MCP_PATH,
     bodyLimit: DEFAULT_MAX_REQUEST_BODY_SIZE,

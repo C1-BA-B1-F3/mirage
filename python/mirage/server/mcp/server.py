@@ -17,7 +17,6 @@ from typing import Any
 
 import jsonschema
 from mcp.server import Server, ServerRequestContext
-from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import MCPError
 from mcp.types import (
     INVALID_PARAMS,
@@ -52,7 +51,6 @@ from mirage.agents.tool_operations import (
     MirageToolOperations,
     ToolResult,
 )
-from mirage.workspace.runner import WorkspaceRunner
 from mirage.workspace.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -123,9 +121,10 @@ class MirageMcpServer:
         version (str): Server version advertised to the client.
         session_id (str | None): The session the tools act as; None is
             the workspace's default session.
-        runner (WorkspaceRunner | None): The loop the workspace lives on,
-            when it is not the caller's: the daemon serves MCP from its
-            own loop and runs each tool call on the workspace's.
+        operations (MirageToolOperations | None): The tool table to
+            serve, built from the workspace and the arguments above when
+            None; the daemon passes one that runs each call through its
+            API.
     """
 
     def __init__(
@@ -135,12 +134,15 @@ class MirageMcpServer:
         name: str = "mirage",
         version: str = __version__,
         session_id: str | None = None,
-        runner: WorkspaceRunner | None = None,
+        operations: MirageToolOperations | None = None,
     ) -> None:
-        self._ops = MirageToolOperations(
-            workspace, stale_write_protection, session_id
+        self._ops = (
+            operations
+            if operations is not None
+            else MirageToolOperations(
+                workspace, stale_write_protection, session_id
+            )
         )
-        self._runner = runner
         # The SDK's parameter is the lifespan result. No lifespan is
         # passed, so the default one runs and yields an empty dict.
         self.server: Server[dict[str, Any]] = Server(
@@ -206,9 +208,7 @@ class MirageMcpServer:
                 )
             )
         try:
-            if self._runner is None:
-                return await self._run(params.name, arguments)
-            return await self._runner.call(self._run(params.name, arguments))
+            return await self._run(params.name, arguments)
         except Exception as exc:
             logger.debug("mcp tool %s failed", params.name, exc_info=True)
             return _to_mcp(ToolResult(str(exc), True))
@@ -252,43 +252,3 @@ class MirageMcpServer:
                 )
             )
         raise ValueError(f"unknown tool: {name}")
-
-    async def run_stdio(self) -> None:
-        """Serve the workspace over stdio until the client disconnects."""
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                self.server.create_initialization_options(),
-            )
-
-
-def create_mirage_mcp_server(
-    workspace: Workspace, stale_write_protection: bool = True
-) -> MirageMcpServer:
-    """Build an MCP server for a workspace without serving it.
-
-    Args:
-        workspace (Workspace): The workspace to serve.
-        stale_write_protection (bool): False lets an agent overwrite a
-            file that changed since it read it.
-
-    Returns:
-        MirageMcpServer: The unserved server.
-    """
-    return MirageMcpServer(workspace, stale_write_protection)
-
-
-async def serve_mirage_mcp(
-    workspace: Workspace, stale_write_protection: bool = True
-) -> None:
-    """Serve a workspace as MCP tools over stdio.
-
-    Args:
-        workspace (Workspace): The workspace to serve.
-        stale_write_protection (bool): False lets an agent overwrite a
-            file that changed since it read it.
-    """
-    await create_mirage_mcp_server(
-        workspace, stale_write_protection
-    ).run_stdio()

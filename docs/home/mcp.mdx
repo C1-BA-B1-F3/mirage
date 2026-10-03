@@ -8,17 +8,17 @@ icon: plug
 
 Mirage serves seven tools to any [MCP](https://modelcontextprotocol.io) client: `shell`, `read`, `write`, `edit`, `ls`, `grep` and `glob`, the set coding-agent harnesses expect. Each parameter carries a description, and `read`, `ls`, `grep` and `glob` are marked read-only, which lets Claude run them in parallel. Every call runs in a mirage session, so commands go through the shell, file calls go through the workspace's mounts, and the session's profile and policies apply. `edit` refuses to overwrite a file that changed since the agent last read it.
 
-There are three ways to reach them:
+There are three ways to reach them, and all three end at the daemon's HTTP endpoint: stdio and SSH only carry the messages, so auth, sessions and history are decided in one place. Every `shell` call is a daemon job, listed by `GET /v1/jobs` as a `POST /execute` is.
 
 | Door | Reach | Session |
 | --- | --- | --- |
-| `mirage mcp` | stdio, one workspace built from a config file | the workspace's default session |
+| `mirage mcp` | stdio, relayed to the daemon | the default session of the workspace it serves |
 | `/v1/workspaces/{id}/mcp` | the daemon's HTTP API, streamable HTTP | the default session, or the one the URL names |
 | `ssh -s <id>@host mcp` | the daemon's [SSH door](/home/ssh) | a fresh session under the login key's profile |
 
 ## stdio
 
-`mirage mcp` builds the workspace from a config file and serves it on stdin and stdout until the client disconnects. It looks for `workspace.yaml` walking up from the working directory; `MIRAGE_MCP_CONFIG` or a path argument picks another.
+`mirage mcp` relays stdin and stdout to the daemon's endpoint, starting the daemon when it is not running. Given a config, it creates a workspace from it and deletes that workspace when the client closes stdin, as a stdio server's state ends with its process. It looks for `workspace.yaml` walking up from the working directory; `MIRAGE_MCP_CONFIG` or a path argument picks another.
 
 ```json
 {
@@ -28,7 +28,15 @@ There are three ways to reach them:
 }
 ```
 
-`--no-stale-write-protection` lets `edit` and `write` proceed when a file changed since it was read.
+`-w <id>` serves a workspace the daemon already holds, and leaves it as it was when the client goes:
+
+```json
+{
+  "mcpServers": {
+    "mirage": { "command": "mirage", "args": ["mcp", "-w", "demo"] }
+  }
+}
+```
 
 ## HTTP
 

@@ -12,14 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.server.mcp.server import (
-    MirageMcpServer,
-    create_mirage_mcp_server,
-    serve_mirage_mcp,
-)
+from mirage.server.mcp.server import MirageMcpServer
 
-__all__ = [
-    "MirageMcpServer",
-    "create_mirage_mcp_server",
-    "serve_mirage_mcp",
-]
+__all__ = ["MirageMcpServer"]

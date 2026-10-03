@@ -197,3 +197,17 @@ async def test_a_write_larger_than_a_mebibyte_goes_through(tmp_path):
         stored = await runner.call(runner.ws.vfs.read("/big.txt"))
     assert written.is_error is False
     assert len(stored) == len(content)
+
+
+@pytest.mark.asyncio
+async def test_shell_runs_as_a_daemon_job(tmp_path):
+    async with daemon(tmp_path) as (base, _):
+        workspace_id = await create_workspace(base)
+        url = f"{base}/v1/workspaces/{workspace_id}/mcp"
+        await call(url, "shell", {"command": "echo from-mcp"})
+        async with httpx.AsyncClient(base_url=base) as http:
+            jobs = await http.get(
+                "/v1/jobs", params={"workspace_id": workspace_id}
+            )
+    commands = [job["command"] for job in jobs.json()]
+    assert "echo from-mcp" in commands

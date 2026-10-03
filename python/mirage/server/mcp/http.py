@@ -26,17 +26,115 @@ from mcp.types import (
     ListToolsResult,
     PaginatedRequestParams,
 )
+from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
 from mirage import __version__
+from mirage.agents.io_text import io_to_str
+from mirage.agents.tool_operations import (
+    DEFAULT_READ_LIMIT,
+    MirageToolOperations,
+    ToolResult,
+)
+from mirage.server.io_serde import io_result_to_dict
+from mirage.server.jobs import JobStatus, JobTable
 from mirage.server.mcp.server import MirageMcpServer
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
+from mirage.types import JsonValue
+from mirage.workspace.execution import ExecutionScope
 from mirage.workspace.session.session import SessionState
 
 MCP_PATH = "/v1/workspaces/{workspace_id}/mcp"
+
+
+class DaemonToolOperations(MirageToolOperations):
+    """The tool table as the daemon serves it: through its own API.
+
+    ``shell`` is a job, submitted to the daemon's job table the way
+    ``POST /execute`` submits one, so an MCP command is listed by
+    ``/v1/jobs``, can be cancelled there, and is recorded like any other.
+    The file tools run on the workspace's own loop.
+
+    Args:
+        entry (WorkspaceEntry): the workspace the tools act on.
+        jobs (JobTable): the daemon's job table.
+        session_id (str): the session the tools act as.
+    """
+
+    def __init__(
+        self, entry: WorkspaceEntry, jobs: JobTable, session_id: str
+    ) -> None:
+        super().__init__(entry.runner.ws, True, session_id)
+        self._entry = entry
+        self._jobs = jobs
+        self._session = session_id
+
+    async def shell(self, command: str) -> ToolResult:
+        """Run a command line as a job of the daemon.
+
+        Args:
+            command (str): The command line to run.
+
+        Returns:
+            ToolResult: The command's rendered output, or the job's failure.
+        """
+        runner = self._entry.runner
+        answers: list[ToolResult] = []
+
+        async def run_line(scope: ExecutionScope) -> JsonValue:
+            io = await runner.ws.shell(
+                command, session_id=self._session, execution_scope=scope
+            )
+            payload = await io_result_to_dict(io)
+            answers.append(ToolResult(io_to_str(io), io.exit_code != 0))
+            return payload
+
+        async def run(scope: ExecutionScope) -> JsonValue:
+            return await runner.call(run_line(scope))
+
+        job = await self._jobs.submit(
+            workspace_id=self._entry.id,
+            command=command,
+            factory=run,
+            session_id=self._session,
+        )
+        job = await self._jobs.wait(job.id)
+        if job.status == JobStatus.CANCELED:
+            return ToolResult("job canceled", True)
+        if job.status == JobStatus.FAILED or not answers:
+            return ToolResult(job.error or "execute failed", True)
+        return answers[0]
+
+    async def read(
+        self, path: str, offset: int = 0, limit: int = DEFAULT_READ_LIMIT
+    ) -> ToolResult:
+        return await self._entry.runner.call(super().read(path, offset, limit))
+
+    async def write(self, path: str, content: str) -> ToolResult:
+        return await self._entry.runner.call(super().write(path, content))
+
+    async def edit(
+        self,
+        path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> ToolResult:
+        return await self._entry.runner.call(
+            super().edit(path, old_string, new_string, replace_all)
+        )
+
+    async def ls(self, path: str) -> ToolResult:
+        return await self._entry.runner.call(super().ls(path))
+
+    async def grep(self, pattern: str, path: str) -> ToolResult:
+        return await self._entry.runner.call(super().grep(pattern, path))
+
+    async def glob(self, pattern: str, path: str = "/") -> ToolResult:
+        return await self._entry.runner.call(super().glob(pattern, path))
 
 
 class McpDoor:
@@ -47,14 +145,21 @@ class McpDoor:
     picks its session. One tool table per workspace and live session outlives
     the requests, so the read one request stamps guards the edit the next
     one makes. The SDK's session manager starts on the first request, so
-    the app serves MCP with or without ASGI lifespan events.
+    the app serves MCP with or without ASGI lifespan events. ``app``
+    serves the same route with no auth in front, for a door that already
+    admitted its caller: the SSH relay.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.
+        jobs (JobTable): the daemon's job table, which runs ``shell``.
     """
 
-    def __init__(self, registry: WorkspaceRegistry) -> None:
+    def __init__(self, registry: WorkspaceRegistry, jobs: JobTable) -> None:
         self._registry = registry
+        self._jobs = jobs
+        self.app = Starlette(
+            routes=[Route(MCP_PATH, self, methods=["GET", "POST", "DELETE"])]
+        )
         self._served: dict[
             tuple[str, str],
             tuple[WorkspaceEntry, SessionState, MirageMcpServer],
@@ -142,7 +247,8 @@ class McpDoor:
         served = self._served.get(key)
         if served is None or served[1] is not session:
             server = MirageMcpServer(
-                ws, session_id=session_id, runner=entry.runner
+                ws,
+                operations=DaemonToolOperations(entry, self._jobs, session_id),
             )
             self._served[key] = (entry, session, server)
             return server
@@ -195,7 +301,9 @@ class McpDoor:
         return await target.call_tool(ctx, params)
 
 
-def register_mcp_routes(app: FastAPI, registry: WorkspaceRegistry) -> McpDoor:
+def register_mcp_routes(
+    app: FastAPI, registry: WorkspaceRegistry, jobs: JobTable
+) -> McpDoor:
     """Serve MCP at ``/v1/workspaces/{workspace_id}/mcp``.
 
     The route sits behind the app's host check and auth, as every other
@@ -204,11 +312,12 @@ def register_mcp_routes(app: FastAPI, registry: WorkspaceRegistry) -> McpDoor:
     Args:
         app (FastAPI): the daemon app.
         registry (WorkspaceRegistry): the daemon's workspaces.
+        jobs (JobTable): the daemon's job table.
 
     Returns:
         McpDoor: the door, whose ``close`` the app's lifespan awaits.
     """
-    door = McpDoor(registry)
+    door = McpDoor(registry, jobs)
     app.router.routes.append(
         Route(
             MCP_PATH,

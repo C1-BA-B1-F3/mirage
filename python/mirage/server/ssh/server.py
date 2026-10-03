@@ -19,6 +19,7 @@ from pathlib import Path
 import asyncssh
 
 from mirage.concurrency.limiter import run_blocking
+from mirage.server.mcp.http import McpDoor
 from mirage.server.registry import WorkspaceRegistry
 from mirage.server.ssh.codex import serve_codex
 from mirage.server.ssh.config import SSHConfig
@@ -73,26 +74,30 @@ class MirageSSHServer(asyncssh.SSHServer):
 
 
 async def serve_channel(
-    registry: WorkspaceRegistry, process: asyncssh.SSHServerProcess[str]
+    registry: WorkspaceRegistry,
+    door: McpDoor,
+    process: asyncssh.SSHServerProcess[str],
 ) -> None:
     """Route a session channel: Codex's subsystem and the mcp subsystem
     to their doors, anything else to the shell.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.
+        door (McpDoor): the daemon's MCP endpoint, for the mcp
+            subsystem.
         process (asyncssh.SSHServerProcess[str]): the channel's process.
     """
     if process.subsystem == CODEX_SUBSYSTEM:
         await serve_codex(registry, process)
         return
     if process.subsystem == MCP_SUBSYSTEM:
-        await serve_mcp(registry, process)
+        await serve_mcp(registry, door, process)
         return
     await handle_process(registry, process)
 
 
 async def start_ssh_server(
-    registry: WorkspaceRegistry, config: SSHConfig
+    registry: WorkspaceRegistry, config: SSHConfig, door: McpDoor
 ) -> asyncssh.SSHAcceptor:
     """Listen for SSH on the daemon's loop, serving its workspaces.
 
@@ -107,6 +112,8 @@ async def start_ssh_server(
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.
         config (SSHConfig): where to listen and whom to admit.
+        door (McpDoor): the daemon's MCP endpoint, which the mcp
+            subsystem relays to.
 
     Returns:
         asyncssh.SSHAcceptor: the listener; ``close()`` stops it.
@@ -124,7 +131,7 @@ async def start_ssh_server(
         server_factory=functools.partial(
             MirageSSHServer, config.authorized_keys_file
         ),
-        process_factory=functools.partial(serve_channel, registry),
+        process_factory=functools.partial(serve_channel, registry, door),
         sftp_factory=functools.partial(MirageSFTPServer, registry),
         allow_scp=True,
         max_line_length=MAX_TERMINAL_LINE,

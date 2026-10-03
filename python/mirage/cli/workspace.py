@@ -35,7 +35,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def _resolve_config(path: Path) -> dict[str, Any]:
+def resolve_config(path: Path) -> dict[str, Any]:
     """Load + validate + interpolate env vars from the CLI's environment.
 
     Env interpolation runs client-side so the user's shell env (where
@@ -173,7 +173,7 @@ def create_cmd(
     ),
 ) -> None:
     """Create a workspace; daemon auto-spawns if not running."""
-    body: dict[str, Any] = {"config": _resolve_config(config_path)}
+    body: dict[str, Any] = {"config": resolve_config(config_path)}
     if workspace_id:
         body["id"] = workspace_id
     with make_client() as client:

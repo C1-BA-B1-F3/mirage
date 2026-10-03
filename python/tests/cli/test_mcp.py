@@ -1,5 +1,6 @@
 import sys
 
+import httpx
 import pytest
 import typer.main
 from mcp import Client, StdioServerParameters
@@ -40,8 +41,8 @@ def test_mcp_help_describes_stdio():
         for param in mcp.params
         for opt in (*param.opts, *param.secondary_opts)
     }
-    assert "--stale-write-protection" in opts
-    assert "--no-stale-write-protection" in opts
+    assert "--workspace" in opts
+    assert "-w" in opts
 
 
 def test_missing_config_exits_two(tmp_path, monkeypatch):
@@ -51,6 +52,13 @@ def test_missing_config_exits_two(tmp_path, monkeypatch):
     for name in MCP_ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
     result = runner.invoke(app, ["mcp"])
+    assert result.exit_code == 2
+
+
+def test_a_config_and_a_workspace_are_exclusive(tree):
+    result = runner.invoke(
+        app, ["mcp", str(tree / "workspace.yaml"), "-w", "ws_1"]
+    )
     assert result.exit_code == 2
 
 
@@ -80,17 +88,45 @@ def test_env_names_are_mcp_then_shared():
     assert MCP_ENV_NAMES == ("MIRAGE_MCP_CONFIG", "MIRAGE_CONFIG")
 
 
-@pytest.mark.asyncio
-async def test_serves_the_tools_over_stdio(tree):
-    params = StdioServerParameters(
+def relay(daemon, *args: str) -> StdioServerParameters:
+    return StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mirage.cli.main", "mcp", str(tree / "workspace.yaml")],
+        args=["-m", "mirage.cli.main", "mcp", *args],
+        env=daemon["env"],
     )
-    async with Client(params) as client:
+
+
+@pytest.mark.asyncio
+async def test_relays_the_daemons_tools_over_stdio(daemon, tree):
+    async with Client(relay(daemon, str(tree / "workspace.yaml"))) as client:
         tools = sorted(t.name for t in (await client.list_tools()).tools)
         await client.call_tool("write", {"path": "/a.txt", "content": "hi\n"})
         read = await client.call_tool("read", {"path": "/a.txt"})
         ran = await client.call_tool("shell", {"command": "wc -l /a.txt"})
+        listed = httpx.get(f"{daemon['url']}/v1/workspaces").json()
     assert tools == ["edit", "glob", "grep", "ls", "read", "shell", "write"]
     assert read.content[0].text == "     1\thi\n"
     assert ran.content[0].text == "1 /a.txt\n"
+    assert len(listed) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_loaded_workspace_goes_with_the_process(daemon, tree):
+    async with Client(relay(daemon, str(tree / "workspace.yaml"))) as client:
+        await client.call_tool("shell", {"command": "true"})
+    assert httpx.get(f"{daemon['url']}/v1/workspaces").json() == []
+
+
+@pytest.mark.asyncio
+async def test_a_named_workspace_stays(daemon, tree):
+    created = httpx.post(
+        f"{daemon['url']}/v1/workspaces",
+        json={"config": {"mounts": {"/": {"vfs": "ram", "mode": "WRITE"}}}},
+    ).json()
+    async with Client(relay(daemon, "-w", created["id"])) as client:
+        await client.call_tool("write", {"path": "/kept.txt", "content": "x"})
+    ran = httpx.post(
+        f"{daemon['url']}/v1/workspaces/{created['id']}/execute",
+        json={"command": "cat /kept.txt"},
+    ).json()
+    assert ran["stdout"] == "x"

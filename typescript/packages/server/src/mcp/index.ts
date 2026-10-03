@@ -12,4 +12,5 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { createMirageMcpServer, serveMirageMcp, type MirageMcpServerOptions } from './server.ts'
+export { createMirageMcpServer, type MirageMcpServerOptions } from './server.ts'
+export { relayStdio } from './relay.ts'

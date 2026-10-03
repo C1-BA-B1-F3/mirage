@@ -72,13 +72,7 @@ The plugin launches this command automatically:
 npx -y @struktoai/mirage-cli mcp
 ```
 
-You can also embed the transport in a Node application:
-
-```ts
-import { createMirageMcpServer } from '@struktoai/mirage-server/mcp'
-
-const server = createMirageMcpServer(workspace)
-```
+It relays to the Mirage daemon, starting it when it is not running, and deletes the workspace it loaded when Codex stops it. See [MCP](/home/mcp) for the other ways in.
 
 ## Run Codex's own tools over SSH
 

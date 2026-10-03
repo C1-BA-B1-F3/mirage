@@ -14,12 +14,17 @@
 
 import logging
 from typing import cast
+from urllib.parse import quote
 
 import anyio
 import asyncssh
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.server.stdio import stdio_server
 
-from mirage.server.mcp.server import MirageMcpServer
+from mirage.server.mcp.http import McpDoor
+from mirage.server.mcp.relay import McpRelay
 from mirage.server.registry import WorkspaceRegistry
 from mirage.server.ssh.session import (
     key_profile,
@@ -58,16 +63,22 @@ class ChannelWriter:
 
 
 async def serve_mcp(
-    registry: WorkspaceRegistry, process: asyncssh.SSHServerProcess[str]
+    registry: WorkspaceRegistry,
+    door: McpDoor,
+    process: asyncssh.SSHServerProcess[str],
 ) -> None:
     """Serve one mcp channel: the workspace's tools over MCP's stdio framing.
 
     The channel runs as a fresh session under the login key's profile,
     else the workspace's default, with the environment an ``ssh`` login
-    gets, and the session closes with the channel.
+    gets, and the session closes with the channel. Its messages are
+    relayed to the daemon's MCP endpoint for that session, in process:
+    the login already admitted the caller, so the endpoint's bearer auth
+    is not asked again.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.
+        door (McpDoor): the daemon's MCP endpoint.
         process (asyncssh.SSHServerProcess[str]): the channel's process.
     """
     workspace_id = process.get_extra_info("username")
@@ -88,16 +99,26 @@ async def serve_mcp(
         process.stderr.write(f"mirage: cannot open a session: {exc}\n")
         process.exit(1)
         return
-    server = MirageMcpServer(runner.ws, session_id=session_id, runner=runner)
+    url = (
+        f"http://mirage/v1/workspaces/{quote(workspace_id, safe='')}/mcp"
+        f"?session_id={quote(session_id, safe='')}"
+    )
     try:
-        async with stdio_server(
-            cast("anyio.AsyncFile[str]", process.stdin),
-            cast("anyio.AsyncFile[str]", ChannelWriter(process.stdout)),
-        ) as (read_stream, write_stream):
-            await server.server.run(
+        async with (
+            httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=door.app)
+            ) as http,
+            Client(streamable_http_client(url, http_client=http)) as upstream,
+            stdio_server(
+                cast("anyio.AsyncFile[str]", process.stdin),
+                cast("anyio.AsyncFile[str]", ChannelWriter(process.stdout)),
+            ) as (read_stream, write_stream),
+        ):
+            server = McpRelay(upstream).server
+            await server.run(
                 read_stream,
                 write_stream,
-                server.server.create_initialization_options(),
+                server.create_initialization_options(),
             )
     finally:
         if workspace_id in registry and registry.get(workspace_id) is entry:

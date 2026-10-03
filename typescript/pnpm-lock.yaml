@@ -781,6 +781,9 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.0.0
         version: 10.3.0
+      '@modelcontextprotocol/client':
+        specifier: ^2.3.0
+        version: 2.3.0
       '@modelcontextprotocol/server':
         specifier: ^2.3.0
         version: 2.3.0
@@ -806,9 +809,6 @@ importers:
         specifier: ^11.2.0
         version: 11.2.0
     devDependencies:
-      '@modelcontextprotocol/client':
-        specifier: ^2.3.0
-        version: 2.3.0
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.17

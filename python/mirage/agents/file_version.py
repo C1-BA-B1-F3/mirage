@@ -55,8 +55,7 @@ class FileVersionTracker:
 
     Args:
         workspace (Workspace): The workspace to read and write through.
-        enabled (bool): False serves every call unchecked, which is
-            what `mirage mcp --no-stale-write-protection` asks for.
+        enabled (bool): False serves every call unchecked.
     """
 
     def __init__(self, workspace: Workspace, enabled: bool = True) -> None:

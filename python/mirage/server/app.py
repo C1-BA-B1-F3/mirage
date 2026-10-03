@@ -121,7 +121,7 @@ async def _start_ssh(app: FastAPI) -> SSHListener | None:
     if config is None:
         return None
     start = _load_ssh_starter()
-    return await start(app.state.registry, config)
+    return await start(app.state.registry, config, app.state.mcp)
 
 
 @asynccontextmanager
@@ -232,5 +232,7 @@ def build_app(
     app.include_router(execute.router)
     app.include_router(jobs.router)
     app.include_router(health.router)
-    app.state.mcp = register_mcp_routes(app, app.state.registry)
+    app.state.mcp = register_mcp_routes(
+        app, app.state.registry, app.state.jobs
+    )
     return app

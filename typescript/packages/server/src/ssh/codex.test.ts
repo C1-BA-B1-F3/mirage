@@ -20,6 +20,8 @@ import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Workspace } from '@struktoai/mirage-node'
 import ssh2, { type Client, type ClientChannel } from 'ssh2'
 import { afterEach, describe, expect, it } from 'vitest'
+import { JobTable } from '../jobs.ts'
+import { McpDoor } from '../mcp/http.ts'
 import { WorkspaceRegistry, type WorkspaceEntry } from '../registry.ts'
 import { argvLine, processEnv, toPath, toUri } from './codex.ts'
 import {
@@ -57,12 +59,17 @@ async function startHarness(mode: MountMode = MountMode.WRITE, ws?: Workspace): 
   writeFileSync(join(dir, 'authorized_keys'), `${pair.public}\n`)
   const registry = new WorkspaceRegistry({ idleGraceSeconds: 0 })
   const entry = registry.add(ws ?? new Workspace({ '/': new RAMVFS() }, { mode }), 'demo')
-  const listener = await startSSHServer(registry, {
-    port: 0,
-    host: '127.0.0.1',
-    hostKeyFile: join(dir, 'host_key'),
-    authorizedKeysFile: join(dir, 'authorized_keys'),
-  })
+  const door = new McpDoor(registry, new JobTable())
+  const listener = await startSSHServer(
+    registry,
+    {
+      port: 0,
+      host: '127.0.0.1',
+      hostKeyFile: join(dir, 'host_key'),
+      authorizedKeysFile: join(dir, 'authorized_keys'),
+    },
+    door,
+  )
   const harness = {
     registry,
     entry,

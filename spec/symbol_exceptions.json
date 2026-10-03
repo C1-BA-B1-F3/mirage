@@ -36,6 +36,11 @@
     "_scan": "Python moves the blocking os.scandir to a thread; Node's fs readdir is already async."
    }
   },
+  "server/mcp/server": {
+   "typescript_only": {
+    "createMirageMcpServer": "Python's lowlevel Server takes list and call handlers, so MirageMcpServer is a class that holds the tool table and answers both. TypeScript's McpServer registers each tool itself, so a factory registers the table and returns the server."
+   }
+  },
   "server/ssh/mcp": {
    "python_only": {
     "ChannelWriter": "The SDK's stdio transport awaits write and flush on its stdout, and asyncssh writes synchronously and drains, so Python adapts the channel's stdout. TypeScript's StdioServerTransport takes the ssh2 channel, a Node stream, as it is."

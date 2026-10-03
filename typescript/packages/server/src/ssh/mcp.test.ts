@@ -20,6 +20,8 @@ import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Workspace } from '@struktoai/mirage-node'
 import ssh2, { type Client, type ClientChannel } from 'ssh2'
 import { afterEach, describe, expect, it } from 'vitest'
+import { JobTable } from '../jobs.ts'
+import { McpDoor } from '../mcp/http.ts'
 import { WorkspaceRegistry, type WorkspaceEntry } from '../registry.ts'
 import { MCP_SUBSYSTEM } from './constants.ts'
 import { mintKeyPair } from './keys.ts'
@@ -31,6 +33,7 @@ type Message = Record<string, unknown>
 interface Harness {
   registry: WorkspaceRegistry
   entry: WorkspaceEntry
+  door: McpDoor
   listener: SSHListener
   privateKey: string
   keysFile: string
@@ -49,15 +52,21 @@ async function startHarness(ws?: Workspace): Promise<Harness> {
     ws ?? new Workspace({ '/': new RAMVFS() }, { mode: MountMode.WRITE }),
     'demo',
   )
-  const listener = await startSSHServer(registry, {
-    port: 0,
-    host: '127.0.0.1',
-    hostKeyFile: join(dir, 'host_key'),
-    authorizedKeysFile: join(dir, 'authorized_keys'),
-  })
+  const door = new McpDoor(registry, new JobTable())
+  const listener = await startSSHServer(
+    registry,
+    {
+      port: 0,
+      host: '127.0.0.1',
+      hostKeyFile: join(dir, 'host_key'),
+      authorizedKeysFile: join(dir, 'authorized_keys'),
+    },
+    door,
+  )
   const harness = {
     registry,
     entry,
+    door,
     listener,
     privateKey: pair.private,
     keysFile: join(dir, 'authorized_keys'),
@@ -185,6 +194,7 @@ afterEach(async () => {
   for (const client of clients.splice(0)) client.end()
   for (const h of open.splice(0)) {
     await h.listener.close()
+    await h.door.close()
     await h.registry.closeAll()
   }
 })

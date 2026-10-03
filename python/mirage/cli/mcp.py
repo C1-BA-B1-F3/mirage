@@ -17,16 +17,16 @@ from pathlib import Path
 
 import typer
 
-from mirage.server.workspace_config import (
-    build_workspace_from_config,
-    resolve_workspace_config,
-)
+from mirage.cli.client import DaemonUnreachable, make_client
+from mirage.cli.output import fail, handle_response
+from mirage.cli.workspace import resolve_config
+from mirage.server.workspace_config import resolve_workspace_config
 
 MCP_ENV_NAMES = ("MIRAGE_MCP_CONFIG", "MIRAGE_CONFIG")
 
 app = typer.Typer(
     invoke_without_command=True,
-    help="Serve a Mirage workspace as MCP tools over stdio.",
+    help="Serve a Mirage workspace's MCP tools over stdio.",
 )
 
 
@@ -50,42 +50,60 @@ def resolve_mcp_config(
     )
 
 
-async def run_mcp_server(
-    config: str | None, stale_write_protection: bool
-) -> None:
-    """Build the workspace and serve it until the client disconnects.
-
-    Args:
-        config (str | None): explicit config path, or None to discover.
-        stale_write_protection (bool): False lets an agent overwrite a
-            file that changed since it read it.
-    """
-    # Imported here, as the TypeScript twin awaits mirage-server/mcp:
-    # every other `mirage` verb would otherwise pay for the agents
-    # package and the whole workspace on each spawn.
-    from mirage.server.mcp.server import serve_mirage_mcp
-
-    workspace = await build_workspace_from_config(resolve_mcp_config(config))
-    try:
-        await serve_mirage_mcp(workspace, stale_write_protection)
-    finally:
-        await workspace.close()
-
-
 @app.callback(invoke_without_command=True)
 def mcp_cmd(
     config: str | None = typer.Argument(
         None, help="Mirage workspace YAML config."
     ),
-    stale_write_protection: bool = typer.Option(
-        True,
-        "--stale-write-protection/--no-stale-write-protection",
-        help="Refuse an edit when the file changed since it was read.",
+    workspace_id: str | None = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help="Serve this daemon workspace instead of loading a config.",
     ),
 ) -> None:
-    """Serve a Mirage workspace as MCP tools over stdio."""
+    """Serve a Mirage workspace's MCP tools over stdio.
+
+    The tools are the daemon's: this relays stdio to the workspace's
+    ``/v1/workspaces/{id}/mcp`` endpoint, starting the daemon when it is
+    not running. A workspace loaded from a config lives as long as this
+    process, as a stdio server's state does; one named with
+    ``--workspace`` is left as it was.
+    """
+    if workspace_id is not None and config is not None:
+        fail("pass a config or --workspace, not both", exit_code=2)
     try:
-        asyncio.run(run_mcp_server(config, stale_write_protection))
+        path = None if workspace_id is not None else resolve_mcp_config(config)
     except FileNotFoundError as e:
-        typer.echo(str(e), err=True)
-        raise SystemExit(2) from e
+        fail(str(e), exit_code=2)
+    with make_client() as client:
+        try:
+            client.ensure_running()
+        except DaemonUnreachable as e:
+            fail(str(e))
+        if path is not None:
+            body = {"config": resolve_config(path)}
+            created = handle_response(
+                client.request("POST", "/v1/workspaces", json=body)
+            )
+            if not isinstance(created, dict):
+                fail(f"unexpected daemon response: {created!r}")
+            workspace_id = str(created["id"])
+        else:
+            handle_response(
+                client.request("GET", f"/v1/workspaces/{workspace_id}")
+            )
+        url = f"{client.settings.url}/v1/workspaces/{workspace_id}/mcp"
+        token = client.settings.auth_token
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    # Imported here, as the TypeScript twin awaits mirage-server/mcp:
+    # every other `mirage` verb would otherwise pay for the MCP SDK on
+    # each spawn.
+    from mirage.server.mcp.relay import relay_stdio
+
+    try:
+        asyncio.run(relay_stdio(url, headers))
+    finally:
+        if path is not None:
+            with make_client() as client:
+                client.request("DELETE", f"/v1/workspaces/{workspace_id}")

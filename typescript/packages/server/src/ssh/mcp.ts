@@ -12,9 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
+import { VERSION } from '@struktoai/mirage-core/version'
 import type { ServerChannel } from 'ssh2'
-import { createMirageMcpServer } from '../mcp/server.ts'
+import type { McpDoor } from '../mcp/http.ts'
+import { McpRelay } from '../mcp/relay.ts'
 import type { WorkspaceRegistry } from '../registry.ts'
 import { keyProfile, loginEnv, newSessionId, openSession, type ChannelRequest } from './session.ts'
 
@@ -23,10 +26,13 @@ import { keyProfile, loginEnv, newSessionId, openSession, type ChannelRequest } 
  *
  * The channel runs as a fresh session under the login key's profile, else
  * the workspace's default, with the environment an `ssh` login gets, and
- * the session closes with the channel.
+ * the session closes with the channel. Its messages are relayed to the
+ * daemon's MCP endpoint for that session, in process: the login already
+ * admitted the caller, so the endpoint's bearer auth is not asked again.
  */
 export async function serveMcp(
   registry: WorkspaceRegistry,
+  door: McpDoor,
   channel: ServerChannel,
   request: ChannelRequest,
 ): Promise<void> {
@@ -52,12 +58,25 @@ export async function serveMcp(
     channel.end()
     return
   }
-  const server = createMirageMcpServer(entry.runner.ws, { sessionId })
-  await server.connect(new StdioServerTransport(channel, channel))
-  await ended
-  await server.close()
-  if (registry.has(request.username) && registry.get(request.username) === entry) {
-    await entry.runner.ws.closeSession(sessionId)
+  const url =
+    `http://mirage/v1/workspaces/${encodeURIComponent(request.username)}/mcp` +
+    `?sessionId=${encodeURIComponent(sessionId)}`
+  const upstream = new Client({ name: 'mirage', version: VERSION })
+  try {
+    await upstream.connect(
+      new StreamableHTTPClientTransport(new URL(url), {
+        fetch: (input, init) => door.fetch(new Request(input, init)),
+      }),
+    )
+    const { server } = new McpRelay(upstream)
+    await server.connect(new StdioServerTransport(channel, channel))
+    await ended
+    await server.close()
+  } finally {
+    await upstream.close()
+    if (registry.has(request.username) && registry.get(request.username) === entry) {
+      await entry.runner.ws.closeSession(sessionId)
+    }
   }
   channel.exit(0)
   channel.end()

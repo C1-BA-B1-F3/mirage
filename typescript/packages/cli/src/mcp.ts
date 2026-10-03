@@ -12,12 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { Workspace } from '@struktoai/mirage-node'
-import {
-  buildWorkspaceFromConfig,
-  resolveWorkspaceConfig,
-} from '@struktoai/mirage-server/workspace_config'
+import { resolveWorkspaceConfig } from '@struktoai/mirage-server/workspace_config'
 import type { Command } from 'commander'
+import { makeClient } from './client.ts'
+import { fail, handleResponse } from './output.ts'
+import { loadDaemonSettings } from './settings.ts'
 
 export interface McpConfigResolutionOptions {
   cwd?: string
@@ -25,7 +24,7 @@ export interface McpConfigResolutionOptions {
 }
 
 interface McpCommandOptions {
-  staleWriteProtection: boolean
+  workspace?: string
 }
 
 export function resolveMcpConfig(
@@ -39,24 +38,49 @@ export function resolveMcpConfig(
   })
 }
 
-export async function buildMcpWorkspace(configPath: string): Promise<Workspace> {
-  return buildWorkspaceFromConfig(configPath)
-}
-
-async function runMcpServer(config: string | undefined, options: McpCommandOptions): Promise<void> {
-  const configPath = resolveMcpConfig(config)
-  // Loaded before the workspace exists: this command always serves, so
-  // deferring it past construction buys nothing and a failed import there
-  // would leak a live workspace (and any FUSE mount it opened).
-  const { serveMirageMcp } = await import('@struktoai/mirage-server/mcp')
-  const workspace = await buildMcpWorkspace(configPath)
+/**
+ * Serve a workspace's MCP tools over stdio. The tools are the daemon's:
+ * this relays stdio to the workspace's `/v1/workspaces/:id/mcp`
+ * endpoint, starting the daemon when it is not running. A workspace
+ * loaded from a config lives as long as this process, as a stdio
+ * server's state does; one named with `--workspace` is left as it was.
+ */
+async function runMcp(config: string | undefined, options: McpCommandOptions): Promise<void> {
+  if (options.workspace !== undefined && config !== undefined) {
+    fail('pass a config or --workspace, not both', 2)
+  }
+  let path: string | undefined
+  if (options.workspace === undefined) {
+    try {
+      path = resolveMcpConfig(config)
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), 2)
+    }
+  }
+  const client = makeClient(loadDaemonSettings())
   try {
-    await serveMirageMcp(workspace, {
-      staleWriteProtection: options.staleWriteProtection,
-    })
+    await client.ensureRunning({ allowSpawn: true })
   } catch (error) {
-    await workspace.close()
-    throw error
+    fail(error instanceof Error ? error.message : String(error))
+  }
+  let workspaceId: string
+  if (path !== undefined) {
+    const { checkWorkspaceConfigFile } = await import('@struktoai/mirage-node/config')
+    const body = JSON.stringify({ config: checkWorkspaceConfigFile(path) })
+    const created = await handleResponse(await client.request('POST', '/v1/workspaces', { body }))
+    workspaceId = (created as { id: string }).id
+  } else {
+    workspaceId = options.workspace ?? ''
+    await handleResponse(await client.request('GET', `/v1/workspaces/${workspaceId}`))
+  }
+  const url = `${client.settings.url}/v1/workspaces/${workspaceId}/mcp`
+  const token = client.settings.authToken
+  const headers: Record<string, string> = token === '' ? {} : { Authorization: `Bearer ${token}` }
+  const { relayStdio } = await import('@struktoai/mirage-server/mcp')
+  try {
+    await relayStdio(url, headers)
+  } finally {
+    if (path !== undefined) await client.request('DELETE', `/v1/workspaces/${workspaceId}`)
   }
 }
 
@@ -64,7 +88,7 @@ export function registerMcpCommand(program: Command): void {
   program
     .command('mcp')
     .argument('[config]', 'Mirage workspace YAML config')
-    .option('--no-stale-write-protection', 'allow edits after a file changed since it was read')
-    .description('Serve a Mirage workspace as MCP tools over stdio.')
-    .action(runMcpServer)
+    .option('-w, --workspace <id>', 'Serve this daemon workspace instead of loading a config')
+    .description("Serve a Mirage workspace's MCP tools over stdio.")
+    .action(runMcp)
 }

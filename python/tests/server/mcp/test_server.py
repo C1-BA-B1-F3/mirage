@@ -4,7 +4,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS, CallToolResult, Tool
 
 from mirage import RAMVFS, MountMode, Workspace
-from mirage.server.mcp.server import MirageMcpServer, create_mirage_mcp_server
+from mirage.server.mcp.server import MirageMcpServer
 
 
 async def list_tools(server: MirageMcpServer) -> list[Tool]:
@@ -178,7 +178,7 @@ async def test_argument_outside_the_schema_is_an_error_result(server):
 def test_server_advertises_name_and_version(workspace):
     from mirage import __version__
 
-    server = create_mirage_mcp_server(workspace)
+    server = MirageMcpServer(workspace)
     assert server.server.name == "mirage"
     assert server.server.version == __version__
 

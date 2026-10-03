@@ -23,6 +23,7 @@ export default defineConfig({
     'src/tool_operations.ts',
     'src/tool_descriptions.ts',
     'src/file_version.ts',
+    'src/io_text.ts',
     'src/vercel/index.ts',
     'src/mastra/index.ts',
     'src/opencode/index.ts',

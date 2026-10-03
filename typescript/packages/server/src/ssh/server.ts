@@ -16,6 +16,7 @@ import { access, readFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import type * as Ssh2Mod from 'ssh2'
 import type { AuthContext, Connection, ParsedKey, PseudoTtyInfo, ServerChannel } from 'ssh2'
+import type { McpDoor } from '../mcp/http.ts'
 import type { WorkspaceRegistry } from '../registry.ts'
 import { serveCodex } from './codex.ts'
 import type { SSHConfig } from './config.ts'
@@ -188,6 +189,7 @@ async function authenticate(
 function serveConnection(
   client: Connection,
   registry: WorkspaceRegistry,
+  door: McpDoor,
   config: SSHConfig,
   utils: typeof Ssh2Mod.utils,
   peer: Endpoint,
@@ -254,7 +256,7 @@ function serveConnection(
           peer,
           local,
         }
-        if (info.name === MCP_SUBSYSTEM) void serveMcp(registry, channel, request)
+        if (info.name === MCP_SUBSYSTEM) void serveMcp(registry, door, channel, request)
         else void serveCodex(registry, channel, request)
       })
     })
@@ -279,6 +281,7 @@ function serveConnection(
 export async function startSSHServer(
   registry: WorkspaceRegistry,
   config: SSHConfig,
+  door: McpDoor,
 ): Promise<SSHListener> {
   const ssh2 = await loadSsh2()
   try {
@@ -298,7 +301,10 @@ export async function startSSHServer(
       clients.delete(client)
     })
     const peer = { address: info.ip, port: info.port }
-    serveConnection(client, registry, config, ssh2.utils, peer, { address: config.host, port })
+    serveConnection(client, registry, door, config, ssh2.utils, peer, {
+      address: config.host,
+      port,
+    })
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)

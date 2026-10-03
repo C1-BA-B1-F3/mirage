@@ -132,7 +132,7 @@ describe('writeOutput', () => {
     expect(DEC.decode(io.stderr as Uint8Array)).toBe('tee: /denied: disk full\n')
   })
 
-  it("reports a refused probe as that output's open failure", async () => {
+  it('leaves the open to the write when the probe is refused', async () => {
     const s = sink()
     const stat = (p: PathSpec): Promise<FileStat> =>
       p.virtual === '/locked'
@@ -147,10 +147,9 @@ describe('writeOutput', () => {
       undefined,
       stat,
     )
-    expect(out).toBeNull()
-    expect(s.written).toEqual({ '/good': '' })
-    expect([Object.keys(io.writes), io.cache]).toEqual([['/good'], ['/good']])
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe('tee: /locked: Permission denied\n')
+    expect(out).not.toBeNull()
+    expect(s.written).toEqual({ '/good': 'x', '/locked': 'x' })
+    expect(io.exitCode).toBe(0)
   })
 
   it('diagnoses every failing operand', async () => {

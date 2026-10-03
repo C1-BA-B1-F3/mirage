@@ -166,16 +166,17 @@ export async function writeOutput(
   const errors: string[] = []
   // GNU opens every output before it reads a byte: under exit the first open
   // failure ends the run with nothing written, the outputs before it made
-  // empty. A mount write is one call, so the open is probed first, and a
-  // probe the backend refuses is that output's open failure. Emptying an
+  // empty. A mount write is one call, so the open is probed first. A probe
+  // the backend will not answer (a stat its credentials refuse) is no
+  // verdict: the write is that output's open, and reports it. Emptying an
   // earlier output can fail first, and then it is the one reported.
   if (parsed.stopOnError && stat !== undefined) {
     for (const [index, path] of paths.entries()) {
-      let refusal: unknown
+      let refusal: FsError | null
       try {
         refusal = await openRefusal(stat, path, paths.slice(0, index))
-      } catch (err) {
-        refusal = err
+      } catch {
+        continue
       }
       if (refusal === null) continue
       let failed = path

@@ -1,4 +1,5 @@
 import errno
+import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec, StatFn
 from mirage.utils.errors import fs_error_line, fs_strerror
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,9 +160,10 @@ async def write_output(
     failure aborts before any data is written, the outputs opened before
     it left empty. A mount has no open/write split (``write_bytes`` is one
     call), so with ``stat`` in hand the open is probed first: a missing
-    or non-directory parent, or a directory operand; a probe the backend
-    refuses is that output's open failure. Emptying an earlier output can
-    fail first, and then it is the one reported.
+    or non-directory parent, or a directory operand. A probe the backend
+    will not answer (a stat its credentials refuse) is no verdict: the
+    write is that output's open, and reports it. Emptying an earlier
+    output can fail first, and then it is the one reported.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -175,11 +179,11 @@ async def write_output(
     errors: list[bytes] = []
     if parsed.stop_on_error and stat is not None:
         for index, path in enumerate(paths):
-            refusal: Exception | None
             try:
                 refusal = await open_refusal(stat, path, paths[:index])
             except Exception as exc:
-                refusal = exc
+                logger.debug("tee: probing %s failed: %s", path.virtual, exc)
+                continue
             if refusal is None:
                 continue
             failed: PathSpec = path

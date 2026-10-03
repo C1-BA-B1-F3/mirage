@@ -12,11 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import {
   FileStat,
   FileType,
@@ -32,6 +33,7 @@ import {
   type OpsResultContext,
   type Policy,
 } from '@struktoai/mirage-node'
+import { resolveFusermountBinary } from '@struktoai/mirage-node/fuse/mount'
 
 // Size-unknown probe: a stat wrapper simulates API-backed mounts (Linear,
 // Slack, Trello, ...) whose byte size is unknown until the content is
@@ -270,9 +272,9 @@ async function runExternalUnmountProbe(
   try {
     await ws.addFuseMount('/x', mountpoint)
     if (process.platform === 'darwin') {
-      execFileSync('diskutil', ['unmount', mountpoint], { stdio: 'ignore' })
+      await promisify(execFile)('diskutil', ['unmount', mountpoint])
     } else {
-      execFileSync('fusermount3', ['-u', mountpoint], { stdio: 'ignore' })
+      await promisify(execFile)(resolveFusermountBinary() ?? 'fusermount', ['-u', mountpoint])
     }
     const path = process.env.PATH
     process.env.PATH = ''

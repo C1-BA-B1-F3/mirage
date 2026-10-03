@@ -72,8 +72,8 @@ def is_mounted(mountpoint: str) -> bool:
 def unmount_with_fusermount(mountpoint: str) -> None:
     """Release a Linux FUSE mount with fusermount or fusermount3.
 
-    A mount already released from outside needs no helper and counts as
-    unmounted.
+    The unmount is lazy (``-z``), so a busy mount detaches at once. A mount
+    already released from outside needs no helper and counts as unmounted.
 
     Args:
         mountpoint (str): the mounted path.
@@ -81,14 +81,21 @@ def unmount_with_fusermount(mountpoint: str) -> None:
     Raises:
         FileNotFoundError: neither helper is on PATH and the path is still
             mounted.
+        OSError: the helper failed and the path is still mounted.
     """
     binary = resolve_fusermount_binary()
-    if binary is not None:
-        subprocess.run([binary, "-u", mountpoint], capture_output=True)
-    elif is_mounted(mountpoint):
-        raise FileNotFoundError(
-            f"cannot unmount {mountpoint}: neither 'fusermount' nor "
-            "'fusermount3' is on PATH"
+    if binary is None:
+        if is_mounted(mountpoint):
+            raise FileNotFoundError(
+                f"cannot unmount {mountpoint}: neither 'fusermount' nor "
+                "'fusermount3' is on PATH"
+            )
+        return
+    proc = subprocess.run([binary, "-uz", mountpoint], capture_output=True)
+    if proc.returncode != 0 and is_mounted(mountpoint):
+        raise OSError(
+            f"cannot unmount {mountpoint}: "
+            f"{proc.stderr.decode(errors='replace').strip()}"
         )
 
 

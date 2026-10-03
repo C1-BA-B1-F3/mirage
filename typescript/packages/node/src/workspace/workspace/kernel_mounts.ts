@@ -90,8 +90,8 @@ export class KernelMounts {
   async remove(prefix: string, sessionId?: string): Promise<void> {
     const key = sessionId === undefined ? prefix : `${prefix}@${sessionId}`
     const manager = this.managers.get(key)
-    this.managers.delete(key)
     if (manager !== undefined) await manager.unmount()
+    this.managers.delete(key)
     this.mountpointsMap.delete(key)
   }
 

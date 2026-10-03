@@ -1,4 +1,6 @@
 import subprocess
+import sys
+from unittest.mock import Mock
 
 import pytest
 
@@ -68,3 +70,19 @@ def test_deregister_removes_entry(monkeypatch):
         ws.remove_fuse_mount("/a/")
         assert ws.fuse_mountpoints == {}
         assert ws.fuse_mountpoint is None
+
+
+def test_failed_removal_keeps_entry_for_a_retry(monkeypatch):
+    _fake_mount(monkeypatch)
+    with _ws() as ws:
+        ws.add_fuse_mount("/a/", "/tmp/mp-a")
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            "mirage.workspace.fuse.unmount_with_fusermount",
+            Mock(side_effect=[OSError("busy"), None]),
+        )
+        with pytest.raises(OSError, match="busy"):
+            ws.remove_fuse_mount("/a/")
+        assert ws.fuse_mountpoints == {"/a/": "/tmp/mp-a"}
+        ws.remove_fuse_mount("/a/")
+        assert ws.fuse_mountpoints == {}

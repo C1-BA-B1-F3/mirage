@@ -23,7 +23,7 @@ from collections.abc import Callable
 from typing import IO
 
 from mirage import Mount, MountBackend, MountMode, Workspace
-from mirage.fuse.mount import mount_background
+from mirage.fuse.mount import mount_background, resolve_fusermount_binary
 from mirage.policy import Policy
 from mirage.policy.types import Deny, OpsContext, OpsResultContext
 from mirage.types import FileStat
@@ -353,7 +353,7 @@ def run_external_unmount_probe(result: dict[str, ProbeValue]) -> None:
     outside = (
         ["diskutil", "unmount", mountpoint]
         if sys.platform == "darwin"
-        else ["fusermount3", "-u", mountpoint]
+        else [resolve_fusermount_binary() or "fusermount", "-u", mountpoint]
     )
     with Workspace({"/x": data}) as ws:
         ws.add_fuse_mount("/x", mountpoint)
@@ -363,7 +363,7 @@ def run_external_unmount_probe(result: dict[str, ProbeValue]) -> None:
         try:
             ws.remove_fuse_mount("/x")
             released = "/x" not in ws.fuse_mountpoints
-        except FileNotFoundError as err:
+        except OSError as err:
             result["external_unmount_error"] = str(err)
             released = False
         finally:

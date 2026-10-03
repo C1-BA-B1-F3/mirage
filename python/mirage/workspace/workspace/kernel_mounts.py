@@ -88,9 +88,10 @@ class KernelMounts:
             session_id (str | None): session the mount was bound to.
         """
         key = prefix if session_id is None else f"{prefix}@{session_id}"
-        manager = self._managers.pop(key, None)
+        manager = self._managers.get(key)
         if manager is not None:
             manager.unmount()
+        self._managers.pop(key, None)
         self._mountpoints.pop(key, None)
 
     def close(self) -> None:

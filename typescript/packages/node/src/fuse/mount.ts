@@ -163,7 +163,7 @@ async function loadFuse(): Promise<FuseConstructor> {
  * openSUSE and Alpine. Debian and Ubuntu add a `fusermount` symlink, so CI on
  * Ubuntu never exercises the fallback.
  */
-function resolveFusermountBinary(): string | null {
+export function resolveFusermountBinary(): string | null {
   const pathEnv = process.env.PATH ?? ''
   for (const name of ['fusermount', 'fusermount3']) {
     for (const dir of pathEnv.split(delimiter)) {
@@ -184,11 +184,18 @@ function resolveFusermountBinary(): string | null {
 /**
  * Whether the kernel's mount table lists `mountpoint` (mirrors Python's
  * is_mounted). Reads /proc/self/mounts rather than stat'ing the path, which
- * would call into the very FUSE server being released.
+ * would call into the very FUSE server being released. A parent that no
+ * longer resolves compares as written, like Python's non-strict realpath.
  */
 export function isMounted(mountpoint: string): boolean {
   const path = resolve(mountpoint)
-  const target = join(realpathSync(dirname(path)), basename(path))
+  let parent = dirname(path)
+  try {
+    parent = realpathSync(parent)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === undefined) throw err
+  }
+  const target = join(parent, basename(path))
   return readFileSync('/proc/self/mounts', 'utf8')
     .split('\n')
     .some(
@@ -204,22 +211,33 @@ export function isMounted(mountpoint: string): boolean {
  * unmount_with_fusermount). Installed as fuse-native's static unmount, which
  * shells out to a hardcoded `fusermount -uz` and, on any error, skips the
  * native cleanup that lets node exit. A mount already released from outside
- * counts as unmounted.
+ * counts as unmounted, and `cb` runs exactly once whatever fails.
  */
 export function unmountWithFusermount(mountpoint: string, cb: (err: Error | null) => void): void {
+  const settle = (err: Error | null): void => {
+    let failure = err
+    if (err !== null) {
+      try {
+        if (!isMounted(mountpoint)) failure = null
+      } catch (checkErr) {
+        failure = checkErr as Error
+      }
+    }
+    cb(failure)
+  }
   const binary = resolveFusermountBinary()
   if (binary === null) {
-    cb(
-      isMounted(mountpoint)
-        ? new Error(
-            `cannot unmount ${mountpoint}: neither 'fusermount' nor 'fusermount3' is on PATH`,
-          )
-        : null,
+    settle(
+      new Error(`cannot unmount ${mountpoint}: neither 'fusermount' nor 'fusermount3' is on PATH`),
     )
     return
   }
-  execFile(binary, ['-uz', mountpoint], (err) => {
-    cb(err !== null && isMounted(mountpoint) ? err : null)
+  execFile(binary, ['-uz', mountpoint], (err, _stdout, stderr) => {
+    settle(
+      err === null
+        ? null
+        : new Error(`cannot unmount ${mountpoint}: ${stderr.trim()}`, { cause: err }),
+    )
   })
 }
 

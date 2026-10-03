@@ -149,10 +149,16 @@ function unmountOnLinux(pathDirs: string[]): void {
   forceUnmount('/mnt/m')
 }
 
-function unmountVia(mountpoint: string, failure: Error | null): Promise<Error | null> {
-  execFile.mockImplementation((_file: string, _args: string[], cb: (err: Error | null) => void) => {
-    cb(failure)
-  })
+function unmountVia(mountpoint: string, failure: Error | null, stderr = ''): Promise<Error | null> {
+  execFile.mockImplementation(
+    (
+      _file: string,
+      _args: string[],
+      cb: (err: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      cb(failure, '', stderr)
+    },
+  )
   return new Promise((done) => {
     unmountWithFusermount(mountpoint, done)
   })
@@ -203,13 +209,21 @@ describe('unmountWithFusermount', () => {
     await expect(unmountVia(mountpoint, new Error('not found in /etc/mtab'))).resolves.toBeNull()
   })
 
+  it('treats a mountpoint whose parent is gone as unmounted', async () => {
+    process.env.PATH = helperDir(['fusermount3'])
+    const mountpoint = join(helperDir([]), 'gone', 'my mount')
+    await expect(unmountVia(mountpoint, new Error('not found in /etc/mtab'))).resolves.toBeNull()
+  })
+
   it('reports a helper failure while the path is still mounted', async () => {
     const helpers = helperDir(['fusermount3'])
     process.env.PATH = helpers
     const mountpoint = join(realpathSync(helperDir([])), 'my mount')
     markMounted(mountpoint)
-    const busy = new Error('device or resource busy')
-    await expect(unmountVia(mountpoint, busy)).resolves.toBe(busy)
+    const busy = new Error('Command failed')
+    const err = await unmountVia(mountpoint, busy, 'fusermount3: device or resource busy\n')
+    expect(err?.message).toBe(`cannot unmount ${mountpoint}: fusermount3: device or resource busy`)
+    expect(err?.cause).toBe(busy)
     expect(execFile).toHaveBeenCalledWith(
       join(helpers, 'fusermount3'),
       ['-uz', mountpoint],

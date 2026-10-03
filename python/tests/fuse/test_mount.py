@@ -268,3 +268,40 @@ def test_unmount_with_fusermount_skips_a_mount_already_gone(monkeypatch):
     monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
     monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: False)
     unmount_with_fusermount("/mnt/m")
+
+
+def test_unmount_with_fusermount_raises_a_helper_failure_while_mounted(
+    monkeypatch,
+):
+    run = Mock(
+        return_value=SimpleNamespace(
+            returncode=1, stderr=b"fusermount3: device or resource busy\n"
+        )
+    )
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which",
+        lambda name: "/usr/bin/fusermount3" if name == "fusermount3" else None,
+    )
+    monkeypatch.setattr("mirage.fuse.mount.subprocess.run", run)
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: True)
+    with pytest.raises(OSError, match="cannot unmount /mnt/m: .*busy"):
+        unmount_with_fusermount("/mnt/m")
+    run.assert_called_once_with(
+        ["/usr/bin/fusermount3", "-uz", "/mnt/m"], capture_output=True
+    )
+
+
+def test_unmount_with_fusermount_skips_a_helper_failure_once_gone(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which", lambda name: "/usr/bin/" + name
+    )
+    monkeypatch.setattr(
+        "mirage.fuse.mount.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1, stderr=b"not found in /etc/mtab\n"
+        ),
+    )
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: False)
+    unmount_with_fusermount("/mnt/m")

@@ -12,11 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { execSync } from 'node:child_process'
+import { execFile, execFileSync, execSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import {
+  accessSync,
+  constants as fsConstants,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { MountBackend } from '@struktoai/mirage-core/types'
 import type { SessionState } from '@struktoai/mirage-core/workspace/session/session'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
@@ -67,11 +75,13 @@ interface FuseInstance {
   _fuseOptions?: () => string
 }
 
-type FuseConstructor = new (
+type FuseConstructor = (new (
   mountpoint: string,
   ops: Record<string, unknown>,
   options?: Record<string, unknown>,
-) => FuseInstance
+) => FuseInstance) & {
+  unmount: (mountpoint: string, cb: (err: Error | null) => void) => void
+}
 
 /**
  * Append raw libfuse options to the mount option string.
@@ -143,7 +153,94 @@ async function loadFuse(): Promise<FuseConstructor> {
   if (typeof Fuse !== 'function') {
     throw new Error('@zkochan/fuse-native did not export a constructor')
   }
+  if (process.platform === 'linux') Fuse.unmount = unmountWithFusermount
   return Fuse
+}
+
+/**
+ * Locate the platform FUSE unmount helper (mirrors Python's resolve_fusermount_binary).
+ * The fuse3 package ships only `fusermount3` on Fedora, RHEL, Amazon Linux 2023,
+ * openSUSE and Alpine. Debian and Ubuntu add a `fusermount` symlink, so CI on
+ * Ubuntu never exercises the fallback.
+ */
+export function resolveFusermountBinary(): string | null {
+  const pathEnv = process.env.PATH ?? ''
+  for (const name of ['fusermount', 'fusermount3']) {
+    for (const dir of pathEnv.split(delimiter)) {
+      const candidate = join(dir, name)
+      try {
+        if (statSync(candidate).isFile()) {
+          accessSync(candidate, fsConstants.X_OK)
+          return candidate
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === undefined) throw err
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * The path the kernel's mount table records for `mountpoint` (mirrors
+ * Python's canonical_mountpoint). Resolve it at mount time: a parent or
+ * symlink removed later no longer resolves to where the mount sits.
+ */
+export function canonicalMountpoint(mountpoint: string): string {
+  const path = resolve(mountpoint)
+  return join(realpathSync(dirname(path)), basename(path))
+}
+
+/**
+ * Whether the kernel's mount table lists `mountpoint` (mirrors Python's
+ * is_mounted). Reads /proc/self/mounts rather than stat'ing the path, which
+ * would call into the very FUSE server being released. The path is compared
+ * as given: pass the one canonicalMountpoint returned at mount time.
+ */
+export function isMounted(mountpoint: string): boolean {
+  return readFileSync('/proc/self/mounts', 'utf8')
+    .split('\n')
+    .some(
+      (line) =>
+        (line.split(' ')[1] ?? '').replace(/\\([0-7]{3})/g, (_match, octal: string) =>
+          String.fromCharCode(parseInt(octal, 8)),
+        ) === mountpoint,
+    )
+}
+
+/**
+ * Release a Linux FUSE mount with fusermount or fusermount3 (mirrors Python's
+ * unmount_with_fusermount). Installed as fuse-native's static unmount, which
+ * shells out to a hardcoded `fusermount -uz` and, on any error, skips the
+ * native cleanup that lets node exit. A mount already released from outside
+ * counts as unmounted, and `cb` runs exactly once whatever fails.
+ */
+export function unmountWithFusermount(mountpoint: string, cb: (err: Error | null) => void): void {
+  const settle = (err: Error | null): void => {
+    let failure = err
+    if (err !== null) {
+      try {
+        if (!isMounted(mountpoint)) failure = null
+      } catch (checkErr) {
+        failure = checkErr as Error
+      }
+    }
+    cb(failure)
+  }
+  const binary = resolveFusermountBinary()
+  if (binary === null) {
+    settle(
+      new Error(`cannot unmount ${mountpoint}: neither 'fusermount' nor 'fusermount3' is on PATH`),
+    )
+    return
+  }
+  execFile(binary, ['-uz', mountpoint], (err, _stdout, stderr) => {
+    settle(
+      err === null
+        ? null
+        : new Error(`cannot unmount ${mountpoint}: ${stderr.trim()}`, { cause: err }),
+    )
+  })
 }
 
 /** Fallback unmount via platform tools — mirrors Python's SIGINT handler. */
@@ -152,7 +249,10 @@ export function forceUnmount(mountpoint: string): void {
     if (process.platform === 'darwin') {
       execSync(`diskutil unmount force ${JSON.stringify(mountpoint)}`, { stdio: 'ignore' })
     } else {
-      execSync(`fusermount -u ${JSON.stringify(mountpoint)}`, { stdio: 'ignore' })
+      const binary = resolveFusermountBinary()
+      if (binary !== null) {
+        execFileSync(binary, ['-u', mountpoint], { stdio: 'ignore' })
+      }
     }
   } catch {
     // best-effort; caller already tried the clean path
@@ -204,7 +304,14 @@ export async function mount(ws: Workspace, options: MountOptions = {}): Promise<
     ...(autoUnmount ? { autoUnmount: true } : {}),
     ...(options.fuseOptions ?? {}),
   }
-  const fuse = new Fuse(mountpoint, mfs.ops(), fuseOpts)
+  // fuse-native hands this path to unmountWithFusermount, which looks it up
+  // in the mount table, so Linux mounts at the path resolved now, while
+  // every parent still exists.
+  const fuse = new Fuse(
+    process.platform === 'linux' ? canonicalMountpoint(mountpoint) : mountpoint,
+    mfs.ops(),
+    fuseOpts,
+  )
   if (isFskit) {
     // Issue #82's verified recipe: backend=fskit + volname, direct_io
     // omitted (FSKit has no direct_io; reads are driven by reported size,

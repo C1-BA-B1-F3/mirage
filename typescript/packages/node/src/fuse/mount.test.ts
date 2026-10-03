@@ -12,8 +12,39 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
-import { appendDirectIO, appendMountOptions, driverHint } from './mount.ts'
+import type * as ChildProcess from 'node:child_process'
+import type * as Fs from 'node:fs'
+import { chmodSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  appendDirectIO,
+  appendMountOptions,
+  canonicalMountpoint,
+  driverHint,
+  forceUnmount,
+  unmountWithFusermount,
+} from './mount.ts'
+
+const { execFile, execFileSync, mountTable } = vi.hoisted(() => ({
+  execFile: vi.fn(),
+  execFileSync: vi.fn(),
+  mountTable: { text: '' },
+}))
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof ChildProcess>()),
+  execFile,
+  execFileSync,
+}))
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof Fs>()
+  return {
+    ...fs,
+    readFileSync: (...args: Parameters<typeof fs.readFileSync>) =>
+      args[0] === '/proc/self/mounts' ? mountTable.text : fs.readFileSync(...args),
+  }
+})
 
 function fakeFuse(serialize?: () => string) {
   const nop = (cb: (err: Error | null) => void): void => {
@@ -89,5 +120,134 @@ describe('driverHint', () => {
     expect(hint).not.toMatch(/install WinFsp/i)
     expect(hint).toMatch(/does not support WinFsp/)
     expect(hint).toMatch(/macOS and Linux only/)
+  })
+})
+
+const REAL_PLATFORM = process.platform
+const REAL_PATH = process.env.PATH
+const helperDirs: string[] = []
+
+afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: REAL_PLATFORM, configurable: true })
+  process.env.PATH = REAL_PATH
+  execFile.mockReset()
+  execFileSync.mockReset()
+  mountTable.text = ''
+  for (const dir of helperDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+function helperDir(executable: string[], plain: string[] = []): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mirage-fusermount-'))
+  helperDirs.push(dir)
+  for (const name of [...executable, ...plain]) writeFileSync(join(dir, name), '')
+  for (const name of executable) chmodSync(join(dir, name), 0o755)
+  return dir
+}
+
+function unmountOnLinux(pathDirs: string[]): void {
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+  process.env.PATH = pathDirs.join(delimiter)
+  forceUnmount('/mnt/m')
+}
+
+function unmountVia(mountpoint: string, failure: Error | null, stderr = ''): Promise<Error | null> {
+  execFile.mockImplementation(
+    (
+      _file: string,
+      _args: string[],
+      cb: (err: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      cb(failure, '', stderr)
+    },
+  )
+  return new Promise((done) => {
+    unmountWithFusermount(mountpoint, done)
+  })
+}
+
+function markMounted(mountpoint: string): void {
+  mountTable.text = `mirage ${mountpoint.replaceAll(' ', '\\040')} fuse.mirage rw 0 0\n`
+}
+
+describe('forceUnmount', () => {
+  it('prefers fusermount anywhere on PATH over an earlier fusermount3', () => {
+    const three = helperDir(['fusermount3'])
+    const legacy = helperDir(['fusermount'])
+    unmountOnLinux([three, legacy])
+    expect(execFileSync).toHaveBeenCalledWith(join(legacy, 'fusermount'), ['-u', '/mnt/m'], {
+      stdio: 'ignore',
+    })
+  })
+
+  it('falls back to fusermount3 past a fusermount it cannot execute', () => {
+    const dir = helperDir(['fusermount3'], ['fusermount'])
+    unmountOnLinux([dir])
+    expect(execFileSync).toHaveBeenCalledWith(join(dir, 'fusermount3'), ['-u', '/mnt/m'], {
+      stdio: 'ignore',
+    })
+  })
+
+  it('keeps searching past a fusermount that is a symlink loop', () => {
+    const loop = helperDir([])
+    symlinkSync('fusermount', join(loop, 'fusermount'))
+    const three = helperDir(['fusermount3'])
+    unmountOnLinux([loop, three])
+    expect(execFileSync).toHaveBeenCalledWith(join(three, 'fusermount3'), ['-u', '/mnt/m'], {
+      stdio: 'ignore',
+    })
+  })
+
+  it('runs nothing when neither helper is on PATH', () => {
+    unmountOnLinux([helperDir([])])
+    expect(execFileSync).not.toHaveBeenCalled()
+  })
+})
+
+describe('canonicalMountpoint', () => {
+  it('resolves a symlinked parent', () => {
+    const real = helperDir([])
+    const parent = helperDir([])
+    symlinkSync(real, join(parent, 'link'))
+    expect(canonicalMountpoint(join(parent, 'link', 'mp'))).toBe(join(realpathSync(real), 'mp'))
+  })
+})
+
+describe('unmountWithFusermount', () => {
+  it('treats a mount already gone as unmounted when the helper fails', async () => {
+    process.env.PATH = helperDir(['fusermount3'])
+    const mountpoint = join(realpathSync(helperDir([])), 'my mount')
+    await expect(unmountVia(mountpoint, new Error('not found in /etc/mtab'))).resolves.toBeNull()
+  })
+
+  it('treats a mountpoint whose parent is gone as unmounted', async () => {
+    process.env.PATH = helperDir(['fusermount3'])
+    const mountpoint = join(helperDir([]), 'gone', 'my mount')
+    await expect(unmountVia(mountpoint, new Error('not found in /etc/mtab'))).resolves.toBeNull()
+  })
+
+  it('reports a helper failure while the path is still mounted', async () => {
+    const helpers = helperDir(['fusermount3'])
+    process.env.PATH = helpers
+    const mountpoint = join(realpathSync(helperDir([])), 'my mount')
+    markMounted(mountpoint)
+    const busy = new Error('Command failed')
+    const err = await unmountVia(mountpoint, busy, 'fusermount3: device or resource busy\n')
+    expect(err?.message).toBe(`cannot unmount ${mountpoint}: fusermount3: device or resource busy`)
+    expect(err?.cause).toBe(busy)
+    expect(execFile).toHaveBeenCalledWith(
+      join(helpers, 'fusermount3'),
+      ['-uz', mountpoint],
+      expect.any(Function),
+    )
+  })
+
+  it('fails without a helper only while the path is still mounted', async () => {
+    process.env.PATH = helperDir([])
+    const mountpoint = join(realpathSync(helperDir([])), 'my mount')
+    await expect(unmountVia(mountpoint, null)).resolves.toBeNull()
+    markMounted(mountpoint)
+    const err = await unmountVia(mountpoint, null)
+    expect(err?.message).toMatch(/neither 'fusermount' nor 'fusermount3'/)
+    expect(execFile).not.toHaveBeenCalled()
   })
 })

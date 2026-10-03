@@ -97,4 +97,19 @@ describe('FuseManager (without a real mount)', () => {
     expect(mocks.rmdirSync).toHaveBeenCalledWith('/tmp/generated')
     expect(mocks.rmSync).not.toHaveBeenCalled()
   })
+
+  it('keeps the mountpoint when unmount fails', async () => {
+    mocks.mount.mockResolvedValueOnce({
+      mountpoint: '/tmp/generated',
+      ownsMountpoint: true,
+      unmount: () => Promise.reject(new Error('cannot unmount')),
+    })
+    const fm = new FuseManager()
+
+    await fm.setup(workspaceStub())
+    await expect(fm.unmount()).rejects.toThrow('cannot unmount')
+
+    expect(fm.mountpoint).toBe('/tmp/generated')
+    expect(mocks.rmdirSync).not.toHaveBeenCalled()
+  })
 })

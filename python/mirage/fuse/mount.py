@@ -14,6 +14,7 @@
 
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -26,6 +27,91 @@ from mirage.fuse.fs import MirageFS
 from mirage.ops import Ops
 from mirage.types import JsonValue
 from mirage.workspace.session.session import SessionState
+
+
+def resolve_fusermount_binary() -> str | None:
+    """Locate the platform FUSE unmount helper.
+
+    The fuse3 package ships only ``fusermount3`` on Fedora, RHEL, Amazon
+    Linux 2023, openSUSE and Alpine. Debian and Ubuntu add a ``fusermount``
+    symlink, so CI on Ubuntu never exercises the fallback.
+
+    Returns:
+        str | None: the path to ``fusermount``, else to ``fusermount3``, or
+            None when neither is on PATH.
+    """
+    return shutil.which("fusermount") or shutil.which("fusermount3")
+
+
+def canonical_mountpoint(mountpoint: str) -> str:
+    """The path the kernel's mount table records for ``mountpoint``.
+
+    Resolve it at mount time: a parent or symlink removed later no longer
+    resolves to where the mount sits.
+
+    Args:
+        mountpoint (str): the path as the caller gave it.
+
+    Returns:
+        str: the absolute path with its parent fully resolved.
+    """
+    path = os.path.abspath(mountpoint)
+    return os.path.join(
+        os.path.realpath(os.path.dirname(path)), os.path.basename(path)
+    )
+
+
+def is_mounted(mountpoint: str) -> bool:
+    """Whether the kernel's mount table lists ``mountpoint``.
+
+    Reads /proc/self/mounts rather than stat'ing the path, which would call
+    into the very FUSE server being released. The path is compared as
+    given: pass the one canonical_mountpoint returned at mount time.
+
+    Args:
+        mountpoint (str): the canonical path to look up.
+
+    Returns:
+        bool: True while a mount sits at ``mountpoint``.
+    """
+    target = os.fsencode(mountpoint)
+    with open("/proc/self/mounts", "rb") as fh:
+        return any(
+            line.split(b" ")[1].decode("unicode_escape").encode("latin-1")
+            == target
+            for line in fh
+        )
+
+
+def unmount_with_fusermount(mountpoint: str) -> None:
+    """Release a Linux FUSE mount with fusermount or fusermount3.
+
+    The unmount is lazy (``-z``), so a busy mount detaches at once. A mount
+    already released from outside needs no helper and counts as unmounted.
+
+    Args:
+        mountpoint (str): the mounted path, as canonical_mountpoint
+            returned it at mount time.
+
+    Raises:
+        FileNotFoundError: neither helper is on PATH and the path is still
+            mounted.
+        OSError: the helper failed and the path is still mounted.
+    """
+    binary = resolve_fusermount_binary()
+    if binary is None:
+        if is_mounted(mountpoint):
+            raise FileNotFoundError(
+                f"cannot unmount {mountpoint}: neither 'fusermount' nor "
+                "'fusermount3' is on PATH"
+            )
+        return
+    proc = subprocess.run([binary, "-uz", mountpoint], capture_output=True)
+    if proc.returncode != 0 and is_mounted(mountpoint):
+        raise OSError(
+            f"cannot unmount {mountpoint}: "
+            f"{proc.stderr.decode(errors='replace').strip()}"
+        )
 
 
 def load_fuse() -> Any:
@@ -208,7 +294,7 @@ def mount(
             # serving process exits.
             pass
         else:
-            subprocess.run(
-                ["fusermount", "-u", mountpoint], capture_output=True
-            )
+            binary = resolve_fusermount_binary()
+            if binary is not None:
+                subprocess.run([binary, "-u", mountpoint], capture_output=True)
         t.join(timeout=5)

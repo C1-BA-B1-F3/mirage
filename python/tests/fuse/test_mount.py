@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import io
+import os
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -25,7 +27,11 @@ from mirage.fuse.mount import (
     _await_ready,
     _prepare_mountpoint,
     _run_fuse,
+    canonical_mountpoint,
+    is_mounted,
     load_fuse,
+    resolve_fusermount_binary,
+    unmount_with_fusermount,
 )
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -205,3 +211,106 @@ def test_load_fuse_installs_macfuse_extensions(monkeypatch):
     )
     assert load_fuse() is module
     install.assert_called_once_with(module)
+
+
+def test_resolve_fusermount_binary_prefers_legacy(monkeypatch):
+    # https://github.com/strukto-ai/mirage/issues/1422
+    # fusermount-only systems keep working; fusermount3-only systems
+    # (Amazon Linux 2023) get the fallback instead of FileNotFoundError.
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which",
+        lambda name: {
+            "fusermount": "/usr/bin/fusermount",
+            "fusermount3": "/usr/bin/fusermount3",
+        }.get(name),
+    )
+    assert resolve_fusermount_binary() == "/usr/bin/fusermount"
+
+
+def test_resolve_fusermount_binary_falls_back_to_fusermount3(monkeypatch):
+    # https://github.com/strukto-ai/mirage/issues/1422
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which",
+        lambda name: {"fusermount3": "/usr/bin/fusermount3"}.get(name),
+    )
+    assert resolve_fusermount_binary() == "/usr/bin/fusermount3"
+
+
+def test_resolve_fusermount_binary_returns_none_when_missing(monkeypatch):
+    monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
+    assert resolve_fusermount_binary() is None
+
+
+def test_is_mounted_reads_the_kernel_mount_table(monkeypatch):
+    table = (
+        b"proc /proc proc rw 0 0\n"
+        b"mirage /mnt/my\\040mount fuse.mirage rw 0 0\n"
+    )
+    monkeypatch.setattr(
+        "mirage.fuse.mount.open",
+        lambda *_args, **_kwargs: io.BytesIO(table),
+        raising=False,
+    )
+    assert is_mounted("/mnt/my mount")
+    assert not is_mounted("/mnt/other")
+
+
+def test_canonical_mountpoint_resolves_a_symlinked_parent(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "link").symlink_to(real)
+    assert canonical_mountpoint(str(tmp_path / "link" / "mp")) == (
+        os.path.join(os.path.realpath(real), "mp")
+    )
+
+
+def test_unmount_with_fusermount_raises_while_mounted_without_helper(
+    monkeypatch,
+):
+    monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: True)
+    with pytest.raises(FileNotFoundError, match="fusermount3"):
+        unmount_with_fusermount("/mnt/m")
+
+
+def test_unmount_with_fusermount_skips_a_mount_already_gone(monkeypatch):
+    monkeypatch.setattr("mirage.fuse.mount.shutil.which", lambda name: None)
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: False)
+    unmount_with_fusermount("/mnt/m")
+
+
+def test_unmount_with_fusermount_raises_a_helper_failure_while_mounted(
+    monkeypatch,
+):
+    run = Mock(
+        return_value=SimpleNamespace(
+            returncode=1, stderr=b"fusermount3: device or resource busy\n"
+        )
+    )
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which",
+        lambda name: "/usr/bin/fusermount3" if name == "fusermount3" else None,
+    )
+    monkeypatch.setattr("mirage.fuse.mount.subprocess.run", run)
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: True)
+    with pytest.raises(OSError, match="cannot unmount /mnt/m: .*busy"):
+        unmount_with_fusermount("/mnt/m")
+    run.assert_called_once_with(
+        ["/usr/bin/fusermount3", "-uz", "/mnt/m"], capture_output=True
+    )
+
+
+def test_unmount_with_fusermount_skips_a_helper_failure_once_gone(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "mirage.fuse.mount.shutil.which", lambda name: "/usr/bin/" + name
+    )
+    monkeypatch.setattr(
+        "mirage.fuse.mount.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1, stderr=b"not found in /etc/mtab\n"
+        ),
+    )
+    monkeypatch.setattr("mirage.fuse.mount.is_mounted", lambda _path: False)
+    unmount_with_fusermount("/mnt/m")

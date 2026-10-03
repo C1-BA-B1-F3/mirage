@@ -152,6 +152,34 @@ describe('writeOutput', () => {
     expect(io.exitCode).toBe(0)
   })
 
+  it.each([
+    [['/good', '/locked'], false, ['/locked'], 'tee: /locked: disk full\n'],
+    [['/locked', '/gone/x'], true, [], 'tee: /gone/x: No such file or directory\n'],
+  ] as const)(
+    'opens an unprobed output before any data: %o',
+    async (outputs, append, refused, stderr) => {
+      const s = sink(new Set(refused))
+      const stat = (p: PathSpec): Promise<FileStat> => {
+        if (p.virtual === '/locked') return Promise.reject(eacces(p))
+        if (p.virtual.startsWith('/gone')) return Promise.reject(enoent(p))
+        return Promise.resolve(new FileStat({ name: p.virtual.slice(1), type: FileType.FILE }))
+      }
+      const [out, io] = await writeOutput(
+        paths(...outputs),
+        ENC.encode('x'),
+        { append, stopOnError: true },
+        noStream,
+        s.write,
+        undefined,
+        stat,
+      )
+      expect(out).toBeNull()
+      expect(s.written).toEqual({ [outputs[0]]: '' })
+      expect(io.exitCode).toBe(1)
+      expect(DEC.decode(io.stderr as Uint8Array)).toBe(stderr)
+    },
+  )
+
   it('diagnoses every failing operand', async () => {
     const s = sink(new Set(['/b1', '/b2']))
     const [, io] = await writeOutput(paths('/b1', '/b2'), ENC.encode('x'), PLAIN, noStream, s.write)

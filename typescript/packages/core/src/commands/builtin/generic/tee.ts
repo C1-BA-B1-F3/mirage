@@ -168,22 +168,31 @@ export async function writeOutput(
   // failure ends the run with nothing written, the outputs before it made
   // empty. A mount write is one call, so the open is probed first. A probe
   // the backend will not answer (a stat its credentials refuse) is no
-  // verdict: the write is that output's open, and reports it. Emptying an
-  // earlier output can fail first, and then it is the one reported.
+  // verdict, so that output is opened for real at its turn, by writing it
+  // nothing. Emptying an earlier output can fail first, and then it is the
+  // one reported.
   if (parsed.stopOnError && stat !== undefined) {
     for (const [index, path] of paths.entries()) {
-      let refusal: FsError | null
+      let refusal: unknown
       try {
         refusal = await openRefusal(stat, path, paths.slice(0, index))
-      } catch {
-        continue
+      } catch (err) {
+        console.warn(`tee: probing ${path.virtual} failed: ${String(err)}`)
+        try {
+          const data = await writeOne(path, new Uint8Array(0), parsed, stream, write, append)
+          writes[path.mountPath] = data ?? new Uint8Array(0)
+          continue
+        } catch (openErr) {
+          refusal = openErr
+        }
       }
       if (refusal === null) continue
       let failed = path
       let reason: unknown = refusal
       for (const opened of paths.slice(0, index)) {
-        if (parsed.append && (await entryKind(stat, opened)).exists) continue
+        if (opened.mountPath in writes) continue
         try {
+          if (parsed.append && (await entryKind(stat, opened)).exists) continue
           await write(opened, new Uint8Array(0))
         } catch (err) {
           failed = opened

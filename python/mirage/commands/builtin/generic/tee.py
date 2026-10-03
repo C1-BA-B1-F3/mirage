@@ -161,9 +161,10 @@ async def write_output(
     it left empty. A mount has no open/write split (``write_bytes`` is one
     call), so with ``stat`` in hand the open is probed first: a missing
     or non-directory parent, or a directory operand. A probe the backend
-    will not answer (a stat its credentials refuse) is no verdict: the
-    write is that output's open, and reports it. Emptying an earlier
-    output can fail first, and then it is the one reported.
+    will not answer (a stat its credentials refuse) is no verdict, so
+    that output is opened for real at its turn, by writing it nothing.
+    Emptying an earlier output can fail first, and then it is the one
+    reported.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -179,19 +180,35 @@ async def write_output(
     errors: list[bytes] = []
     if parsed.stop_on_error and stat is not None:
         for index, path in enumerate(paths):
+            refusal: Exception | None
             try:
                 refusal = await open_refusal(stat, path, paths[:index])
             except Exception as exc:
                 logger.debug("tee: probing %s failed: %s", path.virtual, exc)
-                continue
+                try:
+                    data = await write_one(
+                        path,
+                        b"",
+                        parsed,
+                        read_stream,
+                        write_bytes,
+                        append_bytes,
+                    )
+                except Exception as err:
+                    refusal = err
+                else:
+                    writes[path.mount_path] = b"" if data is None else data
+                    continue
             if refusal is None:
                 continue
             failed: PathSpec = path
             reason: Exception = refusal
             for opened in paths[:index]:
-                if parsed.append and (await entry_kind(stat, opened))[0]:
+                if opened.mount_path in writes:
                     continue
                 try:
+                    if parsed.append and (await entry_kind(stat, opened))[0]:
+                        continue
                     await write_bytes(opened, b"")
                 except Exception as exc:
                     failed, reason = opened, exc

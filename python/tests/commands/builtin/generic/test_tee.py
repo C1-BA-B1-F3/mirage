@@ -187,6 +187,51 @@ async def test_a_refused_probe_leaves_the_open_to_the_write():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outputs,append,refused,stderr",
+    [
+        (
+            ["/good", "/locked"],
+            False,
+            {"/locked"},
+            b"tee: /locked: disk full\n",
+        ),
+        (
+            ["/locked", "/gone/x"],
+            True,
+            set(),
+            b"tee: /gone/x: No such file or directory\n",
+        ),
+    ],
+)
+async def test_an_unprobed_output_is_opened_before_any_data(
+    outputs, append, refused, stderr
+):
+    written, write = _sink(frozenset(refused))
+
+    async def _stat(p: PathSpec) -> FileStat:
+        if p.virtual == "/locked":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        if p.virtual.startswith("/gone"):
+            raise FileNotFoundError(errno.ENOENT, "No such file or directory")
+        return FileStat(name=p.virtual[1:], type=FileType.FILE)
+
+    source, io = await tee(
+        [_spec(o) for o in outputs],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={"output_error": "exit", "append": append},
+        stat=_stat,
+    )
+    assert source is None
+    assert written == {outputs[0]: b""}
+    assert io.exit_code == 1
+    assert await materialize(io.stderr) == stderr
+
+
+@pytest.mark.asyncio
 async def test_a_native_append_skips_the_read_modify_write():
     appended: dict[str, bytes] = {}
     written, write = _sink()

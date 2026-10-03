@@ -155,8 +155,8 @@ deepagents  = [
 
 # --- openhands ---
 openhands   = [
-    "openhands-sdk>=1.36.1 ; python_full_version >= '3.12'",
-    "openhands-tools>=1.36.1 ; python_full_version >= '3.12'",
+    "openhands-sdk>=1.51.0 ; python_full_version >= '3.12'",
+    "openhands-tools>=1.51.0 ; python_full_version >= '3.12'",
 ]
 
 # --- agno ---

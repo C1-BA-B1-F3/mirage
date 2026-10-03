@@ -175,11 +175,13 @@ export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | nul
       const line = file.readLine()
       return line === null ? ctx.null : ctx.newString(DEC.decode(line))
     }
-    if (file === undefined || file.pos >= file.buf.length) return ctx.null
+    if (file === undefined) return ctx.null
+    const buf = file.buf
+    if (file.pos >= buf.length) return ctx.null
     let end = file.pos
-    while (end < file.buf.length && file.buf[end] !== 0x0a) end++
-    const line = file.buf.subarray(file.pos, end)
-    file.pos = end < file.buf.length ? end + 1 : end
+    while (end < buf.length && buf[end] !== 0x0a) end++
+    const line = buf.subarray(file.pos, end)
+    file.pos = end < buf.length ? end + 1 : end
     return ctx.newString(DEC.decode(line))
   })
 

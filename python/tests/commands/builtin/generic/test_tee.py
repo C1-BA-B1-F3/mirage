@@ -1,3 +1,5 @@
+import errno
+
 import pytest
 
 from mirage.commands.builtin.generic.tee import TeeFlags, parse_flags, tee
@@ -159,6 +161,30 @@ async def test_an_output_that_fails_to_empty_is_the_one_reported():
     assert (io.writes, io.cache) == ({"/good": b""}, ["/good"])
     assert io.exit_code == 1
     assert await materialize(io.stderr) == b"tee: /denied: disk full\n"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_probe_is_that_outputs_open_failure():
+    written, write = _sink()
+
+    async def _stat(p: PathSpec) -> FileStat:
+        if p.virtual == "/locked":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return FileStat(name=p.virtual[1:], type=FileType.FILE)
+
+    source, io = await tee(
+        [_spec("/good"), _spec("/locked")],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={"output_error": "exit"},
+        stat=_stat,
+    )
+    assert source is None
+    assert written == {"/good": b""}
+    assert (io.writes, io.cache) == ({"/good": b""}, ["/good"])
+    assert await materialize(io.stderr) == b"tee: /locked: Permission denied\n"
 
 
 @pytest.mark.asyncio

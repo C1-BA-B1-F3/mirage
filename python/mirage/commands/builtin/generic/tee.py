@@ -157,8 +157,9 @@ async def write_output(
     failure aborts before any data is written, the outputs opened before
     it left empty. A mount has no open/write split (``write_bytes`` is one
     call), so with ``stat`` in hand the open is probed first: a missing
-    or non-directory parent, or a directory operand. Emptying an earlier
-    output can fail first, and then it is the one reported.
+    or non-directory parent, or a directory operand; a probe the backend
+    refuses is that output's open failure. Emptying an earlier output can
+    fail first, and then it is the one reported.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -174,7 +175,11 @@ async def write_output(
     errors: list[bytes] = []
     if parsed.stop_on_error and stat is not None:
         for index, path in enumerate(paths):
-            refusal = await open_refusal(stat, path, paths[:index])
+            refusal: Exception | None
+            try:
+                refusal = await open_refusal(stat, path, paths[:index])
+            except Exception as exc:
+                refusal = exc
             if refusal is None:
                 continue
             failed: PathSpec = path

@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
-import { enoent } from '../../../utils/errors.ts'
+import { eacces, enoent } from '../../../utils/errors.ts'
 import { parseFlags, writeOutput } from './tee.ts'
 
 const DEC = new TextDecoder()
@@ -130,6 +130,27 @@ describe('writeOutput', () => {
     expect([Object.keys(io.writes), io.cache]).toEqual([['/good'], ['/good']])
     expect(io.exitCode).toBe(1)
     expect(DEC.decode(io.stderr as Uint8Array)).toBe('tee: /denied: disk full\n')
+  })
+
+  it("reports a refused probe as that output's open failure", async () => {
+    const s = sink()
+    const stat = (p: PathSpec): Promise<FileStat> =>
+      p.virtual === '/locked'
+        ? Promise.reject(eacces(p))
+        : Promise.resolve(new FileStat({ name: p.virtual.slice(1), type: FileType.FILE }))
+    const [out, io] = await writeOutput(
+      paths('/good', '/locked'),
+      ENC.encode('x'),
+      { append: false, stopOnError: true },
+      noStream,
+      s.write,
+      undefined,
+      stat,
+    )
+    expect(out).toBeNull()
+    expect(s.written).toEqual({ '/good': '' })
+    expect([Object.keys(io.writes), io.cache]).toEqual([['/good'], ['/good']])
+    expect(DEC.decode(io.stderr as Uint8Array)).toBe('tee: /locked: Permission denied\n')
   })
 
   it('diagnoses every failing operand', async () => {

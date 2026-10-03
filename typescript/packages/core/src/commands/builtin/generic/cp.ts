@@ -844,7 +844,8 @@ async function mirrorDirs(
 // captured while the tree is intact so a caller that deletes as it goes (mv)
 // never re-stats a path whose virtual parent has since vanished. Mirrors the
 // Python cp `walk`; used only by the primitive (no native copy) path. A
-// directory the session may not open, or an entry it may not stat (a rule
+// folder a backend lists with a trailing slash (box, dropbox, gdrive) is
+// walked without it. A directory the session may not open, or an entry it may not stat (a rule
 // refused it below the operand), is GNU's `cannot access` / `cannot stat`
 // line when `errors` is given and the walk goes on without its contents;
 // with no channel the refusal propagates rather than leave a silent gap.
@@ -872,7 +873,8 @@ export async function cpWalk(
       errors.push(`${cmdName}: cannot access '${directory.rawPath}': ${String(fsStrerror(err))}`)
       continue
     }
-    for (const child of children) {
+    for (const listed of children) {
+      const child = rstripSlash(listed)
       const childSpec = descendantPath(root, child)
       if (links?.statAt(childSpec.virtual) != null) continue
       let childInfo
@@ -1094,6 +1096,11 @@ export async function cpGeneric(
   let warned = 0
   const seen = new Set<string>()
   const created = new Set<string>()
+  const guardsCreated = !(
+    flags.noClobber ||
+    updateGates(flags.update) ||
+    flags.backup === 'numbered'
+  )
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
     if (dstIsDir && seen.has(keyOf(src)) && !backupDisplaces(flags.backup)) {
       errors.push(`cp: warning: source file '${src.rawPath}' specified more than once`)
@@ -1117,9 +1124,13 @@ export async function cpGeneric(
         errors.push(`cp: '${src.rawPath}' and '${target.rawPath}' are the same file`)
         continue
       }
+      if (guardsCreated && created.has(keyOf(target))) {
+        errors.push(`cp: will not overwrite just-created '${target.rawPath}' with '${src.rawPath}'`)
+        continue
+      }
       const raw = link.extra[LINK_TARGET_KEY]
       const text = typeof raw === 'string' ? raw : ''
-      await makeLink(
+      const made = await makeLink(
         copies,
         respelled(PathSpec.fromStrPath(named), src.rawPath),
         respelled(PathSpec.fromStrPath(landing), target.rawPath),
@@ -1129,6 +1140,7 @@ export async function cpGeneric(
         errors,
         flags.verbose ? lines : undefined,
       )
+      if (made) created.add(keyOf(target))
       continue
     }
     const { exists: srcExists, isDir: srcIsDir, strerror: srcErr } = await sourceKind(stat, src)
@@ -1307,10 +1319,7 @@ export async function cpGeneric(
       }
       continue
     }
-    if (
-      created.has(keyOf(target)) &&
-      !(flags.noClobber || updateGates(flags.update) || flags.backup === 'numbered')
-    ) {
+    if (guardsCreated && created.has(keyOf(target))) {
       errors.push(`cp: will not overwrite just-created '${target.rawPath}' with '${src.rawPath}'`)
       continue
     }

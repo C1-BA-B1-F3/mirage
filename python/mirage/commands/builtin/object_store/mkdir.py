@@ -67,7 +67,9 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 if refusal is not None:
                     errors.append(refusal)
                 continue
-            names = await created_names(path, parents) if verbose else []
+            names = (
+                await created_names(path, parents, links) if verbose else []
+            )
             failed = await make_directory(
                 mkdir_impl, accessor, path, parents, links
             )
@@ -75,7 +77,7 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 errors.append(failed)
                 continue
             writes[path.mount_path] = b""
-            lines.extend(created_lines(names, path))
+            lines.extend(created_lines(names))
         output = ("\n".join(lines) + "\n").encode() if lines else None
         stderr = ("\n".join(errors) + "\n").encode() if errors else None
         return output, IOResult(

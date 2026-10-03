@@ -95,7 +95,7 @@ async def mkdir(
             if refusal is not None:
                 errors.append(refusal)
             continue
-        names = await created_names(path, parents) if verbose else []
+        names = await created_names(path, parents, links) if verbose else []
         failed = await make_directory(mkdir_fn, accessor, path, parents, links)
         if failed is not None:
             errors.append(failed)
@@ -104,52 +104,74 @@ async def mkdir(
             # -m applies to the named directory only; any parents made by
             # -p keep the default mode (GNU).
             await ops.set_attrs(accessor, path, mode=mode)
-        lines.extend(created_lines(names, path))
+        lines.extend(created_lines(names))
     output = ("\n".join(lines) + "\n").encode() if lines else None
     stderr = ("\n".join(errors) + "\n").encode() if errors else None
     return output, IOResult(stderr=stderr, exit_code=1 if errors else 0)
 
 
-async def created_names(path: PathSpec, parents: bool) -> list[str]:
-    """The names a verbose mkdir reports for ``path``, top-down.
+async def created_names(
+    path: PathSpec, parents: bool, links: LinkView | None = None
+) -> list[str]:
+    """The names a verbose mkdir reports for ``path``, top-down, as GNU
+    spells them.
 
     One backend mkdir makes a ``-p`` chain without saying which names it
     made, so the chain is probed before the create: every name below the
-    nearest existing ancestor, or none when ``path`` already exists.
-    Outside a workspace there is nothing to probe with, and the operand
-    alone is reported.
+    nearest existing ancestor, or none when ``path`` already exists. A
+    dotted operand is walked as typed, the way ``-p`` enters it, so
+    ``nope/../m`` reports ``nope`` too, each name spelled by the prefix of
+    the operand that reaches it. Outside a workspace there is nothing to
+    probe with, and the operand alone is reported.
 
     Args:
         path (PathSpec): the operand.
         parents (bool): whether ``-p`` makes the missing ancestors.
+        links (LinkView | None): the namespace's symlink facts.
     """
     probe = get_walk_probe()
     if not parents or probe is None:
-        return [path.virtual]
+        return [operand_spelling(path.virtual, path)]
     named = PathSpec.from_str_path(path.virtual)
+    names: list[str] = []
+    if path.dotted is not None:
+        follow = links.resolve if links is not None else None
+        made: set[str] = set()
+        for node, spelled in walk_nodes(path.dotted, path.raw_path, follow):
+            if (
+                node in made
+                or (
+                    await entry_kind(probe.stat, PathSpec.from_str_path(node))
+                )[0]
+            ):
+                continue
+            made.add(node)
+            names.append(spelled)
+        if (
+            norm(path.virtual) in made
+            or (await entry_kind(probe.stat, named))[0]
+        ):
+            return names
+        return [*names, operand_spelling(path.virtual, path)]
     exists, _ = await entry_kind(probe.stat, named)
     if exists:
         return []
     top, _ = await nearest_ancestor(probe.stat, named)
-    names: list[str] = []
     node = norm(path.virtual)
     while node not in (top, "/"):
-        names.append(node)
+        names.append(operand_spelling(node, path))
         node = parent(node)
     return names[::-1]
 
 
-def created_lines(names: list[str], path: PathSpec) -> list[str]:
-    """GNU's ``mkdir -v`` lines, each name spelled from the operand.
+def created_lines(names: list[str]) -> list[str]:
+    """GNU's ``mkdir -v`` lines.
 
     Args:
-        names (list[str]): the made names, from :func:`created_names`.
-        path (PathSpec): the operand as typed.
+        names (list[str]): the made names as spelled, from
+            :func:`created_names`.
     """
-    return [
-        f"mkdir: created directory '{operand_spelling(name, path)}'"
-        for name in names
-    ]
+    return [f"mkdir: created directory '{name}'" for name in names]
 
 
 async def make_directory(

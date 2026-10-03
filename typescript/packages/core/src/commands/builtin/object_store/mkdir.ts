@@ -55,14 +55,14 @@ export function makeMkdir<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      const names = verbose ? await createdNames(path, parents) : []
+      const names = verbose ? await createdNames(path, parents, links) : []
       const failed = await makeDirectory(mkdirImpl, accessor, path, parents, links)
       if (failed !== null) {
         errors.push(failed)
         continue
       }
       writes[path.mountPath] = new Uint8Array()
-      lines.push(...createdLines(names, path))
+      lines.push(...createdLines(names))
     }
     const output: ByteSource | null = lines.length > 0 ? ENC.encode(lines.join('\n') + '\n') : null
     const stderr = errors.length > 0 ? ENC.encode(errors.join('\n') + '\n') : undefined

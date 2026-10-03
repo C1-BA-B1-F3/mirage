@@ -1111,11 +1111,12 @@ async def walk(
     has since vanished (e.g. on S3). Used only by the primitive (no native
     ``copy``) path; backends that inject ``copy``/``find`` never reach it.
 
-    A directory the session may not open, or an entry it may not stat
-    (a rule refused it below the operand), is GNU's ``cannot access`` /
-    ``cannot stat`` line when ``errors`` is given and the walk goes on
-    without its contents; with no channel the refusal propagates rather
-    than leave a silent gap.
+    A folder a backend lists with a trailing slash (box, dropbox,
+    gdrive) is walked without it. A directory the session may not open,
+    or an entry it may not stat (a rule refused it below the operand), is
+    GNU's ``cannot access`` / ``cannot stat`` line when ``errors`` is
+    given and the walk goes on without its contents; with no channel the
+    refusal propagates rather than leave a silent gap.
 
     Args:
         readdir (Callable): Lists a directory's full child paths.
@@ -1144,7 +1145,7 @@ async def walk(
             )
             continue
         for child_virtual in children:
-            child = descendant_path(root, child_virtual)
+            child = descendant_path(root, child_virtual.rstrip("/"))
             if links is not None and links.stat_at(child.virtual) is not None:
                 continue
             try:
@@ -1398,6 +1399,11 @@ async def cp(
     warned = 0
     seen: set[str] = set()
     created: set[str] = set()
+    guards_created = not (
+        flags.no_clobber
+        or update_gates(flags.update)
+        or flags.backup == "numbered"
+    )
     for src, target in copy_targets(
         sources, dst, dst_is_dir, dst_exists, dst_err
     ):
@@ -1435,7 +1441,13 @@ async def cp(
                     "are the same file"
                 )
                 continue
-            await make_link(
+            if guards_created and key_of(target) in created:
+                errors.append(
+                    f"cp: will not overwrite just-created '{target.raw_path}' "
+                    f"with '{src.raw_path}'"
+                )
+                continue
+            if await make_link(
                 copies,
                 replace(PathSpec.from_str_path(named), raw_path=src.raw_path),
                 replace(
@@ -1446,7 +1458,8 @@ async def cp(
                 writes,
                 errors,
                 lines if flags.verbose else None,
-            )
+            ):
+                created.add(key_of(target))
             continue
         src_exists, src_is_dir, src_err = await source_kind(stat, src)
         if not src_exists:
@@ -1655,11 +1668,7 @@ async def cp(
                     reads,
                 )
             continue
-        if key_of(target) in created and not (
-            flags.no_clobber
-            or update_gates(flags.update)
-            or flags.backup == "numbered"
-        ):
+        if guards_created and key_of(target) in created:
             errors.append(
                 f"cp: will not overwrite just-created '{target.raw_path}' "
                 f"with '{src.raw_path}'"

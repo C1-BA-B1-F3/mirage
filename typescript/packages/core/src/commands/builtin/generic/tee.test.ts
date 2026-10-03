@@ -153,11 +153,18 @@ describe('writeOutput', () => {
   })
 
   it.each([
-    [['/good', '/locked'], false, ['/locked'], 'tee: /locked: disk full\n'],
-    [['/locked', '/gone/x'], true, [], 'tee: /gone/x: No such file or directory\n'],
+    [['/good', '/locked'], false, ['/locked'], { '/good': '' }, 'tee: /locked: disk full\n'],
+    [
+      ['/locked', '/gone/x'],
+      true,
+      [],
+      { '/locked': '' },
+      'tee: /gone/x: No such file or directory\n',
+    ],
+    [['/bad', '/locked'], false, ['/bad'], {}, 'tee: /bad: disk full\n'],
   ] as const)(
-    'opens an unprobed output before any data: %o',
-    async (outputs, append, refused, stderr) => {
+    'opens an unprobed output in order before any data: %o',
+    async (outputs, append, refused, written, stderr) => {
       const s = sink(new Set(refused))
       const stat = (p: PathSpec): Promise<FileStat> => {
         if (p.virtual === '/locked') return Promise.reject(eacces(p))
@@ -174,7 +181,7 @@ describe('writeOutput', () => {
         stat,
       )
       expect(out).toBeNull()
-      expect(s.written).toEqual({ [outputs[0]]: '' })
+      expect(s.written).toEqual(written)
       expect(io.exitCode).toBe(1)
       expect(DEC.decode(io.stderr as Uint8Array)).toBe(stderr)
     },

@@ -162,9 +162,9 @@ async def write_output(
     call), so with ``stat`` in hand the open is probed first: a missing
     or non-directory parent, or a directory operand. A probe the backend
     will not answer (a stat its credentials refuse) is no verdict, so
-    that output is opened for real at its turn, by writing it nothing.
-    Emptying an earlier output can fail first, and then it is the one
-    reported.
+    that output is opened for real, by writing it nothing, once the
+    outputs before it are opened. Opening an earlier output can fail
+    first, and then it is the one reported.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -179,12 +179,33 @@ async def write_output(
     cache: list[str] = []
     errors: list[bytes] = []
     if parsed.stop_on_error and stat is not None:
+        opened: set[str] = set()
         for index, path in enumerate(paths):
-            refusal: Exception | None
+            probed = True
+            refusal: Exception | None = None
             try:
                 refusal = await open_refusal(stat, path, paths[:index])
             except Exception as exc:
                 logger.debug("tee: probing %s failed: %s", path.virtual, exc)
+                probed = False
+            if probed and refusal is None:
+                continue
+            failed: PathSpec = path
+            for prior in paths[:index]:
+                if prior.mount_path in opened:
+                    continue
+                try:
+                    if not (
+                        parsed.append and (await entry_kind(stat, prior))[0]
+                    ):
+                        await write_bytes(prior, b"")
+                        writes[prior.mount_path] = b""
+                        cache.append(prior.mount_path)
+                except Exception as exc:
+                    failed, refusal = prior, exc
+                    break
+                opened.add(prior.mount_path)
+            if refusal is None:
                 try:
                     data = await write_one(
                         path,
@@ -194,30 +215,15 @@ async def write_output(
                         write_bytes,
                         append_bytes,
                     )
-                except Exception as err:
-                    refusal = err
+                except Exception as exc:
+                    refusal = exc
                 else:
                     writes[path.mount_path] = b"" if data is None else data
+                    opened.add(path.mount_path)
                     continue
-            if refusal is None:
-                continue
-            failed: PathSpec = path
-            reason: Exception = refusal
-            for opened in paths[:index]:
-                if opened.mount_path in writes:
-                    continue
-                try:
-                    if parsed.append and (await entry_kind(stat, opened))[0]:
-                        continue
-                    await write_bytes(opened, b"")
-                except Exception as exc:
-                    failed, reason = opened, exc
-                    break
-                writes[opened.mount_path] = b""
-                cache.append(opened.mount_path)
             return None, IOResult(
                 exit_code=1,
-                stderr=error_line(failed, reason),
+                stderr=error_line(failed, refusal),
                 writes=writes,
                 cache=cache,
             )
@@ -232,7 +238,7 @@ async def write_output(
                 break
             continue
         writes[path.mount_path] = raw if data is None else data
-        if data is not None:
+        if data is not None and path.mount_path not in cache:
             cache.append(path.mount_path)
     if errors:
         return raw, IOResult(

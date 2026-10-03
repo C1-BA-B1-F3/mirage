@@ -168,41 +168,48 @@ export async function writeOutput(
   // failure ends the run with nothing written, the outputs before it made
   // empty. A mount write is one call, so the open is probed first. A probe
   // the backend will not answer (a stat its credentials refuse) is no
-  // verdict, so that output is opened for real at its turn, by writing it
-  // nothing. Emptying an earlier output can fail first, and then it is the
-  // one reported.
+  // verdict, so that output is opened for real, by writing it nothing, once
+  // the outputs before it are opened. Opening an earlier output can fail
+  // first, and then it is the one reported.
   if (parsed.stopOnError && stat !== undefined) {
+    const opened = new Set<string>()
     for (const [index, path] of paths.entries()) {
-      let refusal: unknown
+      let probed = true
+      let refusal: unknown = null
       try {
         refusal = await openRefusal(stat, path, paths.slice(0, index))
       } catch (err) {
         console.warn(`tee: probing ${path.virtual} failed: ${String(err)}`)
+        probed = false
+      }
+      if (probed && refusal === null) continue
+      let failed = path
+      for (const prior of paths.slice(0, index)) {
+        if (opened.has(prior.mountPath)) continue
+        try {
+          if (!(parsed.append && (await entryKind(stat, prior)).exists)) {
+            await write(prior, new Uint8Array(0))
+            writes[prior.mountPath] = new Uint8Array(0)
+            cache.push(prior.mountPath)
+          }
+        } catch (err) {
+          failed = prior
+          refusal = err
+          break
+        }
+        opened.add(prior.mountPath)
+      }
+      if (refusal === null) {
         try {
           const data = await writeOne(path, new Uint8Array(0), parsed, stream, write, append)
           writes[path.mountPath] = data ?? new Uint8Array(0)
+          opened.add(path.mountPath)
           continue
-        } catch (openErr) {
-          refusal = openErr
-        }
-      }
-      if (refusal === null) continue
-      let failed = path
-      let reason: unknown = refusal
-      for (const opened of paths.slice(0, index)) {
-        if (opened.mountPath in writes) continue
-        try {
-          if (parsed.append && (await entryKind(stat, opened)).exists) continue
-          await write(opened, new Uint8Array(0))
         } catch (err) {
-          failed = opened
-          reason = err
-          break
+          refusal = err
         }
-        writes[opened.mountPath] = new Uint8Array(0)
-        cache.push(opened.mountPath)
       }
-      const stderr = ENC.encode(errorLine(failed, reason))
+      const stderr = ENC.encode(errorLine(failed, refusal))
       return [null, new IOResult({ exitCode: 1, stderr, writes, cache })]
     }
   }
@@ -216,7 +223,7 @@ export async function writeOutput(
       continue
     }
     writes[path.mountPath] = data ?? raw
-    if (data !== null) cache.push(path.mountPath)
+    if (data !== null && !cache.includes(path.mountPath)) cache.push(path.mountPath)
   }
   if (errors.length > 0) {
     return [raw, new IOResult({ exitCode: 1, stderr: ENC.encode(errors.join('')), writes, cache })]

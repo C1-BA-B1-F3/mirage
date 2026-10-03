@@ -188,26 +188,29 @@ async def test_a_refused_probe_leaves_the_open_to_the_write():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "outputs,append,refused,stderr",
+    "outputs,append,refused,written,stderr",
     [
         (
             ["/good", "/locked"],
             False,
             {"/locked"},
+            {"/good": b""},
             b"tee: /locked: disk full\n",
         ),
         (
             ["/locked", "/gone/x"],
             True,
             set(),
+            {"/locked": b""},
             b"tee: /gone/x: No such file or directory\n",
         ),
+        (["/bad", "/locked"], False, {"/bad"}, {}, b"tee: /bad: disk full\n"),
     ],
 )
-async def test_an_unprobed_output_is_opened_before_any_data(
-    outputs, append, refused, stderr
+async def test_an_unprobed_output_is_opened_in_order_before_any_data(
+    outputs, append, refused, written, stderr
 ):
-    written, write = _sink(frozenset(refused))
+    sunk, write = _sink(frozenset(refused))
 
     async def _stat(p: PathSpec) -> FileStat:
         if p.virtual == "/locked":
@@ -226,7 +229,7 @@ async def test_an_unprobed_output_is_opened_before_any_data(
         stat=_stat,
     )
     assert source is None
-    assert written == {outputs[0]: b""}
+    assert sunk == written
     assert io.exit_code == 1
     assert await materialize(io.stderr) == stderr
 

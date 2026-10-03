@@ -116,7 +116,11 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> TruncateFlags:
     fl = FlagView(flags, spec=SPECS["truncate"])
     size = fl.as_str("size")
     if size is None:
-        raise ValueError("truncate: you must specify either '--size' or '-s'")
+        raise UsageError(
+            "truncate: you must specify either '--size' or '--reference'"
+            + _TRY_HELP,
+            1,
+        )
     parse_size(size, 0)
     return TruncateFlags(size=size, no_create=fl.as_bool("no_create"))
 

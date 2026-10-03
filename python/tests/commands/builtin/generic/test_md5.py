@@ -8,6 +8,6 @@ async def _unused_read_bytes(path):
 
 
 @pytest.mark.asyncio
-async def test_md5_no_paths_raises():
-    with pytest.raises(ValueError, match="missing operand"):
-        await md5([], read_bytes=_unused_read_bytes)
+async def test_md5_without_stdin_hashes_empty_input():
+    out, _ = await md5([], read_bytes=_unused_read_bytes)
+    assert out == b"d41d8cd98f00b204e9800998ecf8427e  -\n"

@@ -67,10 +67,10 @@ def test_cat_stdin():
     assert b"from stdin" in _bytes(stdout)
 
 
-def test_cat_stdin_empty_raises():
+def test_cat_without_stdin_reads_empty_input():
     ws = _ws()
     stdout, io = _run_raw(ws, "cat", stdin=None)
-    assert io.exit_code == 1
+    assert (_str(stdout), io.exit_code) == ("", 0)
 
 
 def test_head_stdin():

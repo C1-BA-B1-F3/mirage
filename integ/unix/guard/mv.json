@@ -241,6 +241,22 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "guard_mv_dir_into_missing_parent",
+      "seq": 637,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/r10mvd && touch /data/r10mvd/f && mv /data/r10mvd /data/r10nope/sub; echo rc=$?; rm -r /data/r10mvd",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": "mv: cannot move '/data/r10mvd' to '/data/r10nope/sub': No such file or directory\n"
+      }
     }
   ]
 }

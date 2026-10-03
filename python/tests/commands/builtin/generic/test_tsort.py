@@ -36,8 +36,10 @@ async def test_tsort_basic():
 async def test_tsort_cycle_detection():
     rb = _read_bytes({"deps": b"a b\nb a\n"})
     out, io = await tsort([_spec("deps")], read_bytes=rb)
-    assert b"cycle" in out
-    assert io.exit_code == 1
+    assert (out, io.exit_code) == (b"a\nb\n", 1)
+    assert io.stderr == (
+        b"tsort: deps: input contains a loop:\ntsort: a\ntsort: b\n"
+    )
 
 
 @pytest.mark.asyncio

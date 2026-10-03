@@ -3266,6 +3266,176 @@
       "flags": [
         "l"
       ]
+    },
+    {
+      "id": "nl_gnu_leftmost_bad_numeric_option_speaks",
+      "seq": 14102003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -w abc -v xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -v xyz -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -i abc -v xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -v xyz -i abc 2>&1; echo rc=$?; printf 'x\\n' | nl -l abc -w xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -w xyz -l abc 2>&1; echo rc=$?; printf 'x\\n' | nl -i abc -w xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -i xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -l abc -i xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -i abc -l xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -l abc -v xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -v xyz -l abc 2>&1; echo rc=$?; printf 'x\\n' | nl --line-increment=abc --number-width=xyz 2>&1; echo rc=$?; printf 'x\\n' | nl --number-width=xyz --line-increment=abc 2>&1; echo rc=$?; printf 'x\\n' | nl -v 5 -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -v 5 2>&1; echo rc=$?; printf 'x\\n' | nl -w 3 -v xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -i 2 -l abc 2>&1; echo rc=$?; printf 'x\\n' | nl -w 0 -v xyz 2>&1; echo rc=$?; printf 'x\\n' | nl -v xyz -w 0 2>&1; echo rc=$?; printf 'x\\n' | nl -w 3 -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -v 5 -v abc 2>&1; echo rc=$?; printf 'x\\n' | nl -i 5 -i abc 2>&1; echo rc=$?; printf 'x\\n' | nl -l 5 -l abc 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -w 3 2>&1; echo rc=$?; printf 'x\\n' | nl -v abc -v 5 2>&1; echo rc=$?; printf 'x\\n' | nl -i abc -i 5 2>&1; echo rc=$?; printf 'x\\n' | nl -l abc -l 5 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -w xyz 2>&1; echo rc=$?; printf 'x\\n' | nl --number-width=abc -w 3 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc --number-width=3 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -v xyz -w 3 2>&1; echo rc=$?; printf 'x\\n' | nl -v xyz -w abc -v 5 2>&1; echo rc=$?; printf 'x\\n' | nl -w 3 -w abc -v xyz 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "nl: invalid line number field width: 'abc'\nrc=1\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid line number increment: 'abc'\nrc=1\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid line number of blank lines: 'abc'\nrc=1\nnl: invalid line number field width: 'xyz'\nrc=1\nnl: invalid line number increment: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line number of blank lines: 'abc'\nrc=1\nnl: invalid line number increment: 'abc'\nrc=1\nnl: invalid line number of blank lines: 'abc'\nrc=1\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid line number increment: 'abc'\nrc=1\nnl: invalid line number field width: 'xyz'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid line number of blank lines: 'abc'\nrc=1\nnl: invalid line number field width: '0': Numerical result out of range\nrc=1\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid starting line number: 'abc'\nrc=1\nnl: invalid line number increment: 'abc'\nrc=1\nnl: invalid line number of blank lines: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid starting line number: 'abc'\nrc=1\nnl: invalid line number increment: 'abc'\nrc=1\nnl: invalid line number of blank lines: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nl_gnu_style_refusals_and_deferral",
+      "seq": 14102004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -b bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -b '' 2>&1; echo rc=$?; printf 'x\\n' | nl -b A 2>&1; echo rc=$?; printf 'x\\n' | nl -b P 2>&1; echo rc=$?; printf 'x\\n' | nl -b 1 2>&1; echo rc=$?; printf 'x\\n' | nl -f bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -f '' 2>&1; echo rc=$?; printf 'x\\n' | nl -h bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -h A 2>&1; echo rc=$?; printf 'x\\n' | nl -n bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -n '' 2>&1; echo rc=$?; printf 'x\\n' | nl -n LN 2>&1; echo rc=$?; printf 'x\\n' | nl -n rnn 2>&1; echo rc=$?; printf 'x\\n' | nl -n l 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -w 3 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -b bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -n bogus -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -w abc -n bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -v xyz -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -h bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -n bogus -b bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -h bogus -f bogus 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -f bogus -w abc 2>&1; echo rc=$?; printf 'x\\n' | nl -b bogus -b t 2>&1; echo rc=$?; printf 'x\\n' | nl -b t -b bogus 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "nl: invalid body numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: ''\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: 'A'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: 'P'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: '1'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid footer numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid footer numbering style: ''\nTry 'nl --help' for more information.\nrc=1\nnl: invalid header numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid header numbering style: 'A'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line numbering format: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line numbering format: ''\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line numbering format: 'LN'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line numbering format: 'rnn'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line numbering format: 'l'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: 'bogus'\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid body numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line numbering format: 'bogus'\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid body numbering style: 'bogus'\nnl: invalid starting line number: 'xyz'\nrc=1\nnl: invalid body numbering style: 'bogus'\nnl: invalid header numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid line numbering format: 'bogus'\nnl: invalid body numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: 'bogus'\nnl: invalid header numbering style: 'bogus'\nnl: invalid footer numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: 'bogus'\nnl: invalid footer numbering style: 'bogus'\nnl: invalid line number field width: 'abc'\nrc=1\nnl: invalid body numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\nnl: invalid body numbering style: 'bogus'\nTry 'nl --help' for more information.\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nl_gnu_values_too_large_for_the_type",
+      "seq": 14102005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -w 2147483648 2>&1; echo rc=$?; printf 'x\\n' | nl -w +2147483648 2>&1; echo rc=$?; printf 'x\\n' | nl -w 99999999999999999999 2>&1; echo rc=$?; printf 'x\\n' | nl -l 9223372036854775808 2>&1; echo rc=$?; printf 'x\\n' | nl -l 99999999999999999999 2>&1; echo rc=$?; printf 'x\\n' | nl -v 9223372036854775808 2>&1; echo rc=$?; printf 'x\\n' | nl -v -9223372036854775809 2>&1; echo rc=$?; printf 'x\\n' | nl -i 9223372036854775808 2>&1; echo rc=$?; printf 'x\\n' | nl -i -9223372036854775809 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "nl: invalid line number field width: '2147483648': Value too large for defined data type\nrc=1\nnl: invalid line number field width: '+2147483648': Value too large for defined data type\nrc=1\nnl: invalid line number field width: '99999999999999999999': Value too large for defined data type\nrc=1\n     1\tx\nrc=0\n     1\tx\nrc=0\nnl: invalid starting line number: '9223372036854775808': Value too large for defined data type\nrc=1\nnl: invalid starting line number: '-9223372036854775809': Value too large for defined data type\nrc=1\nnl: invalid line number increment: '9223372036854775808': Value too large for defined data type\nrc=1\nnl: invalid line number increment: '-9223372036854775809': Value too large for defined data type\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nl_gnu_line_number_overflow_is_deferred",
+      "seq": 14102006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'l0\\n' | nl -v 9223372036854775807 2>&1; echo rc=$?; printf 'l0\\nl1\\n' | nl -v 9223372036854775807 2>&1; echo rc=$?; printf 'l0\\nl1\\nl2\\n' | nl -v 9223372036854775807 2>&1; echo rc=$?; printf 'l0\\n' | nl -v 9223372036854775806 2>&1; echo rc=$?; printf 'l0\\nl1\\n' | nl -v 9223372036854775806 2>&1; echo rc=$?; printf 'l0\\nl1\\nl2\\n' | nl -v 9223372036854775806 2>&1; echo rc=$?; printf 'l0\\nl1\\nl2\\n' | nl -v 9223372036854775805 2>&1; echo rc=$?; printf 'l0\\nl1\\nl2\\nl3\\n' | nl -v 9223372036854775805 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "9223372036854775807\tl0\nrc=0\n9223372036854775807\tl0\nnl: line number overflow\nrc=1\n9223372036854775807\tl0\nnl: line number overflow\nrc=1\n9223372036854775806\tl0\nrc=0\n9223372036854775806\tl0\n9223372036854775807\tl1\nrc=0\n9223372036854775806\tl0\n9223372036854775807\tl1\nnl: line number overflow\nrc=1\n9223372036854775805\tl0\n9223372036854775806\tl1\n9223372036854775807\tl2\nrc=0\n9223372036854775805\tl0\n9223372036854775806\tl1\n9223372036854775807\tl2\nnl: line number overflow\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nl_gnu_unnumbered_line_pads_over_the_separator",
+      "seq": 14102007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | nl -b n 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -w 3 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -w 1 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -w 10 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -s '' 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -s :: 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -s 'ab c' 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -w 3 -s :: 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -n ln 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -n rz 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -n ln -w 3 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -s 'é' 2>&1; echo rc=$?; printf 'x\\n' | nl -b n -s '→' 2>&1; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "       x\nrc=0\n    x\nrc=0\n  x\nrc=0\n           x\nrc=0\n      x\nrc=0\n        x\nrc=0\n          x\nrc=0\n     x\nrc=0\n       x\nrc=0\n       x\nrc=0\n    x\nrc=0\n        x\nrc=0\n         x\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

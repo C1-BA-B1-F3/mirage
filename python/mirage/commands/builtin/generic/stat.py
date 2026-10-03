@@ -18,6 +18,7 @@ from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.commands.spec.usage import missing_operand_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import (
@@ -477,7 +478,7 @@ async def stat(
             own; None outside a workspace, where both print ``-``.
     """
     if not paths:
-        raise ValueError("stat: missing operand")
+        raise missing_operand_error("stat", None)
     fmt = c if c is not None else f
     lines: list[str] = []
     err = b""

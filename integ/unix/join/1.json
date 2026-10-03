@@ -34,6 +34,37 @@
         "1",
         "2"
       ]
+    },
+    {
+      "id": "join_gnu_join_field_options",
+      "seq": 601363,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10j && (cd /data/r10j && printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -1 99999999999999999999999 -a1 a b; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -j1 a b x; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -j1 -- 2 a b; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -1 2 -j1 a; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -j1 1 -j1 2 a b; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -1 2x a b; echo rc=$?; printf '1 a\\n2 b\\n3 c\\n' > a && printf '1 x\\n3 z\\n4 w\\n' > b && join -1 2 -j 3 a b; echo rc=$?); rm -r /data/r10j",
+      "expect": {
+        "exit": 0,
+        "stdout": " 1 a\n 2 b\n 3 c\nrc=0\nrc=1\nrc=1\nrc=1\nrc=1\nrc=1\nrc=1\n",
+        "stderr": "join: invalid field number: 'a'\njoin: extra operand 'b'\nTry 'join --help' for more information.\njoin: missing operand after 'a'\nTry 'join --help' for more information.\njoin: incompatible join fields 0, 1\njoin: invalid field number: '2x'\njoin: incompatible join fields 1, 2\n"
+      }
     }
   ]
 }

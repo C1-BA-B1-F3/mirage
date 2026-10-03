@@ -420,10 +420,7 @@ export async function shufGeneric(
       else for (const l of splitLines(data)) items.push(l)
     }
   } else {
-    const stdinData = await readStdinAsync(opts.stdin)
-    if (stdinData === null) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('shuf: missing operand\n') })]
-    }
+    const stdinData = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
     const text = DEC.decode(stdinData)
     items = zeroSep ? text.split('\x00') : splitLines(text)
   }

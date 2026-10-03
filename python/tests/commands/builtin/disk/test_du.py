@@ -23,15 +23,6 @@ def workspace(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_du_h_human(workspace):
-    await workspace.vfs.write("/big.txt", b"x" * 2048)
-    io = await workspace.shell("du -h /big.txt")
-    assert io.exit_code == 0
-    size_str = io.stdout.decode().strip().split("\t")[0]
-    assert size_str.endswith("K")
-
-
-@pytest.mark.asyncio
 async def test_du_without_operand_measures_the_working_directory(workspace):
     """GNU du with no operand summarises '.', dot-spelled; no error."""
     await workspace.vfs.write("/a.txt", b"hello")

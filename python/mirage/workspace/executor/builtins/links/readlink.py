@@ -20,6 +20,7 @@ from mirage.commands.builtin.utils.paths import (
     dot_refusal,
     typed_spec,
 )
+from mirage.commands.spec.usage import missing_operand_error
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
@@ -56,7 +57,8 @@ async def handle_readlink(
     """
     flags, operands = split_flags(args, "fenm")
     if not operands:
-        return fail("readlink", "readlink: missing operand\n")
+        error = missing_operand_error("readlink", None)
+        return fail("readlink", f"{error}\n", error.exit_code)
     # The last of -e, -f and -m wins, as in GNU readlink.
     typed = "".join(map(operand_text, args[: len(args) - len(operands)]))
     last = next((c for c in reversed(typed) if c in "efm"), None)

@@ -33,6 +33,37 @@
       "flags": [
         "m"
       ]
+    },
+    {
+      "id": "readlink_missing_operand_names_the_hint",
+      "seq": 601385,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "readlink; echo rc=$?; readlink -f; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\n",
+        "stderr": "readlink: missing operand\nTry 'readlink --help' for more information.\nreadlink: missing operand\nTry 'readlink --help' for more information.\n"
+      }
     }
   ]
 }

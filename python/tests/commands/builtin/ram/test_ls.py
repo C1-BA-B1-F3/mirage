@@ -31,14 +31,3 @@ async def test_ls_a_shows_dotfiles(workspace):
     names = set(io.stdout.decode().strip().split("\n"))
     assert ".hidden" in names
     assert "visible.txt" in names
-
-
-@pytest.mark.asyncio
-async def test_ls_no_dotfiles_by_default(workspace):
-    await workspace.vfs.write("/.hidden", b"h")
-    await workspace.vfs.write("/visible.txt", b"v")
-    io = await workspace.shell("ls /")
-    assert io.exit_code == 0
-    names = set(io.stdout.decode().strip().split("\n"))
-    assert ".hidden" not in names
-    assert "visible.txt" in names

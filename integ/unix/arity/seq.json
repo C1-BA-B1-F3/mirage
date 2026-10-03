@@ -33,6 +33,40 @@
         "stdout": "seq: extra operand '4'\nTry 'seq --help' for more information.\ncode=1\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "arity_seq_missing_operand",
+      "seq": 451,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 2>&1; echo code=$?; seq -w 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "seq: missing operand\nTry 'seq --help' for more information.\ncode=1\nseq: missing operand\nTry 'seq --help' for more information.\ncode=1\n",
+        "stderr": ""
+      }
     }
   ]
 }

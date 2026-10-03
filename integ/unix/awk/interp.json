@@ -1597,6 +1597,108 @@
         "stdout": "50.2047\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "awk_braces_and_semicolons_inside_programs",
+      "seq": 991247,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'line\\n' | awk '{print \"}\"}'; printf 'x\\ny\\n' | awk '/x/ {print \"}\"}'; for p in '{{print $1}}' '{{{print $1}}}' '{{print $1}; print $2}' '{print $1;{print $2}}'; do printf 'Welcome to x\\nInstall it\\n' | awk \"$p\"; done; printf 'x\\n' | awk '{print \"a;b\", $1}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "}\n}\nWelcome\nInstall\nWelcome\nInstall\nWelcome\nto\nInstall\nit\nWelcome\nto\nInstall\nit\na;b x\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "awk_runs_conditions_and_arithmetic",
+      "seq": 991248,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'line\\n' | awk '{if ($1) print $1}'; printf 'a\\n' | awk 'length($1) ~ /1/'; printf 'a\\nb\\n' | awk 'NR % 2 == 0 {print}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "line\na\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "awk_rs_record_never_spans_two_files",
+      "seq": 991249,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk -v RS=: '{print FNR, NR, $0}' /data/one_byte.txt /data/one_byte.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "1 1 x\n1 2 x\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -23,27 +23,6 @@ def workspace():
 
 
 @pytest.mark.asyncio
-async def test_du_h_human(workspace):
-    await workspace.vfs.write("/big.txt", b"x" * 2048)
-    io = await workspace.shell("du -h /big.txt")
-    assert io.exit_code == 0
-    size_str = io.stdout.decode().strip().split("\t")[0]
-    assert size_str.endswith("K")
-
-
-@pytest.mark.asyncio
-async def test_du_max_depth_one(workspace):
-    await workspace.vfs.mkdir("/dir")
-    await workspace.vfs.mkdir("/dir/sub")
-    await workspace.vfs.mkdir("/dir/sub/deep")
-    await workspace.vfs.write("/dir/sub/deep/a.txt", b"hello")
-    io = await workspace.shell("du -a --max-depth 1 /dir")
-    assert io.exit_code == 0
-    lines = io.stdout.decode().strip().splitlines()
-    assert not any("deep" in ln for ln in lines)
-
-
-@pytest.mark.asyncio
 async def test_du_without_operand_measures_the_working_directory(workspace):
     """GNU du with no operand summarises '.', dot-spelled; no error."""
     await workspace.vfs.mkdir("/d")

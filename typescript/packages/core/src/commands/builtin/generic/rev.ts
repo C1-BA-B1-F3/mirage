@@ -61,7 +61,7 @@ export async function revGeneric(
     return [revMulti(ok.map((o) => o.data)), io]
   }
   try {
-    const source = resolveSource(opts.stdin, 'rev: missing operand')
+    const source = resolveSource(opts.stdin)
     return [revStream(source), new IOResult()]
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

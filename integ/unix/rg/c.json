@@ -148,6 +148,36 @@
       "flags": [
         "c"
       ]
+    },
+    {
+      "id": "rg_c_counts_and_filename_flags",
+      "seq": 1287014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "rg -c zzz /data/a.txt; echo rc=$?; rg -c hello /data/a.txt /data/b.txt; echo rc=$?; rg -H hello /data/a.txt; rg -I hello /data/a.txt /data/b.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n/data/a.txt:1\nrc=0\n/data/a.txt:hello\nhello\n",
+        "stderr": ""
+      }
     }
   ]
 }

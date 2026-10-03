@@ -95,10 +95,7 @@ export async function foldGeneric(
     )
     return [result, io]
   }
-  const stdinData = await readStdinAsync(opts.stdin)
-  if (stdinData === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('fold: missing operand\n') })]
-  }
+  const stdinData = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
   if (countBytes) return [foldBytes(stdinData, width), new IOResult()]
   const text = mapLines(DEC.decode(stdinData), (line) => foldLine(line, width, breakSpaces))
   return [ENC.encode(text), new IOResult()]

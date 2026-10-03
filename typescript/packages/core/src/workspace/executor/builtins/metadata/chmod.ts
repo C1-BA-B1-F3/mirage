@@ -13,8 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { FileStat } from '../../../../types.ts'
-import { FileType, PathSpec } from '../../../../types.ts'
+import { FileType, PathSpec, wordText } from '../../../../types.ts'
 import { DEFAULT_DIR_MODE, DEFAULT_FILE_MODE, parseChmod } from '../../../../utils/mode.ts'
+import { missingOperandError, unknownOptionError } from '../../../../commands/spec/usage.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { expandOperands, fail, finish, splitValueFlags } from '../shared.ts'
@@ -39,10 +40,15 @@ export async function handleChmod(
   args: readonly (string | PathSpec)[],
 ): Promise<Result> {
   const { flags, operands, bad } = splitValueFlags(args, 'Rvf', '')
-  if (bad !== null) return fail('chmod', `chmod: invalid option -- '${bad}'\n`, 2)
-  if (operands.length < 2) return fail('chmod', 'chmod: missing operand\n', 2)
+  if (bad !== null) {
+    const [message, code] = unknownOptionError('chmod', bad)
+    return fail('chmod', new TextDecoder().decode(message), code)
+  }
   const first = operands[0]
-  if (first === undefined) return fail('chmod', 'chmod: missing operand\n', 2)
+  if (operands.length < 2 || first === undefined) {
+    const error = missingOperandError('chmod', first === undefined ? null : wordText(first))
+    return fail('chmod', `${error.message}\n`, error.exitCode)
+  }
   const modeText = first instanceof PathSpec ? first.virtual : first
   if (parseChmod(modeText, 0) === null) {
     return fail('chmod', `chmod: invalid mode: '${modeText}'\n`, 1)

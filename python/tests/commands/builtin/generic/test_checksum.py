@@ -26,9 +26,13 @@ class _FakeDigest:
         self._data += data
 
     def hexdigest(self) -> str:
-        # Content-addressed fake: '5a' + the body's text, which the check
-        # line parser accepts as hex when bodies are hex-safe.
-        return "5a" + self._data.decode()
+        # Content-addressed fake: '5a' + the body's text, zero-padded to an
+        # md5's 32 digits, which the check line parser accepts as hex when
+        # bodies are hex-safe.
+        return ("5a" + self._data.decode()).ljust(32, "0")
+
+
+_DIGEST = "5aabc".ljust(32, "0")
 
 
 def _spec(path: str) -> PathSpec:
@@ -80,43 +84,40 @@ async def _run_check(
 # --status silences everything except the strerror lines.
 
 
-@pytest.mark.asyncio
-async def test_missing_recorded_file_reports_both_channels():
-    stdout, stderr, code = await _run_check(
-        {
-            "/sums.txt": "5aabc  /ok.txt\n5aabc  /miss.txt\n",
-            "/ok.txt": "abc",
-        }
-    )
-    assert stdout == "/ok.txt: OK\n/miss.txt: FAILED open or read\n"
-    assert stderr == (
-        "md5sum: /miss.txt: No such file or directory\n"
-        "md5sum: WARNING: 1 listed file could not be read\n"
-    )
-    assert code == 1
+_MISSING_ONE = {
+    "/sums.txt": f"{_DIGEST}  /ok.txt\n{_DIGEST}  /miss.txt\n",
+    "/ok.txt": "abc",
+}
 
 
 @pytest.mark.asyncio
-async def test_relative_recorded_name_resolves_against_cwd():
-    # The old resolver passed relative names to the backend as bare str,
-    # which died on `.virtual` before any GNU diagnostic could print.
-    stdout, stderr, code = await _run_check(
-        {
-            "/sums.txt": "5aabc  f.txt\n",
-            "/data/f.txt": "abc",
-        },
-        cwd="/data",
-    )
-    assert stdout == "f.txt: OK\n"
-    assert stderr == ""
-    assert code == 0
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        (
+            {},
+            (
+                "/ok.txt: OK\n/miss.txt: FAILED open or read\n",
+                "md5sum: /miss.txt: No such file or directory\n"
+                "md5sum: WARNING: 1 listed file could not be read\n",
+                1,
+            ),
+        ),
+        (
+            {"status": True},
+            ("", "md5sum: /miss.txt: No such file or directory\n", 1),
+        ),
+    ],
+)
+async def test_check_reports_a_missing_recorded_file(flags, expected):
+    assert await _run_check(_MISSING_ONE, **flags) == expected
 
 
 @pytest.mark.asyncio
 async def test_non_fs_read_failure_propagates():
 
     async def read_bytes(p: PathSpec) -> bytes:
-        return b"5aabc  /f.txt\n"
+        return b"5aabc000000000000000000000000000  /f.txt\n"
 
     async def read_stream(p: PathSpec):
         raise RuntimeError("S3 GET f failed: 403 Forbidden")
@@ -131,150 +132,3 @@ async def test_non_fs_read_failure_propagates():
             read_stream=read_stream,
             check=True,
         )
-
-
-@pytest.mark.asyncio
-async def test_mismatch_counts_into_not_match_warning():
-    stdout, stderr, code = await _run_check(
-        {
-            "/sums.txt": "5aface  /a.txt\n5aface  /b.txt\n",
-            "/a.txt": "face",
-            "/b.txt": "cafe",
-        }
-    )
-    assert stdout == "/a.txt: OK\n/b.txt: FAILED\n"
-    assert stderr == "md5sum: WARNING: 1 computed checksum did NOT match\n"
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_status_silences_no_file_verified_but_keeps_exit():
-    stdout, stderr, code = await _run_check(
-        {"/sums.txt": "5aabc  /gone\n"}, ignore_missing=True, status=True
-    )
-    assert stdout == ""
-    assert stderr == ""
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_status_keeps_the_no_properly_formatted_fatal():
-    stdout, stderr, code = await _run_check(
-        {"/sums.txt": "junk\n"}, status=True
-    )
-    assert stdout == ""
-    assert stderr == (
-        "md5sum: /sums.txt: no properly formatted checksum lines found\n"
-    )
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_malformed_plus_ignored_skip_is_no_file_verified():
-    # A parsed line whose target --ignore-missing skips must not read as
-    # "no properly formatted checksum lines found".
-    stdout, stderr, code = await _run_check(
-        {"/sums.txt": "junk\n5aabc  /gone\n"}, ignore_missing=True
-    )
-    assert stdout == ""
-    assert stderr == (
-        "md5sum: WARNING: 1 line is improperly formatted\n"
-        "md5sum: /sums.txt: no file was verified\n"
-    )
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_ignore_missing_with_only_a_mismatch_reports_both():
-    # GNU: zero OK lines under --ignore-missing is "no file was verified"
-    # even when a mismatch was read and reported.
-    stdout, stderr, code = await _run_check(
-        {
-            "/sums.txt": "5aface  /a.txt\n",
-            "/a.txt": "cafe",
-        },
-        ignore_missing=True,
-    )
-    assert stdout == "/a.txt: FAILED\n"
-    assert stderr == (
-        "md5sum: WARNING: 1 computed checksum did NOT match\n"
-        "md5sum: /sums.txt: no file was verified\n"
-    )
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_status_keeps_strerror_lines_and_drops_summaries():
-    stdout, stderr, code = await _run_check(
-        {
-            "/sums.txt": "5aabc  /ok.txt\n5aabc  /miss.txt\n",
-            "/ok.txt": "abc",
-        },
-        status=True,
-    )
-    assert stdout == ""
-    assert stderr == "md5sum: /miss.txt: No such file or directory\n"
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_warn_adds_per_line_diagnostics():
-    stdout, stderr, code = await _run_check(
-        {
-            "/sums.txt": "bad line\n5aabc  /ok.txt\n",
-            "/ok.txt": "abc",
-        },
-        warn=True,
-    )
-    assert stdout == "/ok.txt: OK\n"
-    assert stderr == (
-        "md5sum: /sums.txt: 1: improperly formatted MD5 "
-        "checksum line\n"
-        "md5sum: WARNING: 1 line is improperly formatted\n"
-    )
-    assert code == 0
-
-
-@pytest.mark.asyncio
-async def test_check_verifies_every_list_operand():
-    stdout, stderr, code = await _run_check(
-        {
-            "/one.txt": "5aabc  /a.txt\n",
-            "/two.txt": "5adef  /b.txt\n",
-            "/a.txt": "abc",
-            "/b.txt": "def",
-        },
-        paths=["/one.txt", "/two.txt"],
-    )
-    assert stdout == "/a.txt: OK\n/b.txt: OK\n"
-    assert stderr == ""
-    assert code == 0
-
-
-@pytest.mark.asyncio
-async def test_check_missing_list_first_keeps_operand_order():
-    stdout, stderr, code = await _run_check(
-        {
-            "/one.txt": "5aabc  /a.txt\n",
-            "/a.txt": "abc",
-        },
-        paths=["/nope.txt", "/one.txt"],
-    )
-    assert stdout == "/a.txt: OK\n"
-    assert stderr == "md5sum: /nope.txt: No such file or directory\n"
-    assert code == 1
-
-
-@pytest.mark.asyncio
-async def test_check_status_keeps_missing_list_strerror():
-    stdout, stderr, code = await _run_check(
-        {
-            "/one.txt": "5aabc  /a.txt\n",
-            "/a.txt": "abc",
-        },
-        paths=["/one.txt", "/nope.txt"],
-        status=True,
-    )
-    assert stdout == ""
-    assert stderr == "md5sum: /nope.txt: No such file or directory\n"
-    assert code == 1

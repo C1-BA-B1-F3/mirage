@@ -183,7 +183,7 @@ async def cat_generic(
         if _wants_display(parsed):
             return _display(source, parsed), io
         return source, io
-    source = resolve_source(opts.stdin, "cat: missing operand")
+    source = resolve_source(opts.stdin)
     if _wants_display(parsed):
         return _display(source, parsed), IOResult()
     return source, IOResult()

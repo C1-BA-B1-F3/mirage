@@ -33,9 +33,7 @@ async def rev(
         ]
         return "".join(parts).encode(), IOResult()
 
-    raw = await read_stdin_async(stdin)
-    if raw is None:
-        raise ValueError("rev: missing operand")
+    raw = await read_stdin_async(stdin) or b""
     return map_lines(
         raw.decode(errors="replace"), _reversed
     ).encode(), IOResult()

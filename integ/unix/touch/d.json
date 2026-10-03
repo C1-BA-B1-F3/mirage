@@ -77,6 +77,22 @@
       "flags": [
         "d"
       ]
+    },
+    {
+      "id": "touch_usage_refusals_name_the_hint",
+      "seq": 601093,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "touch; echo rc=$?; touch -Q /data/r10touch; echo rc=$?; ls /data/r10touch",
+      "expect": {
+        "exit": 2,
+        "stdout": "rc=1\nrc=1\n",
+        "stderr": "touch: missing file operand\nTry 'touch --help' for more information.\ntouch: invalid option -- 'Q'\nTry 'touch --help' for more information.\nls: cannot access '/data/r10touch': No such file or directory\n"
+      }
     }
   ]
 }

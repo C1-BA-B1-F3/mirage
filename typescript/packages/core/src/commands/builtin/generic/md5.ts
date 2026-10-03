@@ -35,10 +35,8 @@ export async function md5Generic(
     const out: ByteSource = formatRecords(lines)
     return [out, io]
   }
-  if (opts.stdin !== null) {
-    const data = await materialize(opts.stdin)
-    lines.push(`${md5Hex(data)}  -`)
-  }
+  const data = opts.stdin === null ? new Uint8Array(0) : await materialize(opts.stdin)
+  lines.push(`${md5Hex(data)}  -`)
   const out: ByteSource = formatRecords(lines)
   return [out, new IOResult()]
 }

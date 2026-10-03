@@ -19,7 +19,9 @@ from mirage.commands.errors import UsageError
 
 
 async def run(value: str, **kwargs: str | bool) -> str:
-    out, _ = await numfmt(value, **kwargs)
+    out, io = await numfmt(value, **kwargs)
+    if io.exit_code != 0:
+        raise UsageError(bytes(io.stderr).decode().rstrip("\n"), io.exit_code)
     assert out is not None
     return bytes(out).decode().rstrip("\n")
 

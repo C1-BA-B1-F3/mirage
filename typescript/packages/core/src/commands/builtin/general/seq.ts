@@ -17,52 +17,111 @@ import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult } from '../../../io/types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { extraOperandError } from '../../spec/usage.ts'
+import { extraOperandError, missingOperandError } from '../../spec/usage.ts'
+import { UsageError } from '../../errors.ts'
+import { quoteText } from '../../quote.ts'
+import { formatFloat } from '../../../core/awk/value.ts'
 import { CommandName } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 const ENC = new TextEncoder()
 
-function formatWithPrintf(fmt: string, value: number): string {
-  // Minimal %-format: supports %d, %i (integer), %f (float with precision),
-  // %g, %s, width/padding like %03d. Covers the cases Python `fmt % v` does
-  // for seq's -f flag. Unknown specifiers pass through the value as-is.
-  return fmt.replace(
-    /%(-?)(0?)(\d+)?(?:\.(\d+))?([diouxefgs%])/g,
-    (_match: string, ...groups: string[]) => {
-      const minus = groups[0] ?? ''
-      const zero = groups[1] ?? ''
-      const width = groups[2]
-      const prec = groups[3]
-      const conv = groups[4] ?? ''
-      if (conv === '%') return '%'
-      let out: string
-      if (conv === 'd' || conv === 'i' || conv === 'o' || conv === 'u' || conv === 'x') {
-        const intVal = Math.trunc(value)
-        out =
-          conv === 'o' ? intVal.toString(8) : conv === 'x' ? intVal.toString(16) : String(intVal)
-      } else if (conv === 'e' || conv === 'f' || conv === 'g') {
-        const p = prec !== undefined ? Number.parseInt(prec, 10) : 6
-        out =
-          conv === 'e'
-            ? value.toExponential(p)
-            : conv === 'g'
-              ? value.toPrecision(p)
-              : value.toFixed(p)
-      } else {
-        out = String(value)
-      }
-      if (width !== undefined) {
-        const w = Number.parseInt(width, 10)
-        if (out.length < w) {
-          const pad = zero === '0' && minus !== '-' ? '0' : ' '
-          const padded = pad.repeat(w - out.length)
-          out = minus === '-' ? out + padded : padded + out
-        }
-      }
-      return out
-    },
-  )
+// GNU seq's long_double_format: one floating directive, its flags and an
+// optional L, with nothing but %% around it.
+const FORMAT_DIRECTIVE = /([-+#0 ']*)([0-9]*)(?:\.([0-9]*))?(L?)/y
+const FLOAT_CONVERSIONS = 'efgaEFGA'
+
+// A `-f` format GNU accepts, split around its one directive. Mirrors
+// Python's SeqFormat.
+export interface SeqFormat {
+  readonly prefix: string
+  readonly flags: string
+  readonly width: string
+  readonly precision: string | null
+  readonly conversion: string
+  readonly suffix: string
+}
+
+// Index of the first `%` that is not half of `%%`, or -1.
+function lonePercent(text: string): number {
+  let i = 0
+  while (i < text.length) {
+    if (text[i] === '%') {
+      if (text[i + 1] !== '%') return i
+      i += 2
+      continue
+    }
+    i += 1
+  }
+  return -1
+}
+
+// GNU seq's `-f` check: exactly one floating `%` directive. Mirrors Python's
+// parse_format.
+export function parseFormat(fmt: string): SeqFormat {
+  const shown = `'${quoteText(fmt)}'`
+  const start = lonePercent(fmt)
+  if (start < 0) throw new UsageError(`seq: format ${shown} has no % directive`, 1)
+  FORMAT_DIRECTIVE.lastIndex = start + 1
+  const match = FORMAT_DIRECTIVE.exec(fmt)
+  const end = FORMAT_DIRECTIVE.lastIndex
+  const conversion = fmt[end]
+  if (conversion === undefined) throw new UsageError(`seq: format ${shown} ends in %`, 1)
+  if (!FLOAT_CONVERSIONS.includes(conversion)) {
+    throw new UsageError(`seq: format ${shown} has unknown %${conversion} directive`, 1)
+  }
+  const suffix = fmt.slice(end + 1)
+  if (lonePercent(suffix) >= 0) {
+    throw new UsageError(`seq: format ${shown} has too many % directives`, 1)
+  }
+  return {
+    prefix: fmt.slice(0, start),
+    flags: match?.[1] ?? '',
+    width: match?.[2] ?? '',
+    precision: match?.[3] ?? null,
+    conversion,
+    suffix,
+  }
+}
+
+function hexFloat(value: number, upper: boolean): string {
+  const sign = value < 0 || Object.is(value, -0) ? '-' : ''
+  let magnitude = Math.abs(value)
+  let exponent = 0
+  if (magnitude !== 0) {
+    exponent = Math.floor(Math.log2(magnitude))
+    magnitude /= 2 ** exponent
+    if (magnitude >= 2) {
+      magnitude /= 2
+      exponent += 1
+    }
+  }
+  let digits = ''
+  let fraction = magnitude - Math.trunc(magnitude)
+  for (let i = 0; i < 13 && fraction > 0; i++) {
+    fraction *= 16
+    const digit = Math.trunc(fraction)
+    digits += digit.toString(16)
+    fraction -= digit
+  }
+  const mantissa = `${String(Math.trunc(magnitude))}${digits === '' ? '' : '.' + digits}`
+  const shown = `${sign}0x${mantissa}p${exponent < 0 ? '-' : '+'}${String(Math.abs(exponent))}`
+  return upper ? shown.toUpperCase() : shown
+}
+
+// One value through a `-f` format, as C's printf renders it. Mirrors
+// Python's render.
+export function render(spec: SeqFormat, value: number): string {
+  const body = 'aA'.includes(spec.conversion)
+    ? hexFloat(value, spec.conversion === 'A')
+    : formatFloat(
+        spec.conversion,
+        value,
+        spec.flags.replaceAll("'", ''),
+        spec.width === '' ? null : Number(spec.width),
+        spec.precision === null ? null : Number(spec.precision || '0'),
+      )
+  return spec.prefix.replaceAll('%%', '%') + body + spec.suffix.replaceAll('%%', '%')
 }
 
 function zeroPad(value: number, width: number): string {
@@ -110,7 +169,8 @@ function seqGenerate(
   }
   let parts: string[]
   if (fmt !== null) {
-    parts = values.map((v) => formatWithPrintf(fmt, v))
+    const spec = parseFormat(fmt)
+    parts = values.map((v) => render(spec, v))
   } else if (width !== null) {
     const w = values.length > 0 ? Math.max(...values.map((v) => String(v).length)) : 1
     parts = values.map((v) => zeroPad(v, w))
@@ -126,6 +186,7 @@ function seqCommand(
   texts: string[],
   opts: CommandOpts,
 ): CommandFnResult {
+  if (texts.length === 0) throw missingOperandError(CommandName.SEQ, null)
   if (texts.length > 3) throw extraOperandError(CommandName.SEQ, texts[3] ?? '')
   const fl = new FlagView(opts.flags, specOf('seq'))
   const s = fl.asStr('s') ?? null

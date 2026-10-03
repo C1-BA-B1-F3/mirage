@@ -20,9 +20,10 @@ import type { RegisteredCommand } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { requireOp } from '../generic_bind/adapter.ts'
-import { makeDirectory } from '../generic_bind/builders/mkdir.ts'
+import { createdLines, createdNames, makeDirectory } from '../generic_bind/builders/mkdir.ts'
 import { resolveGlobOf, type CommandIO } from '../generic_bind/index.ts'
 import { mkdirLinkRefusal } from '../utils/slash_links.ts'
+import { missingOperandError } from '../../spec/usage.ts'
 
 const ENC = new TextEncoder()
 
@@ -37,9 +38,7 @@ export function makeMkdir<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
     _texts: string[],
     opts: CommandOpts,
   ): Promise<CommandFnResult> {
-    if (paths.length === 0) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('mkdir: missing operand\n') })]
-    }
+    if (paths.length === 0) throw missingOperandError('mkdir', null)
     const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
     const fl = new FlagView(opts.flags, specOf('mkdir'))
     const verbose = fl.asBool('verbose')
@@ -56,13 +55,14 @@ export function makeMkdir<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
+      const names = verbose ? await createdNames(path, parents) : []
       const failed = await makeDirectory(mkdirImpl, accessor, path, parents, links)
       if (failed !== null) {
         errors.push(failed)
         continue
       }
       writes[path.mountPath] = new Uint8Array()
-      if (verbose) lines.push(`mkdir: created directory '${path.virtual}'`)
+      lines.push(...createdLines(names, path))
     }
     const output: ByteSource | null = lines.length > 0 ? ENC.encode(lines.join('\n') + '\n') : null
     const stderr = errors.length > 0 ? ENC.encode(errors.join('\n') + '\n') : undefined

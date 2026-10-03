@@ -120,10 +120,14 @@ async def test_no_clobber_duplicate_basenames_first_wins():
 
 
 @pytest.mark.asyncio
-async def test_duplicate_basenames_without_n_last_wins():
+async def test_duplicate_basenames_keep_the_first_copy():
     files = {"/x/a.txt": b"FIRST", "/y/a.txt": b"SECOND", "/d/keep": b"K"}
-    await _run(files, {"/d"}, ["/x/a.txt", "/y/a.txt", "/d"])
-    assert files["/d/a.txt"] == b"SECOND"
+    _, io = await _run(files, {"/d"}, ["/x/a.txt", "/y/a.txt", "/d"])
+    assert files["/d/a.txt"] == b"FIRST"
+    assert (io.exit_code, io.stderr) == (
+        1,
+        b"cp: will not overwrite just-created '/d/a.txt' with '/y/a.txt'\n",
+    )
 
 
 @pytest.mark.asyncio

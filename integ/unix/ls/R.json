@@ -36,6 +36,74 @@
       "flags": [
         "R"
       ]
+    },
+    {
+      "id": "ls_R_without_an_operand_heads_dot",
+      "seq": 352,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10bare/d && echo hi > /data/r10bare/d/f && (cd /data/r10bare && ls -R); rm -r /data/r10bare",
+      "expect": {
+        "exit": 0,
+        "stdout": ".:\nd\n\n./d:\nf\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "ls_R_failed_operand_gets_no_header",
+      "seq": 353,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ls -R /data/sub/deep /data/never_here.txt; echo rc=$?; ls -R /data/never_here.txt /data/sub/deep; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/sub/deep:\ndeeper.txt\nrc=2\n/data/sub/deep:\ndeeper.txt\nrc=2\n",
+        "stderr": "ls: cannot access '/data/never_here.txt': No such file or directory\nls: cannot access '/data/never_here.txt': No such file or directory\n"
+      }
     }
   ]
 }

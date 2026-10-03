@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { PathSpec, type ReaddirFn } from '../../../types.ts'
-import { rekey } from '../../../utils/key_prefix.ts'
+import { rekey, respelled } from '../../../utils/key_prefix.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import { argmatchError } from '../../spec/usage.ts'
 import { argmatch } from '../../spec/argmatch.ts'
@@ -66,7 +66,10 @@ export function backupControl(
 // A path next to `path` whose name carries an appended suffix (e.g. '~').
 export function siblingPath(path: PathSpec, appended: string): PathSpec {
   const virtual = rstripSlash(path.virtual) + appended
-  return PathSpec.fromStrPath(virtual, rekey(path.virtual, path.vfsPath, virtual))
+  return respelled(
+    PathSpec.fromStrPath(virtual, rekey(path.virtual, path.vfsPath, virtual)),
+    (rstripSlash(path.rawPath) || path.rawPath) + appended,
+  )
 }
 
 // The directory containing `path` on the same mount.

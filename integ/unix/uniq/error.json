@@ -31,11 +31,45 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: invalid count: '2junk'\n"
+        "stderr": "uniq: 2junk: invalid number of fields to skip\n"
       },
       "flags": [
         "f"
       ]
+    },
+    {
+      "id": "uniq_count_refusals_name_the_count",
+      "seq": 600007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "for o in '-f 2junk' '-s 2junk' '-w 2junk' '-f -1' '-s -1' '-w -1' \"-f ''\" '-f 1k'; do eval \"uniq $o /data/dup.txt\"; echo rc=$?; done 2>&1; uniq -f 99999999999999999999999 /data/dup.txt; uniq -w 99999999999999999999999 /data/dup.txt | wc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "uniq: 2junk: invalid number of fields to skip\nrc=1\nuniq: 2junk: invalid number of bytes to skip\nrc=1\nuniq: 2junk: invalid number of bytes to compare\nrc=1\nuniq: -1: invalid number of fields to skip\nrc=1\nuniq: -1: invalid number of bytes to skip\nrc=1\nuniq: -1: invalid number of bytes to compare\nrc=1\nuniq: : invalid number of fields to skip\nrc=1\nuniq: 1k: invalid number of fields to skip\nrc=1\na\n3\n",
+        "stderr": ""
+      }
     }
   ]
 }

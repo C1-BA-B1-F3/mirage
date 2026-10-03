@@ -53,8 +53,11 @@ function makeStream(files: Record<string, string>) {
 }
 
 // Content-addressed fake: the digest of a body is '5a' + the body's text,
-// which parseCheckLine accepts as hex when bodies are hex-safe.
-const hasher = (bytes: Uint8Array): Promise<string> => Promise.resolve(`5a${DEC.decode(bytes)}`)
+// zero-padded to an md5's 32 digits, which parseCheckLine accepts as hex
+// when bodies are hex-safe.
+const hasher = (bytes: Uint8Array): Promise<string> =>
+  Promise.resolve(`5a${DEC.decode(bytes)}`.padEnd(32, '0'))
+const DIGEST = '5aabc'.padEnd(32, '0')
 
 async function runCheck(
   files: Record<string, string>,
@@ -81,28 +84,21 @@ async function runCheck(
 // lines and the WARNING block are stderr, FAILED lines are stdout, and
 // --status silences everything except the strerror lines.
 describe('checksum --check', () => {
-  it('reports a missing recorded file on both channels and exits 1', async () => {
-    const [out, err, code] = await runCheck({
-      '/sums.txt': '5aabc  /ok.txt\n5aabc  /miss.txt\n',
-      '/ok.txt': 'abc',
-    })
-    expect(out).toBe('/ok.txt: OK\n/miss.txt: FAILED open or read\n')
-    expect(err).toBe(
-      'md5sum: /miss.txt: No such file or directory\n' +
-        'md5sum: WARNING: 1 listed file could not be read\n',
-    )
-    expect(code).toBe(1)
-  })
+  const missingOne = { '/sums.txt': `${DIGEST}  /ok.txt\n${DIGEST}  /miss.txt\n`, '/ok.txt': 'abc' }
 
-  it('resolves a relative recorded name against the cwd', async () => {
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': '5aabc  f.txt\n', '/data/f.txt': 'abc' },
+  it.each([
+    [
       {},
-      '/data',
-    )
-    expect(out).toBe('f.txt: OK\n')
-    expect(err).toBe('')
-    expect(code).toBe(0)
+      [
+        '/ok.txt: OK\n/miss.txt: FAILED open or read\n',
+        'md5sum: /miss.txt: No such file or directory\n' +
+          'md5sum: WARNING: 1 listed file could not be read\n',
+        1,
+      ],
+    ],
+    [{ status: true }, ['', 'md5sum: /miss.txt: No such file or directory\n', 1]],
+  ])('reports a missing recorded file under %j', async (flags, expected) => {
+    expect(await runCheck(missingOne, flags)).toEqual(expected)
   })
 
   it('propagates a read failure that is not a filesystem error', async () => {
@@ -111,7 +107,7 @@ describe('checksum --check', () => {
       async function* gen(): AsyncIterable<Uint8Array> {
         await Promise.resolve()
         if (p.virtual === '/sums.txt') {
-          yield ENC.encode('5aabc  /f.txt\n')
+          yield ENC.encode(`${DIGEST}  /f.txt\n`)
           return
         }
         throw raw
@@ -121,127 +117,5 @@ describe('checksum --check', () => {
     await expect(
       checksumGeneric([spec('/sums.txt')], opts({ check: true }), stream, hasher, 'md5sum'),
     ).rejects.toThrow('403 Forbidden')
-  })
-
-  it('counts mismatches into the NOT-match warning', async () => {
-    const [out, err, code] = await runCheck({
-      '/sums.txt': '5aface  /a.txt\n5aface  /b.txt\n',
-      '/a.txt': 'face',
-      '/b.txt': 'cafe',
-    })
-    expect(out).toBe('/a.txt: OK\n/b.txt: FAILED\n')
-    expect(err).toBe('md5sum: WARNING: 1 computed checksum did NOT match\n')
-    expect(code).toBe(1)
-  })
-
-  it('--status silences no-file-verified but keeps its exit 1', async () => {
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': '5aabc  /gone.txt\n' },
-      { ignore_missing: true, status: true },
-    )
-    expect(out).toBe('')
-    expect(err).toBe('')
-    expect(code).toBe(1)
-  })
-
-  it('--status keeps the no-properly-formatted fatal', async () => {
-    const [out, err, code] = await runCheck({ '/sums.txt': 'junk\n' }, { status: true })
-    expect(out).toBe('')
-    expect(err).toBe('md5sum: /sums.txt: no properly formatted checksum lines found\n')
-    expect(code).toBe(1)
-  })
-
-  it('a malformed line plus an ignored skip is no-file-verified', async () => {
-    // A parsed line whose target --ignore-missing skips must not read as
-    // "no properly formatted checksum lines found".
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': 'junk\n5aabc  /gone.txt\n' },
-      { ignore_missing: true },
-    )
-    expect(out).toBe('')
-    expect(err).toBe(
-      'md5sum: WARNING: 1 line is improperly formatted\n' +
-        'md5sum: /sums.txt: no file was verified\n',
-    )
-    expect(code).toBe(1)
-  })
-
-  it('--ignore-missing with only a mismatch reports both diagnostics', async () => {
-    // GNU: zero OK lines under --ignore-missing is "no file was verified"
-    // even when a mismatch was read and reported.
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': '5aface  /a.txt\n', '/a.txt': 'cafe' },
-      { ignore_missing: true },
-    )
-    expect(out).toBe('/a.txt: FAILED\n')
-    expect(err).toBe(
-      'md5sum: WARNING: 1 computed checksum did NOT match\n' +
-        'md5sum: /sums.txt: no file was verified\n',
-    )
-    expect(code).toBe(1)
-  })
-
-  it('--status keeps the strerror lines and drops the summaries', async () => {
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': '5aabc  /ok.txt\n5aabc  /miss.txt\n', '/ok.txt': 'abc' },
-      { status: true },
-    )
-    expect(out).toBe('')
-    expect(err).toBe('md5sum: /miss.txt: No such file or directory\n')
-    expect(code).toBe(1)
-  })
-
-  it('--warn adds per-line diagnostics and the summary prints regardless', async () => {
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': 'bad line\n5aabc  /ok.txt\n', '/ok.txt': 'abc' },
-      { warn: true },
-    )
-    expect(out).toBe('/ok.txt: OK\n')
-    expect(err).toBe(
-      'md5sum: /sums.txt: 1: improperly formatted MD5 checksum line\n' +
-        'md5sum: WARNING: 1 line is improperly formatted\n',
-    )
-    expect(code).toBe(0)
-  })
-
-  it('verifies every list operand', async () => {
-    const [out, err, code] = await runCheck(
-      {
-        '/one.txt': '5aabc  /a.txt\n',
-        '/two.txt': '5adef  /b.txt\n',
-        '/a.txt': 'abc',
-        '/b.txt': 'def',
-      },
-      {},
-      '/',
-      ['/one.txt', '/two.txt'],
-    )
-    expect(out).toBe('/a.txt: OK\n/b.txt: OK\n')
-    expect(err).toBe('')
-    expect(code).toBe(0)
-  })
-
-  it('keeps operand order when the missing list comes first', async () => {
-    const [out, err, code] = await runCheck(
-      { '/one.txt': '5aabc  /a.txt\n', '/a.txt': 'abc' },
-      {},
-      '/',
-      ['/nope.txt', '/one.txt'],
-    )
-    expect(out).toBe('/a.txt: OK\n')
-    expect(err).toBe('md5sum: /nope.txt: No such file or directory\n')
-    expect(code).toBe(1)
-  })
-
-  it('--status keeps a missing list operand strerror', async () => {
-    const [out, err, code] = await runCheck(
-      { '/one.txt': '5aabc  /a.txt\n', '/a.txt': 'abc' },
-      { status: true },
-      '/',
-      ['/one.txt', '/nope.txt'],
-    )
-    expect(out).toBe('')
-    expect(err).toBe('md5sum: /nope.txt: No such file or directory\n')
-    expect(code).toBe(1)
   })
 })

@@ -29,12 +29,8 @@ export async function* wrapBytes(data: Uint8Array): AsyncIterable<Uint8Array> {
   yield data
 }
 
-export function resolveSource(
-  stdin: ByteSource | null,
-  errorMsg?: string,
-): AsyncIterable<Uint8Array> {
+export function resolveSource(stdin: ByteSource | null): AsyncIterable<Uint8Array> {
   if (stdin === null) {
-    if (errorMsg !== undefined) throw new Error(errorMsg)
     // GNU semantics: no stdin behaves like empty input (/dev/null)
     return wrapBytes(new Uint8Array(0))
   }

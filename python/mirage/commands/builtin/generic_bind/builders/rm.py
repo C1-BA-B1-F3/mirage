@@ -100,7 +100,8 @@ async def rm(
                                 readdir,
                                 bound_op(ops.stat, accessor, opts.index),
                                 p,
-                            )
+                            ),
+                            p,
                         )
                     await ops.require(Operation.RM_R)(accessor, p)
                     # A removal never crosses into a mount below, so it
@@ -123,7 +124,7 @@ async def rm(
                     await ops.require(Operation.RMDIR)(
                         accessor, p, index=opts.index
                     )
-                    entry_lines = [f"removed directory '{p.virtual}'"]
+                    entry_lines = [f"removed directory '{p.raw_path}'"]
                 else:
                     errors.append(
                         f"rm: cannot remove '{p.raw_path}': Is a directory"
@@ -131,7 +132,7 @@ async def rm(
                     continue
             else:
                 await ops.require(Operation.UNLINK)(accessor, p)
-                entry_lines = [f"removed '{p.virtual}'"]
+                entry_lines = [f"removed '{p.raw_path}'"]
         except FS_ERRORS as exc:
             # GNU rm names the entry it could not remove (the guard
             # blames a read-only region below the operand by its

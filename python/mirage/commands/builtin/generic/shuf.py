@@ -463,9 +463,7 @@ async def shuf(
         result = _sample(all_lines, count, with_replacement)
         rendered = _render(result, sep)
     else:
-        raw = await read_stdin_async(stdin)
-        if raw is None:
-            raise ValueError("shuf: missing operand")
+        raw = await read_stdin_async(stdin) or b""
         text = raw.decode(errors="replace")
         lines = text.split("\x00") if zero_terminated else split_lines(text)
         result = _sample(lines, count, with_replacement)

@@ -1,5 +1,5 @@
-from collections import deque
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 
 from mirage.commands.builtin.utils.stream import read_stdin_async, stdin_bytes
 from mirage.commands.spec.types import CommandName
@@ -8,33 +8,102 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-def _topological_sort(pairs: list[tuple[str, str]]) -> tuple[list[str], bool]:
-    graph: dict[str, set[str]] = {}
-    in_degree: dict[str, int] = {}
+@dataclass(eq=False)
+class _Item:
+    """One node, GNU tsort's ``struct item``.
+
+    Args:
+        name (str): the token.
+        count (int): predecessors not yet printed.
+        successors (list[_Item]): newest relation first, as GNU links them.
+        qlink (_Item | None): the next node on a loop being traced.
+        printed (bool): whether the node has been output.
+    """
+
+    name: str
+    count: int = 0
+    successors: list["_Item"] = field(default_factory=list)
+    qlink: "_Item | None" = None
+    printed: bool = False
+
+
+def _break_loop(tree: list[_Item]) -> list[str]:
+    """Trace one loop as GNU's ``detect_loop`` does and drop one relation.
+
+    Args:
+        tree (list[_Item]): every node, in GNU's tree (strcmp) order.
+
+    Returns:
+        list[str]: the loop's members, in the order GNU reports them.
+    """
+    loop: _Item | None = None
+    while True:
+        for k in tree:
+            if k.count <= 0:
+                continue
+            if loop is None:
+                loop = k
+                continue
+            for index, successor in enumerate(k.successors):
+                if successor is not loop:
+                    continue
+                if k.qlink is None:
+                    k.qlink = loop
+                    loop = k
+                    break
+                members: list[str] = []
+                node: _Item | None = loop
+                while node is not None:
+                    members.append(node.name)
+                    after = node.qlink
+                    if node is k:
+                        successor.count -= 1
+                        del k.successors[index]
+                        break
+                    node.qlink = None
+                    node = after
+                while node is not None:
+                    after = node.qlink
+                    node.qlink = None
+                    node = after
+                return members
+
+
+def _topological_sort(
+    pairs: list[tuple[str, str]],
+) -> tuple[list[str], list[list[str]]]:
+    """GNU tsort's order, and every loop it had to break on the way.
+
+    Args:
+        pairs (list[tuple[str, str]]): the input relations, in order.
+    """
+    items: dict[str, _Item] = {}
     for a, b in pairs:
-        if a not in graph:
-            graph[a] = set()
-            in_degree.setdefault(a, 0)
-        if b not in graph:
-            graph[b] = set()
-            in_degree.setdefault(b, 0)
-        if b not in graph[a]:
-            graph[a].add(b)
-            in_degree[b] = in_degree.get(b, 0) + 1
-    queue: deque[str] = deque()
-    for node in in_degree:
-        if in_degree[node] == 0:
-            queue.append(node)
-    result: list[str] = []
-    while queue:
-        node = queue.popleft()
-        result.append(node)
-        for neighbor in sorted(graph[node]):
-            in_degree[neighbor] -= 1
-            if in_degree[neighbor] == 0:
-                queue.append(neighbor)
-    has_cycle = len(result) != len(graph)
-    return result, has_cycle
+        j = items.setdefault(a, _Item(a))
+        k = items.setdefault(b, _Item(b))
+        if a != b:
+            k.count += 1
+            j.successors.insert(0, k)
+    tree = [items[name] for name in sorted(items)]
+    order: list[str] = []
+    loops: list[list[str]] = []
+    remaining = len(tree)
+    while remaining > 0:
+        queue = [k for k in tree if k.count == 0 and not k.printed]
+        index = 0
+        while index < len(queue):
+            head = queue[index]
+            index += 1
+            order.append(head.name)
+            head.printed = True
+            remaining -= 1
+            for successor in head.successors:
+                successor.count -= 1
+                if successor.count == 0:
+                    queue.append(successor)
+        if remaining > 0:
+            loops.append(_break_loop(tree))
+    return order, loops
 
 
 async def tsort(
@@ -61,11 +130,17 @@ async def tsort(
     pairs: list[tuple[str, str]] = []
     for idx in range(0, len(tokens), 2):
         pairs.append((tokens[idx], tokens[idx + 1]))
-    result, has_cycle = _topological_sort(pairs)
-    if has_cycle:
-        return b"tsort: cycle detected\n", IOResult(exit_code=1)
-    output = "\n".join(result) + "\n" if result else ""
-    return output.encode(), IOResult()
+    order, loops = _topological_sort(pairs)
+    output = "".join(f"{name}\n" for name in order).encode()
+    if not loops:
+        return output, IOResult()
+    name = paths[0].raw_path or paths[0].virtual if paths else "-"
+    report = "".join(
+        f"tsort: {name}: input contains a loop:\n"
+        + "".join(f"tsort: {member}\n" for member in members)
+        for members in loops
+    )
+    return output, IOResult(exit_code=1, stderr=report.encode())
 
 
 __all__ = ["tsort"]

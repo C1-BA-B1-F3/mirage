@@ -55,7 +55,7 @@ import {
   isMissingPath,
 } from '../../../utils/errors.ts'
 import { typedLink } from '../utils/links.ts'
-import { absentDestStrerror, descendantPath, nearestAncestor } from '../utils/paths.ts'
+import { absentDestStrerror, descendantPath, nearestAncestor, spelledFrom } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import type { LinkView } from '../../../ops/types.ts'
@@ -135,7 +135,7 @@ function isPrimitiveCopy(strategy: CopyStrategy): strategy is PrimitiveCopy {
 // Whether an --update mode can skip or fail an individual entry. 'all'
 // copies unconditionally, so it needs no per-entry decision and must not
 // cost a target probe or forfeit a whole-tree dirCopy.
-function updateGates(mode: string | null): boolean {
+export function updateGates(mode: string | null): boolean {
   return mode !== null && mode !== 'all'
 }
 
@@ -579,10 +579,10 @@ export function overwriteTypeError(
 ): string | null {
   if (!targetExists) return null
   if (srcIsDir && !targetIsDir) {
-    return `${cmdName}: cannot overwrite non-directory '${target.virtual}' with directory '${src.virtual}'`
+    return `${cmdName}: cannot overwrite non-directory '${target.rawPath}' with directory '${src.rawPath}'`
   }
   if (!srcIsDir && targetIsDir) {
-    return `${cmdName}: cannot overwrite directory '${target.virtual}' with non-directory '${src.virtual}'`
+    return `${cmdName}: cannot overwrite directory '${target.rawPath}' with non-directory '${src.rawPath}'`
   }
   return null
 }
@@ -613,7 +613,7 @@ export async function overwriteGate(
   }
   if (policy.noClobber || policy.update === 'none') return false
   if (policy.update === 'none-fail') {
-    errors.push(`${policy.cmdName}: not replacing '${target.virtual}'`)
+    errors.push(`${policy.cmdName}: not replacing '${target.rawPath}'`)
     return false
   }
   if (policy.update === 'older') {
@@ -674,7 +674,7 @@ async function duplicateForBackup(
     return true
   }
   if (strategy.dirCopy === undefined) {
-    errors.push(`${cmdName}: cannot backup '${target.virtual}': Operation not supported`)
+    errors.push(`${cmdName}: cannot backup '${target.rawPath}': Operation not supported`)
     return false
   }
   await strategy.dirCopy(target, backup)
@@ -696,7 +696,7 @@ async function restoreBackupLink(
     await copies.dispatch('symlink', backup, [], { target: typeof raw === 'string' ? raw : '' })
   } catch (err) {
     if (!isFsError(err)) throw err
-    errors.push(`${cmdName}: cannot restore backup '${backup.virtual}': ${String(fsStrerror(err))}`)
+    errors.push(`${cmdName}: cannot restore backup '${backup.rawPath}': ${String(fsStrerror(err))}`)
   }
 }
 
@@ -728,7 +728,7 @@ export async function makeBackup(
     )
   } catch (err) {
     if (!isFsError(err)) throw err
-    errors.push(`${policy.cmdName}: cannot backup '${target.virtual}': ${String(fsStrerror(err))}`)
+    errors.push(`${policy.cmdName}: cannot backup '${target.rawPath}': ${String(fsStrerror(err))}`)
     return { backup: null, ok: false }
   }
   if (backup === null) return { backup: null, ok: true }
@@ -744,7 +744,7 @@ export async function makeBackup(
     made = await duplicateForBackup(strategy, stat, target, backup, errors, policy.cmdName, index)
   } catch (err) {
     if (!isFsError(err)) throw err
-    errors.push(`${policy.cmdName}: cannot backup '${target.virtual}': ${String(fsStrerror(err))}`)
+    errors.push(`${policy.cmdName}: cannot backup '${target.rawPath}': ${String(fsStrerror(err))}`)
     return { backup: null, ok: false }
   } finally {
     if (removedLink && !made && copies !== undefined && backupLink !== null) {
@@ -758,8 +758,8 @@ export async function makeBackup(
 
 // The cp verbose line, with GNU's backup annotation when one exists.
 function transferLine(src: PathSpec, target: PathSpec, backup: PathSpec | null): string {
-  let line = `'${src.virtual}' -> '${target.virtual}'`
-  if (backup !== null) line += ` (backup: '${backup.virtual}')`
+  let line = `'${src.rawPath}' -> '${target.rawPath}'`
+  if (backup !== null) line += ` (backup: '${backup.rawPath}')`
   return line
 }
 
@@ -786,9 +786,12 @@ async function treeLines(
   const files = await strategy.find(src, { type: 'f' })
   const unique = [...new Set([srcBase, ...dirs, ...files])].sort(compareCodePoints)
   return unique.map((entryMount) => {
-    const entry = mountedPath(src, entryMount)
-    const entryDst = mountedPath(target, dstBase + entryMount.slice(srcBase.length))
-    return `'${entry.virtual}' -> '${entryDst.virtual}'`
+    const entry = spelledFrom(mountedPath(src, entryMount), src)
+    const entryDst = spelledFrom(
+      mountedPath(target, dstBase + entryMount.slice(srcBase.length)),
+      target,
+    )
+    return `'${entry.rawPath}' -> '${entryDst.rawPath}'`
   })
 }
 
@@ -816,17 +819,20 @@ async function mirrorDirs(
   // Python. Same key on both sides, same output.
   const unique = [...new Set(mounts)].sort((a, b) => a.length - b.length || compareCodePoints(a, b))
   for (const entryMount of unique) {
-    const entryDst = mountedPath(target, dstBase + entryMount.slice(srcBase.length))
+    const entryDst = spelledFrom(
+      mountedPath(target, dstBase + entryMount.slice(srcBase.length)),
+      target,
+    )
     if (lines !== undefined) {
-      const entry = mountedPath(src, entryMount)
-      lines.push(`'${entry.virtual}' -> '${entryDst.virtual}'`)
+      const entry = spelledFrom(mountedPath(src, entryMount), src)
+      lines.push(`'${entry.rawPath}' -> '${entryDst.rawPath}'`)
     }
     if (await isDirectory(stat, entryDst, index)) continue
     try {
       await strategy.mkdir(entryDst)
     } catch (err) {
       if (!isFsError(err)) throw err
-      errors.push(`cp: cannot create directory '${entryDst.virtual}': ${String(fsStrerror(err))}`)
+      errors.push(`cp: cannot create directory '${entryDst.rawPath}': ${String(fsStrerror(err))}`)
       return false
     }
     writes[entryDst.mountPath] = new Uint8Array()
@@ -863,7 +869,7 @@ export async function cpWalk(
       children = await readdir(directory)
     } catch (err) {
       if (errors === undefined || !isEacces(err)) throw err
-      errors.push(`${cmdName}: cannot access '${directory.virtual}': ${String(fsStrerror(err))}`)
+      errors.push(`${cmdName}: cannot access '${directory.rawPath}': ${String(fsStrerror(err))}`)
       continue
     }
     for (const child of children) {
@@ -874,7 +880,7 @@ export async function cpWalk(
         childInfo = await stat(childSpec, index)
       } catch (err) {
         if (errors === undefined || !isEacces(err)) throw err
-        errors.push(`${cmdName}: cannot stat '${childSpec.virtual}': ${String(fsStrerror(err))}`)
+        errors.push(`${cmdName}: cannot stat '${childSpec.rawPath}': ${String(fsStrerror(err))}`)
         continue
       }
       const isDir = childInfo.type === FileType.DIRECTORY
@@ -927,7 +933,7 @@ export async function copyEntries(
           wroteAny = true
           if (opts.writes !== undefined) opts.writes[entryDstSpec.mountPath] = new Uint8Array()
           if (opts.lines !== undefined) {
-            opts.lines.push(`'${entry}' -> '${entryDstSpec.virtual}'`)
+            opts.lines.push(`'${entry}' -> '${entryDstSpec.rawPath}'`)
           }
         }
       } catch (err) {
@@ -935,7 +941,7 @@ export async function copyEntries(
         // not create cannot land.
         if (!isFsError(err)) throw err
         errors.push(
-          `${cmdName}: cannot create directory '${entryDstSpec.virtual}': ${String(fsStrerror(err))}`,
+          `${cmdName}: cannot create directory '${entryDstSpec.rawPath}': ${String(fsStrerror(err))}`,
         )
         return { copiedAll: false, wroteAny }
       }
@@ -1000,7 +1006,7 @@ export async function copyEntries(
     } catch (err) {
       if (!isFsError(err)) throw err
       errors.push(
-        `${cmdName}: cannot create regular file '${entryDstSpec.virtual}': ${String(fsStrerror(err))}`,
+        `${cmdName}: cannot create regular file '${entryDstSpec.rawPath}': ${String(fsStrerror(err))}`,
       )
       copiedAll = false
       continue
@@ -1085,7 +1091,16 @@ export async function cpGeneric(
   const reads: Record<string, Uint8Array> = {}
   const lines: string[] = []
   const errors: string[] = []
+  let warned = 0
+  const seen = new Set<string>()
+  const created = new Set<string>()
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
+    if (dstIsDir && seen.has(keyOf(src))) {
+      errors.push(`cp: warning: source file '${src.rawPath}' specified more than once`)
+      warned += 1
+      continue
+    }
+    seen.add(keyOf(src))
     const link =
       copies !== undefined && flags.dereference === 'never'
         ? typedLink(copies.links, src, copies.cwd)
@@ -1099,7 +1114,7 @@ export async function cpGeneric(
       const landing =
         target !== dst ? target.virtual : resolvePath(dst.rawPath || dst.virtual, copies.cwd)
       if (named === landing) {
-        errors.push(`cp: '${named}' and '${landing}' are the same file`)
+        errors.push(`cp: '${src.rawPath}' and '${target.rawPath}' are the same file`)
         continue
       }
       const raw = link.extra[LINK_TARGET_KEY]
@@ -1131,15 +1146,15 @@ export async function cpGeneric(
       continue
     }
     if (keyOf(src) === keyOf(target)) {
-      errors.push(`cp: '${src.virtual}' and '${target.virtual}' are the same file`)
+      errors.push(`cp: '${src.rawPath}' and '${target.rawPath}' are the same file`)
       continue
     }
     if (flags.recursive && keyOf(target).startsWith(keyOf(src) + '/')) {
-      errors.push(`cp: cannot copy a directory, '${src.virtual}', into itself, '${target.virtual}'`)
+      errors.push(`cp: cannot copy a directory, '${src.rawPath}', into itself, '${target.rawPath}'`)
       continue
     }
     if (!flags.recursive && srcIsDir) {
-      errors.push(`cp: -r not specified; omitting directory '${src.virtual}'`)
+      errors.push(`cp: -r not specified; omitting directory '${src.rawPath}'`)
       continue
     }
     const probe =
@@ -1255,8 +1270,11 @@ export async function cpGeneric(
       )
       if (!mirrored) continue
       for (const entryMount of await strategy.find(src, { type: 'f' })) {
-        const entry = mountedPath(src, entryMount)
-        const entryDst = mountedPath(target, dstBase + entryMount.slice(srcBase.length))
+        const entry = spelledFrom(mountedPath(src, entryMount), src)
+        const entryDst = spelledFrom(
+          mountedPath(target, dstBase + entryMount.slice(srcBase.length)),
+          target,
+        )
         if (!(await overwriteGate(policy, stat, entry, entryDst, errors))) continue
         const made = await makeBackup(
           policy,
@@ -1289,6 +1307,10 @@ export async function cpGeneric(
       }
       continue
     }
+    if (created.has(keyOf(target)) && !(flags.noClobber || updateGates(flags.update))) {
+      errors.push(`cp: will not overwrite just-created '${target.rawPath}' with '${src.rawPath}'`)
+      continue
+    }
     if (!(await overwriteGate(policy, stat, src, target, errors))) continue
     const made = await makeBackup(
       policy,
@@ -1309,7 +1331,7 @@ export async function cpGeneric(
         data = await strategy.readBytes(src)
       } catch (err) {
         if (!isFsError(err)) throw err
-        errors.push(`cp: cannot open '${src.virtual}' for reading: ${String(fsStrerror(err))}`)
+        errors.push(`cp: cannot open '${src.rawPath}' for reading: ${String(fsStrerror(err))}`)
         continue
       }
       try {
@@ -1317,7 +1339,7 @@ export async function cpGeneric(
       } catch (err) {
         if (!isFsError(err)) throw err
         errors.push(
-          `cp: cannot create regular file '${target.virtual}': ${String(fsStrerror(err))}`,
+          `cp: cannot create regular file '${target.rawPath}': ${String(fsStrerror(err))}`,
         )
         continue
       }
@@ -1328,12 +1350,13 @@ export async function cpGeneric(
       } catch (err) {
         if (!isFsError(err)) throw err
         errors.push(
-          `cp: cannot create regular file '${target.virtual}': ${String(fsStrerror(err))}`,
+          `cp: cannot create regular file '${target.rawPath}': ${String(fsStrerror(err))}`,
         )
         continue
       }
     }
     writes[target.mountPath] = new Uint8Array()
+    created.add(keyOf(target))
     if (flags.verbose) lines.push(transferLine(src, target, made.backup))
   }
   const output: ByteSource | null = lines.length > 0 ? ENC.encode(lines.join('\n') + '\n') : null
@@ -1345,7 +1368,7 @@ export async function cpGeneric(
       reads: { ...reads },
       cache: Object.keys(reads),
       stderr,
-      exitCode: errors.length > 0 ? 1 : 0,
+      exitCode: errors.length > warned ? 1 : 0,
     }),
   ]
 }

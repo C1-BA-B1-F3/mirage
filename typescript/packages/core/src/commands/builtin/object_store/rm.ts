@@ -76,6 +76,7 @@ export function makeRm<A extends Accessor>(vfs: string, io: CommandIO<A>): Regis
                   path,
                   index ?? undefined,
                 ),
+                path,
               )
             : []
           await rmR(accessor, path)

@@ -55,6 +55,21 @@
       "flags": [
         "to"
       ]
+    },
+    {
+      "id": "numfmt_keeps_output_before_an_invalid_number",
+      "seq": 910046,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "numfmt 1 abc 2; echo rc=$?; printf '1\\nabc\\n2\\n' | numfmt; echo rc=$?; numfmt --from=si 1K abc; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\nrc=2\n1\nrc=2\n1000\nrc=2\n",
+        "stderr": "numfmt: invalid number: 'abc'\nnumfmt: invalid number: 'abc'\nnumfmt: invalid number: 'abc'\n"
+      }
     }
   ]
 }

@@ -266,8 +266,7 @@ export async function sedGeneric(
   const inputs: SedInput[] = []
   const readOk: string[] = []
   if (paths.length === 0) {
-    const raw = await readStdinAsync(opts.stdin)
-    if (raw === null) return failed(`${SED_NO_INPUT_FILES}\n`, SED_NO_INPUT_EXIT)
+    const raw = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
     inputs.push({ name: '-', text: DEC.decode(raw) })
   }
   // sed owns its exit code rather than letting the executor's chokepoint

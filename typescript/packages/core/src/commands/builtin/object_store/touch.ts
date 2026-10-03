@@ -21,8 +21,8 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { requireOp } from '../generic_bind/adapter.ts'
 import { resolveGlobOf, type CommandIO } from '../generic_bind/index.ts'
-
-const ENC = new TextEncoder()
+import { UsageError } from '../../errors.ts'
+import { usageHint } from '../../spec/usage.ts'
 
 /** Build the create-if-missing touch override for one keyed store. */
 export function makeTouch<A extends Accessor>(vfs: string, io: CommandIO<A>): RegisteredCommand[] {
@@ -37,7 +37,7 @@ export function makeTouch<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
     opts: CommandOpts,
   ): Promise<CommandFnResult> {
     if (paths.length === 0) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('touch: missing operand\n') })]
+      throw new UsageError(`touch: missing file operand\n${usageHint('touch')}`, 1)
     }
     const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
     const fl = new FlagView(opts.flags, specOf('touch'))

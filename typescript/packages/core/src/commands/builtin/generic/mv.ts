@@ -53,6 +53,7 @@ import {
   suffixFlag,
   targetDirError,
   targetFlags,
+  updateGates,
   updateMode,
   wrapTargetDir,
   type TransferPolicy,
@@ -246,19 +247,19 @@ async function exchangePair(
 ): Promise<void> {
   if (isPrimitiveMove(strategy)) {
     errors.push(
-      `mv: cannot exchange '${src.virtual}' and '${target.virtual}': Invalid cross-device link`,
+      `mv: cannot exchange '${src.rawPath}' and '${target.rawPath}': Invalid cross-device link`,
     )
     return
   }
   if (!(await pathExists(stat, src)) || !(await pathExists(stat, target))) {
     errors.push(
-      `mv: cannot exchange '${src.virtual}' and '${target.virtual}': No such file or directory`,
+      `mv: cannot exchange '${src.rawPath}' and '${target.rawPath}': No such file or directory`,
     )
     return
   }
   const holding = await holdingPath(stat, target)
   if (holding === null) {
-    errors.push(`mv: cannot exchange '${src.virtual}' and '${target.virtual}': File exists`)
+    errors.push(`mv: cannot exchange '${src.rawPath}' and '${target.rawPath}': File exists`)
     return
   }
   let staged = false
@@ -273,17 +274,17 @@ async function exchangePair(
     if (!isFsError(err)) throw err
     const restored = await undoExchange(strategy, src, target, holding, staged, swapped)
     errors.push(
-      `mv: cannot exchange '${src.virtual}' and '${target.virtual}': ${String(fsStrerror(err))}`,
+      `mv: cannot exchange '${src.rawPath}' and '${target.rawPath}': ${String(fsStrerror(err))}`,
     )
     if (!restored) {
       writes[holding.mountPath] = new Uint8Array()
-      errors.push(`mv: '${src.virtual}' left at '${holding.virtual}' after a failed exchange`)
+      errors.push(`mv: '${src.rawPath}' left at '${holding.rawPath}' after a failed exchange`)
     }
     return
   }
   writes[src.mountPath] = new Uint8Array()
   writes[target.mountPath] = new Uint8Array()
-  if (lines !== undefined) lines.push(`exchanged '${src.virtual}' <-> '${target.virtual}'`)
+  if (lines !== undefined) lines.push(`exchanged '${src.rawPath}' <-> '${target.rawPath}'`)
 }
 
 // Move sources to a destination, fanning out into a directory. NativeMove
@@ -358,6 +359,7 @@ export async function mvGeneric(
   const writes: Record<string, ByteSource> = {}
   const lines: string[] = []
   const errors: string[] = []
+  const created = new Set<string>()
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
     const { exists: srcExists, isDir: srcIsDir, strerror: srcErr } = await sourceKind(stat, src)
     if (!srcExists) {
@@ -376,7 +378,7 @@ export async function mvGeneric(
       continue
     }
     if (keyOf(src) === keyOf(target)) {
-      errors.push(`mv: '${src.virtual}' and '${target.virtual}' are the same file`)
+      errors.push(`mv: '${src.rawPath}' and '${target.rawPath}' are the same file`)
       continue
     }
     if (flags.exchange) {
@@ -393,7 +395,7 @@ export async function mvGeneric(
     }
     if (keyOf(target).startsWith(keyOf(src) + '/')) {
       errors.push(
-        `mv: cannot move '${src.rawPath}' to a subdirectory of itself, '${target.virtual}'`,
+        `mv: cannot move '${src.rawPath}' to a subdirectory of itself, '${target.rawPath}'`,
       )
       continue
     }
@@ -428,6 +430,14 @@ export async function mvGeneric(
       )
       continue
     }
+    if (
+      !srcIsDir &&
+      created.has(keyOf(target)) &&
+      !(flags.noClobber || updateGates(flags.update))
+    ) {
+      errors.push(`mv: will not overwrite just-created '${target.rawPath}' with '${src.rawPath}'`)
+      continue
+    }
     if (!(await overwriteGate(policy, stat, src, target, errors))) continue
     // GNU refuses to replace a non-empty directory whether the target was
     // named outright (-T) or mapped under an existing destination
@@ -443,11 +453,11 @@ export async function mvGeneric(
         if (!isFsError(err)) throw err
         // Reading it as "empty" would clobber a directory whose contents
         // could not be verified.
-        errors.push(`mv: cannot overwrite '${target.virtual}': ${String(fsStrerror(err))}`)
+        errors.push(`mv: cannot overwrite '${target.rawPath}': ${String(fsStrerror(err))}`)
         continue
       }
       if (children.length > 0) {
-        errors.push(`mv: cannot overwrite '${target.virtual}': Directory not empty`)
+        errors.push(`mv: cannot overwrite '${target.rawPath}': Directory not empty`)
         continue
       }
     }
@@ -537,9 +547,10 @@ export async function mvGeneric(
       writes[target.mountPath] = new Uint8Array()
     }
     if (!sourceLink && !isPrimitiveMove(strategy)) renames.push([src.virtual, target.virtual])
+    if (!srcIsDir) created.add(keyOf(target))
     if (flags.verbose) {
-      let line = `renamed '${src.virtual}' -> '${target.virtual}'`
-      if (made.backup !== null) line += ` (backup: '${made.backup.virtual}')`
+      let line = `renamed '${src.rawPath}' -> '${target.rawPath}'`
+      if (made.backup !== null) line += ` (backup: '${made.backup.rawPath}')`
       lines.push(line)
     }
   }

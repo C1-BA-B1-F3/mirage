@@ -34,6 +34,38 @@
       "flags": [
         "v"
       ]
+    },
+    {
+      "id": "cp_v_names_entries_as_typed",
+      "seq": 601001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(cd /data && mkdir -p r10cps/d && echo x > r10cps/d/f && cp -v a.txt r10cpv.txt && cp -rv r10cps r10cpvd; rc=$?; rm -r r10cps r10cpv.txt r10cpvd; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "'a.txt' -> 'r10cpv.txt'\n'r10cps' -> 'r10cpvd'\n'r10cps/d' -> 'r10cpvd/d'\n'r10cps/d/f' -> 'r10cpvd/d/f'\n",
+        "stderr": ""
+      }
     }
   ]
 }

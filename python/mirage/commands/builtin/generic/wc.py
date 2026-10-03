@@ -464,7 +464,7 @@ async def wc_generic(
             total=parsed.total,
         )
         return body, operands_io(err)
-    source = resolve_source(opts.stdin, "wc: missing operand")
+    source = resolve_source(opts.stdin)
     counts = await wc(source, flags=parsed)
     return format_stdin(counts, parsed), IOResult()
 

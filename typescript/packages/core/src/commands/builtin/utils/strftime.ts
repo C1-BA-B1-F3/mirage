@@ -37,6 +37,15 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
+// The conversions GNU date knows; any other stays literal, as in GNU. Mirrors
+// Python's GNU_DIRECTIVES.
+const GNU_DIRECTIVES = 'aAbBcCdDeFgGhHIjklmMnNpPqrRsStTuUVwWxXyYzZ%'
+
+// GNU's `%P`: `am` or `pm`. Mirrors Python's meridiem.
+function meridiem(hour: number): string {
+  return hour < 12 ? 'am' : 'pm'
+}
+
 function pad4(n: number): string {
   return String(n).padStart(4, '0')
 }
@@ -121,7 +130,7 @@ export function strftime(dt: Date, fmt: string, zone: Zone): string {
       case 'N':
         return String(parts.ms * 1_000_000).padStart(9, '0')
       case 'P':
-        return hour < 12 ? 'am' : 'pm'
+        return meridiem(hour)
       case 'q':
         return String(Math.floor(month / 3) + 1)
       case 'r': {
@@ -183,7 +192,10 @@ export function strftime(dt: Date, fmt: string, zone: Zone): string {
     }
   }
   return fmt.replace(
-    /%([-_0^#+]*)(\d*)((?::{1,3}(?=z))?)([aAbBcCdDeFgGhHIjklMmnNpPqrRsStTuUVwWxXYyzZ%])/g,
+    new RegExp(
+      `%([-_0^#+]*)(\\d*)((?::{1,3}(?=z))?)(?:[EO](?=[${GNU_DIRECTIVES}]))?([${GNU_DIRECTIVES}])`,
+      'g',
+    ),
     (_m, flags: string, digits: string, colons: string, code: string) => {
       if (code === 'z') {
         const width = digits === '' ? null : Number(digits)
@@ -344,7 +356,7 @@ function modified(base: string, code: string, flags: string, digits: string): st
   if (flags.includes('#')) {
     if (code === 'p' || code === 'Z') out = out.toLowerCase()
     else if ('aAbBh'.includes(code)) out = out.toUpperCase()
-  } else if (flags.includes('^')) {
+  } else if (flags.includes('^') && code !== 'P') {
     out = out.toUpperCase()
   }
   if (width !== null && pad !== '-') {

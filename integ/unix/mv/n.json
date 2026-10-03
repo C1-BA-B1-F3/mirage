@@ -34,6 +34,38 @@
       "flags": [
         "n"
       ]
+    },
+    {
+      "id": "mv_refuses_the_just_created_destination",
+      "seq": 601013,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "mkdir -p /data/r10mx /data/r10my /data/r10md && echo 1 > /data/r10mx/a && echo 2 > /data/r10my/a && mv /data/r10mx/a /data/r10my/a /data/r10md; echo rc=$?; cat /data/r10md/a /data/r10my/a; rm -r /data/r10mx /data/r10my /data/r10md",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n1\n2\n",
+        "stderr": "mv: will not overwrite just-created '/data/r10md/a' with '/data/r10my/a'\n"
+      }
     }
   ]
 }

@@ -1,12 +1,18 @@
+import errno
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
+from mirage.commands.builtin.utils.paths import (
+    absent_dest_strerror,
+    entry_kind,
+)
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import PathSpec
+from mirage.types import PathSpec, StatFn
 from mirage.utils.errors import fs_error_line, fs_strerror
 
 
@@ -91,6 +97,26 @@ async def write_one(
     return data
 
 
+async def open_refusal(stat: StatFn, path: PathSpec) -> OSError | None:
+    """The error GNU's open of an output would meet, or None.
+
+    Args:
+        stat (StatFn): Stats a path; raises when missing.
+        path (PathSpec): the output operand.
+    """
+    exists, is_dir = await entry_kind(stat, path)
+    if is_dir:
+        return IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR))
+    if exists:
+        return None
+    strerror = await absent_dest_strerror(stat, path)
+    if strerror is None:
+        return None
+    if strerror == os.strerror(errno.ENOTDIR):
+        return NotADirectoryError(errno.ENOTDIR, strerror)
+    return FileNotFoundError(errno.ENOENT, strerror)
+
+
 async def write_output(
     paths: list[PathSpec],
     raw: bytes,
@@ -98,6 +124,7 @@ async def write_output(
     read_stream: Callable[..., AsyncIterator[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     append_bytes: Callable[..., Awaitable[None]] | None = None,
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Copy ``raw`` to every operand, GNU-style.
 
@@ -116,12 +143,11 @@ async def write_output(
     named on stderr and the command exits 1. ``Exception`` rather than
     ``BaseException`` keeps cancellation propagating.
 
-    Deliberate divergence: GNU opens every operand up front, so under
-    ``exit`` an *open* failure aborts before any data is written. A mount
-    has no open/write split — ``write_bytes`` is one call — so the
-    operands before the failure are already written. The two agree
-    whenever the failure is at write time, which is what a remote backend
-    reports.
+    GNU opens every operand up front, so under ``exit`` an *open*
+    failure aborts before any data is written, the outputs opened before
+    it left empty. A mount has no open/write split (``write_bytes`` is one
+    call), so with ``stat`` in hand the open is probed first: a missing
+    or non-directory parent, or a directory operand.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -130,10 +156,28 @@ async def write_output(
         read_stream (Callable): backend read, for the emulated append.
         write_bytes (Callable): backend whole-file write.
         append_bytes (Callable | None): backend native append, if wired.
+        stat (StatFn | None): Stats a path, for the probed open.
     """
     writes: dict[str, ByteSource] = {}
     cache: list[str] = []
     errors: list[bytes] = []
+    if parsed.stop_on_error and stat is not None:
+        for index, path in enumerate(paths):
+            refusal = await open_refusal(stat, path)
+            if refusal is None:
+                continue
+            for opened in paths[:index]:
+                if parsed.append and (await entry_kind(stat, opened))[0]:
+                    continue
+                await write_bytes(opened, b"")
+                writes[opened.mount_path] = b""
+                cache.append(opened.mount_path)
+            return None, IOResult(
+                exit_code=1,
+                stderr=error_line(path, refusal),
+                writes=writes,
+                cache=cache,
+            )
     for path in paths:
         try:
             data = await write_one(
@@ -163,6 +207,7 @@ async def tee(
     append_bytes: Callable[..., Awaitable[None]] | None = None,
     stdin: ByteSource | None = None,
     flags: Mapping[str, FlagValue] | None = None,
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(flags or {})
     raw = await read_stdin_async(stdin)
@@ -171,7 +216,7 @@ async def tee(
     if not paths:
         return raw, IOResult()
     return await write_output(
-        paths, raw, parsed, read_stream, write_bytes, append_bytes
+        paths, raw, parsed, read_stream, write_bytes, append_bytes, stat
     )
 
 
@@ -181,5 +226,6 @@ __all__ = [
     "TeeFlags",
     "write_output",
     "write_one",
+    "open_refusal",
     "error_line",
 ]

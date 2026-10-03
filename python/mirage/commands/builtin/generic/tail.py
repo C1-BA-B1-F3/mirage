@@ -698,7 +698,7 @@ async def tail_generic(
             from_byte=counts.from_byte,
             show_headers=show_headers,
         ), io
-    source = resolve_source(opts.stdin, "tail: missing operand")
+    source = resolve_source(opts.stdin)
     body = tail(
         source,
         n=counts.lines,

@@ -1,6 +1,7 @@
 import pytest
 
 from mirage.commands.builtin.generic.uniq import (
+    SKIP_FIELDS,
     _parse_count,
     parse_flags,
     uniq,
@@ -21,11 +22,6 @@ async def _collect(stdin: bytes | None, **kwargs) -> bytes:
     )
     chunks = [chunk async for chunk in source]
     return b"".join(chunks)
-
-
-def test_parse_count_negative_raises():
-    with pytest.raises(ValueError, match="invalid count"):
-        _parse_count("-1")
 
 
 @pytest.mark.asyncio
@@ -127,18 +123,15 @@ def test_an_empty_argument_is_ambiguous(dest, option):
     assert exc.value.exit_code == 1
 
 
-@pytest.mark.parametrize("value", ["1é", "1\x01"])
-def test_fields_to_skip_refusal_stays_raw(value):
-    """`-f` is a different clause shape and GNU escapes nothing in it.
-
-    GNU words it `uniq: <w>: invalid number of fields to skip` with the
-    bytes as typed, so this one must NOT be routed through quote() --
-    measured with `uniq -f 1é`, which reports the two UTF-8 bytes
-    intact.
+@pytest.mark.parametrize("value", ["-1", "1é", "1\x01"])
+def test_a_count_refusal_names_the_value_raw(value):
+    """GNU words it `uniq: <w>: invalid number of fields to skip`, the
+    bytes as typed, never through quote(): `uniq -f 1é` keeps both
+    UTF-8 bytes intact.
     """
     with pytest.raises(ValueError) as exc:
-        _parse_count(value)
-    assert value in str(exc.value)
+        _parse_count(value, SKIP_FIELDS)
+    assert str(exc.value) == f"uniq: {value}: invalid number of fields to skip"
 
 
 # Neither option's candidates share a prefix that spans two values, so

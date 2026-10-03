@@ -25,15 +25,16 @@ import { DEFAULT_UMASK, sessionUmask, walkProbeFor } from '../../../../context/s
 import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { mkdirLinkRefusal } from '../../utils/slash_links.ts'
-import { descendantPath, entryKind } from '../../utils/paths.ts'
+import { descendantPath, entryKind, nearestAncestor } from '../../utils/paths.ts'
 import type { Accessor } from '../../../../accessor/base.ts'
 import type { LinkView } from '../../../../ops/types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
 import { mountPrefixOf } from '../../../../utils/key_prefix.ts'
-import { CycleError, walkNodes } from '../../../../utils/path.ts'
+import { CycleError, norm, parent, walkNodes } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { MkdirOp } from '../../../../vfs/types.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
+import { missingOperandError } from '../../../spec/usage.ts'
 
 /**
  * Make one name of a walk a directory, or say why it is not one.
@@ -117,6 +118,33 @@ async function makeWalked<A extends Accessor>(
  * tripped on. Every mkdir makes its operands here, a keyed store's override
  * included, so they report alike. Mirrors Python's make_directory.
  */
+// The names a verbose mkdir reports for `path`, top-down. One backend mkdir
+// makes a `-p` chain without saying which names it made, so the chain is
+// probed before the create: every name below the nearest existing ancestor,
+// or none when `path` already exists. Outside a workspace there is nothing to
+// probe with, and the operand alone is reported. Mirrors Python's
+// created_names.
+export async function createdNames(path: PathSpec, parents: boolean): Promise<string[]> {
+  const probe = walkProbeFor(path.virtual)
+  if (!parents || probe === null) return [path.virtual]
+  const named = PathSpec.fromStrPath(path.virtual)
+  if ((await entryKind(probe.stat, named)).exists) return []
+  const [top] = await nearestAncestor(probe.stat, named)
+  const names: string[] = []
+  let node = norm(path.virtual)
+  while (node !== top && node !== '/') {
+    names.push(node)
+    node = parent(node)
+  }
+  return names.reverse()
+}
+
+// GNU's `mkdir -v` lines, each name spelled from the operand. Mirrors Python's
+// created_lines.
+export function createdLines(names: string[], path: PathSpec): string[] {
+  return names.map((name) => `mkdir: created directory '${operandSpelling(name, path)}'`)
+}
+
 export async function makeDirectory<A extends Accessor>(
   mkdir: MkdirOp<A>,
   accessor: A,
@@ -162,15 +190,7 @@ export const BUILDER: Builder = {
     const parents = fl.asBool('parents')
     const verbose = fl.asBool('verbose')
     const modeText = fl.asStr('mode') ?? null
-    if (paths.length === 0) {
-      return [
-        null,
-        new IOResult({
-          exitCode: 1,
-          stderr: new TextEncoder().encode('mkdir: missing operand\n'),
-        }),
-      ]
-    }
+    if (paths.length === 0) throw missingOperandError('mkdir', null)
     const idx = opts.index ?? undefined
     const { setAttrs } = ops
     const mkdir = requireOp(ops.mkdir, 'mkdir')
@@ -202,6 +222,7 @@ export const BUILDER: Builder = {
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
+      const names = verbose ? await createdNames(p, parents) : []
       const failed = await makeDirectory(mkdir, accessor, p, parents, links)
       if (failed !== null) {
         errors.push(failed)
@@ -210,7 +231,7 @@ export const BUILDER: Builder = {
       // -m applies to the named directory only; any parents made by -p keep
       // the default mode (GNU).
       if (mode !== null && setAttrs !== undefined) await setAttrs(accessor, p, { mode })
-      if (verbose) lines.push(`mkdir: created directory '${p.virtual}'`)
+      lines.push(...createdLines(names, p))
     }
     const out = lines.length > 0 ? new TextEncoder().encode(lines.join('\n') + '\n') : null
     const stderr = errors.length > 0 ? new TextEncoder().encode(errors.join('\n') + '\n') : null

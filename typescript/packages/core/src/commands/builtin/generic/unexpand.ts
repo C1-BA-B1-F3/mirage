@@ -91,10 +91,7 @@ export async function unexpandGeneric(
     const result: ByteSource = ENC.encode(parts.join(''))
     return [result, io]
   }
-  const stdinData = await readStdinAsync(opts.stdin)
-  if (stdinData === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('unexpand: missing operand\n') })]
-  }
+  const stdinData = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
   const text = DEC.decode(stdinData)
   const lines = splitLinesKeepEnds(text)
   const result: ByteSource = ENC.encode(

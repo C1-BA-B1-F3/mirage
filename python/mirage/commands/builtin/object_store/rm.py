@@ -108,7 +108,8 @@ def make_rm(vfs: str, io: CommandIO) -> Callable[..., Any]:
                                 ),
                                 functools.partial(stat, accessor, index=index),
                                 path,
-                            )
+                            ),
+                            path,
                         )
                         if verbose
                         else []

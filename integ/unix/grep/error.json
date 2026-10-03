@@ -183,7 +183,7 @@
       }
     },
     {
-      "id": "grep_usage_no_input",
+      "id": "grep_without_stdin_reads_empty_input",
       "seq": 581,
       "targets": [
         "ram",
@@ -211,9 +211,9 @@
       ],
       "command": "grep foo",
       "expect": {
-        "exit": 2,
+        "exit": 1,
         "stdout": "",
-        "stderr": "Usage: grep [OPTION]... PATTERNS [FILE]...\nTry 'grep --help' for more information.\n"
+        "stderr": ""
       }
     },
     {

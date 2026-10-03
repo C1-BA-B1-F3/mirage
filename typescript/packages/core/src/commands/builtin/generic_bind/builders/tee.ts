@@ -32,6 +32,7 @@ export const BUILDER: Builder = {
       (p) => ops.readStream(accessor, p, idx),
       (p, d) => write(accessor, p, d),
       append === undefined ? undefined : (p, d) => append(accessor, p, d),
+      (p) => ops.stat(accessor, p, idx),
     )
   },
 }

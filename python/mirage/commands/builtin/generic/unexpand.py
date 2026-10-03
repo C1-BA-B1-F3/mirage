@@ -86,9 +86,7 @@ async def unexpand(
             for ln in split_lines_keepends("".join(texts))
         ).encode(), IOResult()
 
-    raw = await read_stdin_async(stdin)
-    if raw is None:
-        raise ValueError("unexpand: missing operand")
+    raw = await read_stdin_async(stdin) or b""
     lines = split_lines_keepends(raw.decode(errors="replace"))
     result = [_unexpand_line(ln, tabsize, all_spaces) for ln in lines]
     return "".join(result).encode(), IOResult()

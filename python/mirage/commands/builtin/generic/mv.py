@@ -35,6 +35,7 @@ from mirage.commands.builtin.generic.cp import (
     suffix_flag,
     target_dir_error,
     target_flags,
+    update_gates,
     update_mode,
     walk,
     wrap_target_dir,
@@ -193,7 +194,7 @@ async def _remove_entries(
                 removed_any = True
                 continue
             errors.append(
-                f"mv: cannot remove '{entry.virtual}': {fs_strerror(exc)}"
+                f"mv: cannot remove '{entry.raw_path}': {fs_strerror(exc)}"
             )
             failed.append(base)
             continue
@@ -287,21 +288,21 @@ async def _exchange_pair(
     """
     if isinstance(strategy, PrimitiveMove):
         errors.append(
-            f"mv: cannot exchange '{src.virtual}' and "
+            f"mv: cannot exchange '{src.raw_path}' and "
             f"'{target.raw_path}': Invalid cross-device link"
         )
         return
     if not await path_exists(stat, src) or not await path_exists(stat, target):
         errors.append(
-            f"mv: cannot exchange '{src.virtual}' and "
-            f"'{target.virtual}': No such file or directory"
+            f"mv: cannot exchange '{src.raw_path}' and "
+            f"'{target.raw_path}': No such file or directory"
         )
         return
     holding = await _holding_path(stat, target)
     if holding is None:
         errors.append(
-            f"mv: cannot exchange '{src.virtual}' and "
-            f"'{target.virtual}': File exists"
+            f"mv: cannot exchange '{src.raw_path}' and "
+            f"'{target.raw_path}': File exists"
         )
         return
     staged = False
@@ -317,20 +318,20 @@ async def _exchange_pair(
             strategy, src, target, holding, staged, swapped
         )
         errors.append(
-            f"mv: cannot exchange '{src.virtual}' and "
+            f"mv: cannot exchange '{src.raw_path}' and "
             f"'{target.raw_path}': {fs_strerror(exc)}"
         )
         if not restored:
             writes[holding.mount_path] = b""
             errors.append(
-                f"mv: '{src.virtual}' left at "
-                f"'{holding.virtual}' after a failed exchange"
+                f"mv: '{src.raw_path}' left at "
+                f"'{holding.raw_path}' after a failed exchange"
             )
         return
     writes[src.mount_path] = b""
     writes[target.mount_path] = b""
     if lines is not None:
-        lines.append(f"exchanged '{src.virtual}' <-> '{target.virtual}'")
+        lines.append(f"exchanged '{src.raw_path}' <-> '{target.raw_path}'")
 
 
 async def mv(
@@ -419,6 +420,7 @@ async def mv(
     writes: dict[str, ByteSource] = {}
     lines: list[str] = []
     errors: list[str] = []
+    created: set[str] = set()
     for src, target in copy_targets(
         sources, dst, dst_is_dir, dst_exists, dst_err
     ):
@@ -440,7 +442,7 @@ async def mv(
             continue
         if key_of(src) == key_of(target):
             errors.append(
-                f"mv: '{src.virtual}' and '{target.virtual}' are the same file"
+                f"mv: '{src.raw_path}' and '{target.raw_path}' are the same file"
             )
             continue
         if flags.exchange:
@@ -457,7 +459,7 @@ async def mv(
         if key_of(target).startswith(key_of(src) + "/"):
             errors.append(
                 f"mv: cannot move '{src.raw_path}' to a "
-                f"subdirectory of itself, '{target.virtual}'"
+                f"subdirectory of itself, '{target.raw_path}'"
             )
             continue
         if not flags.no_target_dir and target.virtual == dst.virtual:
@@ -497,6 +499,16 @@ async def mv(
                 f"'{target.raw_path}': Invalid cross-device link"
             )
             continue
+        if (
+            not src_is_dir
+            and key_of(target) in created
+            and not (flags.no_clobber or update_gates(flags.update))
+        ):
+            errors.append(
+                f"mv: will not overwrite just-created '{target.raw_path}' "
+                f"with '{src.raw_path}'"
+            )
+            continue
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue
         # GNU refuses to replace a non-empty directory whether the target
@@ -517,13 +529,13 @@ async def mv(
                 # Reading it as "empty" would clobber a directory whose
                 # contents could not be verified.
                 errors.append(
-                    f"mv: cannot overwrite '{target.virtual}': "
+                    f"mv: cannot overwrite '{target.raw_path}': "
                     f"{fs_strerror(exc)}"
                 )
                 continue
             if children:
                 errors.append(
-                    f"mv: cannot overwrite '{target.virtual}': "
+                    f"mv: cannot overwrite '{target.raw_path}': "
                     "Directory not empty"
                 )
                 continue
@@ -621,10 +633,12 @@ async def mv(
             writes[target.mount_path] = b""
         if not source_link and isinstance(strategy, NativeMove):
             renames.append((src.virtual, target.virtual))
+        if not src_is_dir:
+            created.add(key_of(target))
         if flags.verbose:
-            line = f"renamed '{src.virtual}' -> '{target.virtual}'"
+            line = f"renamed '{src.raw_path}' -> '{target.raw_path}'"
             if backup is not None:
-                line += f" (backup: '{backup.virtual}')"
+                line += f" (backup: '{backup.raw_path}')"
             lines.append(line)
     output = "\n".join(lines) + "\n" if lines else None
     stderr = ("\n".join(errors) + "\n").encode() if errors else None

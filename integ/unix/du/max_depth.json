@@ -73,6 +73,40 @@
       "flags": [
         "max-depth"
       ]
+    },
+    {
+      "id": "du_sizes_depth_and_bare_operand",
+      "seq": 324,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10du/d && head -c 4096 /dev/zero > /data/r10du/f && echo hi > /data/r10du/d/g && du -h /data/r10du/f; du -a --max-depth=1 /data/r10du; (cd /data/r10du/d && du; du -a); rm -r /data/r10du",
+      "expect": {
+        "exit": 0,
+        "stdout": "4.0K\t/data/r10du/f\n3\t/data/r10du/d\n4096\t/data/r10du/f\n4099\t/data/r10du\n3\t.\n3\t./g\n3\t.\n",
+        "stderr": ""
+      }
     }
   ]
 }

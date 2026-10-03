@@ -55,10 +55,9 @@ describe('readlink', () => {
     expect(r.out).toContain('/f.txt')
   })
 
-  it('missing operand returns exit code 1', async () => {
+  it('missing operand is a usage error', async () => {
     const vfs = new RAMVFS()
-    const r = await runReadlink(vfs, [], {})
-    expect(r.exitCode).toBe(1)
+    await expect(runReadlink(vfs, [], {})).rejects.toThrow('readlink: missing operand')
   })
 
   it('-n omits trailing newline', async () => {

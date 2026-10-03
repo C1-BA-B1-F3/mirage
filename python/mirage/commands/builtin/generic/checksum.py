@@ -125,6 +125,10 @@ async def _hash_multi(
 
 _PLAIN_LINE = re.compile(r"^([0-9a-fA-F]+) [ *](.*)$")
 
+# GNU reads a check line as properly formatted only when its digest has
+# the algorithm's full length in hex.
+HEX_DIGITS = {"md5": 32, "sha1": 40, "sha256": 64, "sha384": 96, "sha512": 128}
+
 
 def _parse_check_line(line: str, algorithm: str) -> tuple[str, str] | None:
     """Split a checksum-file line into ``(expected_hash, filename)``.
@@ -143,11 +147,15 @@ def _parse_check_line(line: str, algorithm: str) -> tuple[str, str] | None:
         line,
     )
     if tagged is not None:
-        return tagged.group(2).lower(), tagged.group(1)
-    plain = _PLAIN_LINE.match(line)
-    if plain is None:
+        digest, name = tagged.group(2), tagged.group(1)
+    else:
+        plain = _PLAIN_LINE.match(line)
+        if plain is None:
+            return None
+        digest, name = plain.group(1), plain.group(2)
+    if len(digest) != HEX_DIGITS.get(algorithm, len(digest)):
         return None
-    return plain.group(1).lower(), plain.group(2)
+    return digest.lower(), name
 
 
 def _resolve_check_target(

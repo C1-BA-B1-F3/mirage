@@ -45,11 +45,3 @@ async def test_cat_n_multidigit_alignment(workspace):
     assert lines[8] == b"     9\tline9"
     assert lines[9] == b"    10\tline10"
     assert lines[11] == b"    12\tline12"
-
-
-@pytest.mark.asyncio
-async def test_cat_n_preserves_no_trailing_newline(workspace):
-    await workspace.vfs.write("/partial.txt", b"hello")
-    io = await workspace.shell("cat -n /partial.txt")
-    assert io.exit_code == 0
-    assert io.stdout == b"     1\thello"

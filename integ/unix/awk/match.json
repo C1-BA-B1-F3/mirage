@@ -305,6 +305,74 @@
         "stdout": "q\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "awk_regex_lexing_keeps_operators_literal",
+      "seq": 962359,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'xA&&By\\nAB\\n' | awk '/A&&B/'; printf '12\\n3\\n' | awk '$1 ~ 1'; printf 'x y Application\\nx y Other\\n' | awk '$NF ~ /^App/'; printf 'a\\nb\\nc\\n' | awk 'NR ~ /[13]/'; printf 'a<b\\nab\\n' | awk '$0 ~ /a<b/'; printf 'a==b\\nab\\n' | awk '$0 ~ /a==b/'; printf 'a<b\\nab\\n' | awk '/a<b/'; printf 'a/b\\nab\\n' | awk '$1 ~ /a\\/b/'; printf 'aa 1\\na 2\\n' | awk '$1 ~ /a{2}/ {print $2}'; printf 'a b\\nc d\\n' | awk '$1~/a/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "xA&&By\n12\nx y Application\na\nc\na<b\na==b\na<b\na/b\n1\na b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "awk_negation_tests_falsiness",
+      "seq": 962360,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '0\\n1\\nfoo\\n\\n' | awk '!$1'; printf 'a\\nb\\n' | awk -v x=0 '!x'",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\n\na\nb\n",
+        "stderr": ""
+      }
     }
   ]
 }

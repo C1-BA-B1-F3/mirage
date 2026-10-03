@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { canonicalize } from '../../../../commands/builtin/generic/realpath.ts'
+import { missingOperandError } from '../../../../commands/spec/usage.ts'
 import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { PathSpec } from '../../../../types.ts'
 import { PolicyDenied } from '../../../../policy/index.ts'
@@ -48,7 +49,8 @@ export async function handleReadlink(
 ): Promise<Result> {
   const [flags, operands] = splitFlags(args, 'fenm')
   if (operands.length === 0) {
-    return fail('readlink', 'readlink: missing operand\n')
+    const error = missingOperandError('readlink', null)
+    return fail('readlink', `${error.message}\n`, error.exitCode)
   }
   // The last of -e, -f and -m wins, as in GNU readlink.
   const typed = args

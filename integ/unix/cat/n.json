@@ -36,6 +36,40 @@
       "flags": [
         "n"
       ]
+    },
+    {
+      "id": "cat_n_widens_past_line_nine_and_keeps_edges",
+      "seq": 3,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 12 | cat -n | tail -n 4; cat -n /data/no_nl.txt; echo; cat -n /data/empty.txt | wc -c; printf '\\n\\n\\n' | cat -n",
+      "expect": {
+        "exit": 0,
+        "stdout": "     9\t9\n    10\t10\n    11\t11\n    12\t12\n     1\tno trailing newline\n0\n     1\t\n     2\t\n     3\t\n",
+        "stderr": ""
+      }
     }
   ]
 }

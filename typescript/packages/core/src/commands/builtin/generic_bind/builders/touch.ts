@@ -17,6 +17,8 @@ import { fsStrerror, isFsError } from '../../../../utils/errors.ts'
 import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
+import { UsageError } from '../../../errors.ts'
+import { usageHint } from '../../../spec/usage.ts'
 
 const ENC = new TextEncoder()
 
@@ -25,7 +27,7 @@ export const BUILDER: Builder = {
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {
     if (paths.length === 0) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('touch: missing operand\n') })]
+      throw new UsageError(`touch: missing file operand\n${usageHint('touch')}`, 1)
     }
     const idx = opts.index ?? undefined
     const write = requireOp(ops.write, 'write')

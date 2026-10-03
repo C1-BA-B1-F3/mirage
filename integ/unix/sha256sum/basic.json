@@ -201,6 +201,74 @@
         "stdout": "/data/qshr/sh.txt: OK\n",
         "stderr": "sha256sum: /data/qshr/d: read error\n"
       }
+    },
+    {
+      "id": "sha256sum_c_needs_a_full_digest",
+      "seq": 960095,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf '%s  a.txt\\n' deadbeef | sha256sum -c; echo rc=$?; printf '%s  a.txt\\n' deadbeef | md5sum -c; echo rc=$?; printf '%s  a.txt\\n%s  a.txt\\n' deadbeef \"$(sha256sum a.txt | cut -d' ' -f1)\" | sha256sum -c --warn; echo rc=$?)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\na.txt: OK\nrc=0\n",
+        "stderr": "sha256sum: 'standard input': no properly formatted checksum lines found\nmd5sum: 'standard input': no properly formatted checksum lines found\nsha256sum: 'standard input': 1: improperly formatted SHA256 checksum line\nsha256sum: WARNING: 1 line is improperly formatted\n"
+      }
+    },
+    {
+      "id": "sha256sum_check_reads_every_list_operand",
+      "seq": 960096,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/r10sh && (cd /data/r10sh && printf 'one\\n' > ok.txt && sha256sum ok.txt > good.sums && sha256sum -c good.sums good.sums; echo rc=$?; sha256sum -c nope.sums good.sums; echo rc=$?); rm -r /data/r10sh",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok.txt: OK\nok.txt: OK\nrc=0\nok.txt: OK\nrc=1\n",
+        "stderr": "sha256sum: nope.sums: No such file or directory\n"
+      }
     }
   ]
 }

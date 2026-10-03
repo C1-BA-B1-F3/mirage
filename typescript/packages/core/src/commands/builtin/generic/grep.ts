@@ -227,7 +227,7 @@ export async function grepGeneric(
   const first = paths[0]
   if (first === undefined) {
     try {
-      const source = guardInput(resolveSource(opts.stdin, GREP_NO_PATTERN), opts)
+      const source = guardInput(resolveSource(opts.stdin), opts)
       return [
         grepInput(
           source,

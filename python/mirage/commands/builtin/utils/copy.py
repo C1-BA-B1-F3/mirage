@@ -14,9 +14,9 @@
 
 import errno
 
+from mirage.commands.builtin.utils.paths import descendant_path
 from mirage.types import FileType, PathSpec, StatFn
 from mirage.utils.errors import ELOOP_STRERROR, DotWalkLoop
-from mirage.utils.key_prefix import rekey
 
 # The destination verdicts GNU meets at the destination's own stat, before
 # any create or rename: a plain file in its chain, or a link loop in it.
@@ -27,10 +27,7 @@ _SWALLOW = (FileNotFoundError, ValueError)
 
 
 def child_path(parent: PathSpec, name: str) -> PathSpec:
-    child = parent.virtual.rstrip("/") + "/" + name
-    return PathSpec.from_str_path(
-        child, rekey(parent.virtual, parent.vfs_path, child)
-    )
+    return descendant_path(parent, parent.virtual.rstrip("/") + "/" + name)
 
 
 def backend_key_default(path: PathSpec) -> str:

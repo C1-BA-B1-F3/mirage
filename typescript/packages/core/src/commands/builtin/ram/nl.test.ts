@@ -118,7 +118,7 @@ describe('nl', () => {
     expect(lines[1]).toContain('y')
   })
 
-  it('missing stdin with no path returns error', async () => {
+  it('no stdin with no path reads empty input', async () => {
     const vfs = new RAMVFS()
     const cmd = RAM_NL[0]
     if (cmd === undefined) throw new Error('nl not registered')
@@ -129,7 +129,8 @@ describe('nl', () => {
       cwd: '/',
     })
     if (result === null) throw new Error('result null')
-    const [, ioResult] = result
-    expect(ioResult.exitCode).toBe(1)
+    const [out, ioResult] = result
+    expect(ioResult.exitCode).toBe(0)
+    expect(out === null ? 0 : (await materialize(out)).length).toBe(0)
   })
 })

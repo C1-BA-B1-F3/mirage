@@ -16,6 +16,8 @@ import math
 from datetime import datetime
 
 GNU_FLAG_CHARS = "-_0^#+"
+# The conversions GNU date knows; any other stays literal, as in GNU.
+GNU_DIRECTIVES = "aAbBcCdDeFgGhHIjklmMnNpPqrRsStTuUVwWxXyYzZ%"
 GNU_PAD_FLAGS = "-_0+"
 # The directives GNU's `+` flag signs, with the digits each shows before
 # the sign becomes necessary; the two-digit years never outgrow theirs,
@@ -257,6 +259,15 @@ def plus_year(dt: datetime, directive: str, width: int | None) -> str:
     return sign + str(value).rjust((width or 0) - len(sign), "0")
 
 
+def meridiem(dt: datetime) -> str:
+    """GNU's ``%P``: ``am`` or ``pm``, whatever the C library knows.
+
+    Args:
+        dt (datetime): the moment being rendered.
+    """
+    return "am" if dt.hour < 12 else "pm"
+
+
 def pad_text(
     dt: datetime, directive: str, flags: str, width: int | None
 ) -> str:
@@ -274,10 +285,10 @@ def pad_text(
             width.
         width (int | None): the minimum field width, if typed.
     """
-    text = dt.strftime("%" + directive)
+    text = meridiem(dt) if directive == "P" else dt.strftime("%" + directive)
     if "#" in flags:
         text = text.lower() if directive in "pZ" else text.upper()
-    elif "^" in flags:
+    elif "^" in flags and directive != "P":
         text = text.upper()
     pad = winning_pad(flags)
     if width is None or pad == "-":
@@ -346,6 +357,19 @@ def gnu_strftime(dt: datetime, fmt: str) -> str:
         flags = fmt[i + 1 : j]
         pad = winning_pad(flags)
         directive = fmt[c]
+        if (
+            c == k
+            and directive in "EO"
+            and fmt[c + 1 : c + 2] != ""
+            and fmt[c + 1] in GNU_DIRECTIVES
+        ):
+            # The C locale has no alternative forms: a modified directive
+            # is the plain one.
+            out.append(
+                gnu_strftime(dt, fmt[i:k] + fmt[c + 1]).replace("%", "%%")
+            )
+            i = c + 2
+            continue
         if directive == "z":
             out.append(zone_offset(dt, c - k, flags, width))
         elif c > k:
@@ -368,6 +392,10 @@ def gnu_strftime(dt: datetime, fmt: str) -> str:
             out.append(pad_number(dt, directive, flags, width))
         elif directive in TEXTUAL and (flags or width is not None):
             out.append(pad_text(dt, directive, flags, width))
+        elif directive not in GNU_DIRECTIVES:
+            out.append("%%" + fmt[i + 1 : c + 1])
+        elif directive == "P":
+            out.append(meridiem(dt))
         elif "+" in flags:
             zero = "0" if pad == "+" else ""
             out.append("%" + flags.replace("+", zero) + fmt[j : k + 1])

@@ -348,7 +348,7 @@ describe('chmod/chown/touch (namespace-routed metadata commands)', () => {
 
   it('chgrp reports missing operand, invalid group, -R, and missing files', async () => {
     const [ws] = await makeWs()
-    expect((await run(ws, 'chgrp staff'))[0]).toBe(2)
+    expect((await run(ws, 'chgrp staff'))[0]).toBe(1)
     expect((await run(ws, "chgrp '' /data/f.txt"))[0]).toBe(1)
     const [code, , err] = await run(ws, 'chgrp staff /data/nope.txt')
     expect(code).toBe(1)

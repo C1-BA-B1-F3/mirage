@@ -496,10 +496,7 @@ export async function tailGeneric(
     const out: ByteSource = concat(chunks)
     return [out, io]
   }
-  const raw = await readStdinAsync(opts.stdin)
-  if (raw === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tail: missing operand\n') })]
-  }
+  const raw = (await readStdinAsync(opts.stdin)) ?? new Uint8Array(0)
   const body = tailBytes(raw, counts)
   // -v heads a stdin nobody named with the name it gives `-`.
   const header = ENC.encode(`==> ${STDIN_HEADER_NAME} <==\n`)

@@ -107,7 +107,7 @@ export async function cutGeneric(
   }
   let source: AsyncIterable<Uint8Array>
   try {
-    source = resolveSource(opts.stdin, 'cut: missing operand')
+    source = resolveSource(opts.stdin)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${message}\n`) })]

@@ -34,6 +34,38 @@
       "flags": [
         "n"
       ]
+    },
+    {
+      "id": "cp_refuses_the_just_created_destination",
+      "seq": 601005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "mkdir -p /data/r10dx /data/r10dy /data/r10dd && echo 1 > /data/r10dx/a && echo 2 > /data/r10dy/a && cp /data/r10dx/a /data/r10dy/a /data/r10dd; echo rc=$?; cat /data/r10dd/a; cp -n /data/r10dx/a /data/r10dy/a /data/r10dd; echo rc=$?; cp /data/r10dx/a /data/r10dx/a /data/r10dd; echo rc=$?; rm -r /data/r10dx /data/r10dy /data/r10dd",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n1\nrc=0\nrc=0\n",
+        "stderr": "cp: will not overwrite just-created '/data/r10dd/a' with '/data/r10dy/a'\ncp: warning: source file '/data/r10dx/a' specified more than once\n"
+      }
     }
   ]
 }

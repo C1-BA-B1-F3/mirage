@@ -67,6 +67,40 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "head_defaults_to_ten_lines_and_keeps_edges",
+      "seq": 123,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 15 > /data/r10long.txt; head /data/r10long.txt; seq 15 | head | tail -n 2; head /data/no_nl.txt; echo; head -c 100 /data/a.txt | wc -c; head -c 0 /data/a.txt | wc -c; head -c 10 /data/empty.txt | wc -c; head -n 0 /data/a.txt | wc -c; head -n -1 /data/a.txt; head -n -5 /data/a.txt | wc -c; rm /data/r10long.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n9\n10\nno trailing newline\n24\n0\n0\n0\nhello\nworld\nfoo\nbar\n0\n",
+        "stderr": ""
+      }
     }
   ]
 }

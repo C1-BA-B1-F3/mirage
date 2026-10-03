@@ -373,6 +373,40 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "awk_fields_records_and_blank_prints",
+      "seq": 558,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a   b\\n\\tx\\t \\ty\\n' | awk '{print $2}'; printf 'a   b\\n' | awk -F ' ' '{print $2}'; awk '{print NR, $1}' /data/no_nl.txt /data/b.txt; printf 'one\\ntwo\\n' | awk '{print \"\"}'; printf 'a\\n' | awk 'BEGIN {print} {print $1}'; printf 'one two\\n' | awk '{print $5}'; printf 'a b\\n' | awk '{x = $2; print x}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\ny\nb\n1 no\n2 1\n3 2\n4 3\n\n\n\na\n\nb\n",
+        "stderr": ""
+      }
     }
   ]
 }

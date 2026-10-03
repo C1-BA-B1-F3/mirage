@@ -65,6 +65,6 @@ describe('seq', () => {
   })
 
   it('format -f', async () => {
-    expect(await runSeq(['3'], { f: '%03d' })).toBe('001\n002\n003\n')
+    expect(await runSeq(['3'], { f: '%03g' })).toBe('001\n002\n003\n')
   })
 })

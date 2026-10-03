@@ -13,9 +13,18 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import type { PathSpec } from '../../../types.ts'
+import type { PathSpec, StatFn } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { fsErrorLine, isEnoent, isFsError } from '../../../utils/errors.ts'
+import {
+  eisdir,
+  enoent,
+  enotdir,
+  fsErrorLine,
+  isEnoent,
+  isFsError,
+  type FsError,
+} from '../../../utils/errors.ts'
+import { absentDestStrerror, entryKind } from '../utils/paths.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -50,12 +59,13 @@ export async function teeGeneric(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
   append?: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  stat?: StatFn,
 ): Promise<CommandFnResult> {
   const parsed = parseFlags(opts.flags)
   const stdinData = await readStdinAsync(opts.stdin)
   const raw: Uint8Array = stdinData ?? ENC.encode(texts.join(' '))
   if (paths.length === 0) return [raw, new IOResult()]
-  return writeOutput(paths, raw, parsed, stream, write, append)
+  return writeOutput(paths, raw, parsed, stream, write, append, stat)
 }
 
 /**
@@ -116,6 +126,17 @@ async function writeOne(
  * written. The two agree whenever the failure is at write time, which is what a
  * remote backend reports.
  */
+// The error GNU's open of an output would meet, or null. Mirrors Python's
+// open_refusal.
+export async function openRefusal(stat: StatFn, path: PathSpec): Promise<FsError | null> {
+  const { exists, isDir } = await entryKind(stat, path)
+  if (isDir) return eisdir(path)
+  if (exists) return null
+  const strerror = await absentDestStrerror(stat, path)
+  if (strerror === null) return null
+  return strerror === 'Not a directory' ? enotdir(path) : enoent(path)
+}
+
 export async function writeOutput(
   paths: PathSpec[],
   raw: Uint8Array,
@@ -123,10 +144,28 @@ export async function writeOutput(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
   append?: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  stat?: StatFn,
 ): Promise<[ByteSource | null, IOResult]> {
   const writes: Record<string, ByteSource> = {}
   const cache: string[] = []
   const errors: string[] = []
+  // GNU opens every output before it reads a byte: under exit the first open
+  // failure ends the run with nothing written, the outputs before it made
+  // empty. A mount write is one call, so the open is probed first.
+  if (parsed.stopOnError && stat !== undefined) {
+    for (const [index, path] of paths.entries()) {
+      const refusal = await openRefusal(stat, path)
+      if (refusal === null) continue
+      for (const opened of paths.slice(0, index)) {
+        if (parsed.append && (await entryKind(stat, opened)).exists) continue
+        await write(opened, new Uint8Array(0))
+        writes[opened.mountPath] = new Uint8Array(0)
+        cache.push(opened.mountPath)
+      }
+      const stderr = ENC.encode(fsErrorLine('tee', path, refusal))
+      return [null, new IOResult({ exitCode: 1, stderr, writes, cache })]
+    }
+  }
   for (const path of paths) {
     let data: Uint8Array | null
     try {

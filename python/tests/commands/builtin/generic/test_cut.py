@@ -1,6 +1,7 @@
 import pytest
 
 from mirage.commands.builtin.generic.cut import cut, parse_flags
+from mirage.io.types import materialize
 
 
 def test_multi_char_delimiter_is_rejected():
@@ -43,6 +44,6 @@ async def _no_stream(_path):
 
 
 @pytest.mark.asyncio
-async def test_cut_missing_operand():
-    with pytest.raises(ValueError, match="missing operand"):
-        await cut([], read_stream=_no_stream, flags={"fields": "1"})
+async def test_cut_without_stdin_reads_empty_input():
+    out, io = await cut([], read_stream=_no_stream, flags={"fields": "1"})
+    assert (await materialize(out), io.exit_code) == (b"", 0)

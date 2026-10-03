@@ -268,9 +268,7 @@ async def sed(
     inputs: list[SedInput] = []
     read_ok: list[PathSpec] = []
     if not paths:
-        raw = await read_stdin_async(stdin)
-        if raw is None:
-            return _failed(f"{SED_NO_INPUT_FILES}\n", SED_NO_INPUT_EXIT)
+        raw = await read_stdin_async(stdin) or b""
         inputs.append(SedInput("-", raw.decode(errors="replace")))
     # sed owns its exit code rather than letting the executor's
     # chokepoint pick it, because GNU sed splits a failed operand two

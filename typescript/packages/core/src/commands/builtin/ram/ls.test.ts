@@ -50,26 +50,6 @@ function seed(vfs: RAMVFS, dirs: string[], files: Record<string, string>): void 
 }
 
 describe('ls', () => {
-  it('hides dotfiles by default', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {
-      '/tmp/.hidden': 'secret',
-      '/tmp/visible.txt': 'hi',
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')])
-    expect(out.trimEnd().split('\n')).toEqual(['visible.txt'])
-  })
-
-  it('-a shows dotfiles', async () => {
-    const vfs = new RAMVFS()
-    seed(vfs, ['/tmp'], {
-      '/tmp/.hidden': 'secret',
-      '/tmp/visible.txt': 'hi',
-    })
-    const out = await runLs(vfs, [PathSpec.fromStrPath('/tmp')], { all: true })
-    expect(out.trimEnd().split('\n').sort()).toEqual(['.', '..', '.hidden', 'visible.txt'])
-  })
-
   it('-a with -r reverses all entries', async () => {
     const vfs = new RAMVFS()
     seed(vfs, ['/tmp'], {

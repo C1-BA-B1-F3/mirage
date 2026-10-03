@@ -1334,6 +1334,51 @@
         "stdout": "hi\nsio-gzin.gz\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "shell_stdin_absent_reads_as_empty",
+      "seq": 916965,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "cat; echo cat=$?; head; echo head=$?; tail; echo tail=$?; wc; echo wc=$?; nl; echo nl=$?; cut -f 1; echo cut=$?; rev; echo rev=$?; fold; echo fold=$?; fmt; echo fmt=$?; expand; echo expand=$?; unexpand; echo unexpand=$?; shuf; echo shuf=$?; grep x; echo grep=$?; sed p; echo sed=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "cat=0\nhead=0\ntail=0\n      0       0       0\nwc=0\nnl=0\ncut=0\nrev=0\nfold=0\nfmt=0\nexpand=0\nunexpand=0\nshuf=0\ngrep=1\nsed=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_grep_names_a_dash_operand",
+      "seq": 916966,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | grep -H b -; printf 'b\\n' | grep -l b -; printf 'b\\n' | grep -l b - /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "(standard input):b\n(standard input)\n(standard input)\n/data/a.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_join_names_a_dash_operand",
+      "seq": 916967,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk"
+      ],
+      "command": "mkdir -p /data/r10j && (cd /data/r10j && printf '' > a && printf 'a x\\nc z\\n' > b && printf 'b 1\\na 2\\n' | join - b; echo rc=$?); rm -r /data/r10j",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": "join: -:2: is not sorted: a 2\njoin: input is not in sorted order\n"
+      }
     }
   ]
 }

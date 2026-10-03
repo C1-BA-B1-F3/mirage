@@ -19,7 +19,6 @@ import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { PathSpec } from '../../../types.ts'
 const RAM_DU = RAM_COMMANDS.filter((c) => c.name === 'du' && c.filetype == null)
 
-const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
 async function runDu(
@@ -54,13 +53,5 @@ describe('du', () => {
     vfs.store.dirs.add('/tmp')
     const r = await runDu(vfs, [PathSpec.fromStrPath('/tmp')])
     expect(r.lines).toEqual(['0\t/tmp'])
-  })
-
-  it('-h human-readable size', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.dirs.add('/tmp')
-    vfs.store.files.set('/tmp/big.txt', ENC.encode('x'.repeat(2048)))
-    const r = await runDu(vfs, [PathSpec.fromStrPath('/tmp')], { h: true })
-    expect(r.lines[0]).toMatch(/^2(\.\d+)?K\t\/tmp$/)
   })
 })

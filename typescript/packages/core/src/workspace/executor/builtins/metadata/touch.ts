@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { DEFAULT_UMASK } from '../../../../context/session_context.ts'
+import { unknownOptionError, usageHint } from '../../../../commands/spec/usage.ts'
 import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { FileStat, SetAttrFields } from '../../../../types.ts'
@@ -51,8 +52,13 @@ export async function handleTouch(
   args: readonly (string | PathSpec)[],
 ): Promise<Result> {
   const { flags, values, operands, bad } = splitValueFlags(args, 'acmh', 'tdr')
-  if (bad !== null) return fail('touch', `touch: invalid option -- '${bad}'\n`, 2)
-  if (operands.length === 0) return fail('touch', 'touch: missing file operand\n', 1)
+  if (bad !== null) {
+    const [message, code] = unknownOptionError('touch', bad)
+    return fail('touch', new TextDecoder().decode(message), code)
+  }
+  if (operands.length === 0) {
+    return fail('touch', `touch: missing file operand\n${usageHint('touch')}\n`, 1)
+  }
 
   let stamp: string | null
   try {

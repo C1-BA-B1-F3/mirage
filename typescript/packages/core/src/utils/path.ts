@@ -178,10 +178,10 @@ export function respellRaw(paths: string[], virtual: string, raw: string): strin
 // where a path belongs. Mirrors Python's drop_trailing_segments.
 export function dropTrailingSegments(path: string, count: number): string {
   if (count <= 0) return path
-  const parts = rstripSlash(path).split('/')
-  if (count >= parts.filter((part) => part !== '').length) return path
-  const joined = parts.slice(0, parts.length - count).join('/')
-  return joined === '' ? '/' : joined
+  if (count >= path.split('/').filter((part) => part !== '').length) return path
+  let head = rstripSlash(path)
+  for (let i = 0; i < count; i++) head = rstripSlash(head.slice(0, head.lastIndexOf('/')))
+  return head === '' ? '/' : head
 }
 
 export function respellOne(path: string, virtual: string, raw: string): string {

@@ -54,7 +54,8 @@ export class FileHandle {
    * Args:
    *   path: guest-absolute virtual path.
    *   data: the file's content at open (empty when the open created
-   *     or truncated it).
+   *     or truncated it). Copied, so the handle's writes never reach
+   *     the caller's array.
    *   mode: whether writes are accepted, and whether the position
    *     starts at the end.
    */
@@ -63,7 +64,7 @@ export class FileHandle {
     data: Uint8Array,
     mode: { writable: boolean; append: boolean },
   ): FileHandle {
-    const handle = new FileHandle(path, data, mode.writable)
+    const handle = new FileHandle(path, data.slice(), mode.writable)
     if (mode.append) handle.pos = data.length
     return handle
   }
@@ -115,10 +116,10 @@ export class FileHandle {
   pwrite(offset: number, data: Uint8Array): void {
     const end = offset + data.length
     this._grow(end)
-    if (offset > this._length) this._buf.fill(0, this._length, offset)
-    if (end > this._length) this._length = end
     this.lowWrite = Math.min(this.lowWrite, offset)
     this._buf.set(data, offset)
+    if (offset > this._length) this._buf.fill(0, this._length, offset)
+    if (end > this._length) this._length = end
     this.dirty = true
   }
 

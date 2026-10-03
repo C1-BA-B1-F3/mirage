@@ -125,6 +125,24 @@ describe('FileHandle', () => {
     expect(h.size).toBe(6)
     expect(h.pread(4, 10)).toEqual(new Uint8Array([0, ...enc.encode('X')]))
   })
+
+  it('a gap write keeps a payload that views the dropped tail', () => {
+    const h = FileHandle.opened('/f', enc.encode('hello'), { writable: true, append: false })
+    const saved = h.buf
+    h.truncate(1)
+    h.pwrite(3, saved.subarray(1, 3))
+    expect(h.buf).toEqual(new Uint8Array([...enc.encode('h'), 0, 0, ...enc.encode('el')]))
+  })
+
+  it('never writes into the array it opened over', () => {
+    const stored = enc.encode('hello world')
+    const h = FileHandle.opened('/f', stored, { writable: true, append: false })
+    h.write(enc.encode('XY'))
+    h.truncate(0)
+    h.pwrite(0, enc.encode('Z'))
+    expect(new TextDecoder().decode(stored)).toBe('hello world')
+    expect(new TextDecoder().decode(h.buf)).toBe('Z')
+  })
 })
 
 describe('writeRuns', () => {

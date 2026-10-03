@@ -14,14 +14,7 @@
 
 import { execFileSync, execSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  statSync,
-  accessSync,
-  constants as fsConstants,
-} from 'node:fs'
+import { accessSync, constants as fsConstants, mkdirSync, mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, join } from 'node:path'
 import { MountBackend } from '@struktoai/mirage-core/types'
@@ -160,12 +153,13 @@ function resolveFusermountBinary(): string | null {
     for (const dir of pathEnv.split(delimiter)) {
       const candidate = join(dir, name)
       try {
-        if (existsSync(candidate) && statSync(candidate).isFile()) {
+        if (statSync(candidate).isFile()) {
           accessSync(candidate, fsConstants.X_OK)
           return candidate
         }
-      } catch {
-        // not usable; keep searching
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code !== 'ENOENT' && code !== 'ENOTDIR' && code !== 'EACCES') throw err
       }
     }
   }

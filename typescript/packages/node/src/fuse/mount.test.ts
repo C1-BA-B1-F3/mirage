@@ -12,8 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
-import { appendDirectIO, appendMountOptions, driverHint } from './mount.ts'
+import type * as ChildProcess from 'node:child_process'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appendDirectIO, appendMountOptions, driverHint, forceUnmount } from './mount.ts'
+
+const { execFileSync } = vi.hoisted(() => ({ execFileSync: vi.fn() }))
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof ChildProcess>()),
+  execFileSync,
+}))
 
 function fakeFuse(serialize?: () => string) {
   const nop = (cb: (err: Error | null) => void): void => {
@@ -89,5 +99,54 @@ describe('driverHint', () => {
     expect(hint).not.toMatch(/install WinFsp/i)
     expect(hint).toMatch(/does not support WinFsp/)
     expect(hint).toMatch(/macOS and Linux only/)
+  })
+})
+
+describe('forceUnmount', () => {
+  const realPlatform = process.platform
+  const realPath = process.env.PATH
+  const dirs: string[] = []
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+    process.env.PATH = realPath
+    execFileSync.mockReset()
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function helperDir(executable: string[], plain: string[] = []): string {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-fusermount-'))
+    dirs.push(dir)
+    for (const name of [...executable, ...plain]) writeFileSync(join(dir, name), '')
+    for (const name of executable) chmodSync(join(dir, name), 0o755)
+    return dir
+  }
+
+  function unmountOnLinux(pathDirs: string[]): void {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    process.env.PATH = pathDirs.join(delimiter)
+    forceUnmount('/mnt/m')
+  }
+
+  it('prefers fusermount anywhere on PATH over an earlier fusermount3', () => {
+    const three = helperDir(['fusermount3'])
+    const legacy = helperDir(['fusermount'])
+    unmountOnLinux([three, legacy])
+    expect(execFileSync).toHaveBeenCalledWith(join(legacy, 'fusermount'), ['-u', '/mnt/m'], {
+      stdio: 'ignore',
+    })
+  })
+
+  it('falls back to fusermount3 past a fusermount it cannot execute', () => {
+    const dir = helperDir(['fusermount3'], ['fusermount'])
+    unmountOnLinux([dir])
+    expect(execFileSync).toHaveBeenCalledWith(join(dir, 'fusermount3'), ['-u', '/mnt/m'], {
+      stdio: 'ignore',
+    })
+  })
+
+  it('runs nothing when neither helper is on PATH', () => {
+    unmountOnLinux([helperDir([])])
+    expect(execFileSync).not.toHaveBeenCalled()
   })
 })

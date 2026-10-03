@@ -13,7 +13,10 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import subprocess
+import sys
 import tempfile
+
+import pytest
 
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -27,6 +30,10 @@ def _fake_mount(monkeypatch):
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "mirage.workspace.fuse.resolve_fusermount_binary",
+        lambda: "/usr/bin/fusermount3",
+    )
 
 
 class TestFuseManager:
@@ -70,3 +77,19 @@ class TestFuseManager:
 
         assert not generated.exists()
         assert fm.mountpoint is None
+
+    def test_unmount_without_helper_raises_and_keeps_mountpoint(
+        self, monkeypatch, tmp_path
+    ):
+        _fake_mount(monkeypatch)
+        ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
+        fm = FuseManager()
+        fm.setup(ws._ops, prefix="/a/", mountpoint=str(tmp_path))
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            "mirage.workspace.fuse.resolve_fusermount_binary", lambda: None
+        )
+
+        with pytest.raises(FileNotFoundError, match="fusermount3"):
+            fm.unmount()
+        assert fm.mountpoint == str(tmp_path)

@@ -113,18 +113,14 @@ class FuseManager:
             pass
         else:
             binary = resolve_fusermount_binary()
-            if binary is not None:
-                subprocess.run(
-                    [binary, "-u", self._mountpoint], capture_output=True
+            if binary is None:
+                raise FileNotFoundError(
+                    f"cannot unmount {self._mountpoint}: neither "
+                    "'fusermount' nor 'fusermount3' is on PATH"
                 )
-            else:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "Cannot unmount %s: neither 'fusermount' nor 'fusermount3' "
-                    "found on PATH",
-                    self._mountpoint,
-                )
+            subprocess.run(
+                [binary, "-u", self._mountpoint], capture_output=True
+            )
         # An FSKit /Volumes entry is created and removed by the system, and
         # is not ours to rmdir (nor could we: /Volumes is root-owned).
         if self._owns_mountpoint and not self._mountpoint.startswith(

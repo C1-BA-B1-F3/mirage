@@ -37,6 +37,10 @@ def _fake_mount(monkeypatch):
         ),
     )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "mirage.workspace.fuse.resolve_fusermount_binary",
+        lambda: "/usr/bin/fusermount3",
+    )
 
 
 def test_add_fuse_mount_registers_and_returns_mountpoint(monkeypatch):
@@ -203,6 +207,10 @@ def _capture_mount(monkeypatch):
 
     monkeypatch.setattr("mirage.workspace.fuse.mount_background", _fake)
     monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "mirage.workspace.fuse.resolve_fusermount_binary",
+        lambda: "/usr/bin/fusermount3",
+    )
     return seen
 
 

@@ -93,16 +93,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Its own entry: the camel step below syncs camel's fork too, which
-      # the shared entry never holds.
       - name: Install uv
         uses: ./.github/actions/setup-uv
-        with:
-          cache-suffix: camel
 
       - name: Install Python dependencies
         working-directory: python
-        run: uv sync --all-extras --no-extra camel
+        run: uv sync --all-extras
 
       - name: Install package
         working-directory: python
@@ -136,7 +132,7 @@ jobs:
           path: python/.mypy_cache
           key: ${{ steps.mypy-cache.outputs.cache-primary-key }}
 
-      - name: Run pytest (main suite, camel excluded)
+      - name: Run pytest (main suite)
         working-directory: python
         env:
           REDIS_URL: redis://localhost:6379/0
@@ -151,7 +147,7 @@ jobs:
           # tests share this pass and the one server: each takes a key prefix
           # of its own (`redis_prefix`, tests/conftest.py), so no two tests
           # can race on a keyspace, whichever worker draws them.
-          uv run pytest -n 4 --dist worksteal --ignore=tests/agents/camel
+          uv run pytest -n 4 --dist worksteal
 
       # Each truth file owns the command it was captured against, so this
       # list is paths only and cannot drift from what is asserted. The
@@ -215,14 +211,6 @@ jobs:
           run integ/truth/python/redis_cache.json
           run integ/truth/python/redis_vfs.json
           exit $bad
-
-      - name: Sync Python dependencies for camel
-        working-directory: python
-        run: uv sync --extra camel
-
-      - name: Run pytest (camel toolkit tests)
-        working-directory: python
-        run: uv run pytest tests/agents/camel
 
   import-isolation:
     needs: changes
@@ -426,7 +414,7 @@ jobs:
 
       - name: Audit dependencies for known vulnerabilities (informational)
         working-directory: python
-        run: uv audit --preview-features audit --no-extra camel
+        run: uv audit --preview-features audit
 
   gate:
     name: test-python-gate

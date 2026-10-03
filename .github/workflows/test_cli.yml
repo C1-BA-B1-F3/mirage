@@ -142,7 +142,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: python
-        run: uv sync --all-extras --no-extra camel
+        run: uv sync --all-extras
 
       - name: Smoke test exit code propagation
         working-directory: python

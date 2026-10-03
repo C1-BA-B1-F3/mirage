@@ -8,13 +8,13 @@ inputs:
     description: >-
       Save the cache when the job ends. The shared entry is written once per
       key, by whichever saving job finishes first, so only a job that syncs
-      exactly the full set (`uv sync --all-extras --no-extra camel`) saves
+      exactly the full set (`uv sync --all-extras`) saves
       it; a job that installs a subset restores it and saves nothing.
     default: "true"
   cache-suffix:
     description: >-
       Name an entry of the job's own. A job that installs wheels the full
-      set does not (camel's fork, a second Python, requirements outside the
+      set does not (a second Python, requirements outside the
       lock) saves them under its own key rather than racing for the shared
       one, which would then lack them or lack the full set.
     default: ""

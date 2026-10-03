@@ -64,7 +64,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: python
-        run: uv sync --all-extras --no-extra camel
+        run: uv sync --all-extras
 
       # Straight after the venv it needs, and before the two slowest
       # steps in the job: a sub-second check should not cost a pnpm

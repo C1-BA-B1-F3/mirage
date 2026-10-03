@@ -160,4 +160,4 @@ that will not import registers nothing, so a venv missing the optional extras
 quietly drops every backend behind them. Regenerating in that state looks like
 a legitimate deletion of thousands of committed lines. Generation now names
 the modules that failed to import and exits without writing, so run
-`cd python && uv sync --all-extras --no-extra camel` first.
+`cd python && uv sync --all-extras` first.

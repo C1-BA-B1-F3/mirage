@@ -170,12 +170,6 @@ claude-agent-sdk = [
     "claude-agent-sdk>=0.2.123",
 ]
 
-# --- camel ---
-camel       = [
-    "camel-ai>=0.2.90,<0.3",
-    "markitdown>=0.1.5",
-]
-
 # --- sandboxes ---
 daytona     = [
     "daytona>=0.176.0",
@@ -244,24 +238,6 @@ e2b = [
 
 [tool.uv]
 constraint-dependencies = ["pypdf>=6.19.0"]
-conflicts = [
-    [
-        { extra = "camel" },
-        { extra = "openai" },
-    ],
-    [
-        { extra = "camel" },
-        { extra = "openhands" },
-    ],
-    [
-        { extra = "camel" },
-        { extra = "pydantic-ai" },
-    ],
-    [
-        { extra = "camel" },
-        { extra = "all" },
-    ],
-]
 
 [dependency-groups]
 dev = [
@@ -365,7 +341,6 @@ warn_return_any = true
 module = [
     "mirage.accessor.nextcloud",
     "mirage.agents.agno.toolkit",
-    "mirage.agents.camel.file",
     "mirage.agents.openai_agents.runner",
     "mirage.agents.openai_agents.shell",
     "mirage.agents.openhands.workspace",

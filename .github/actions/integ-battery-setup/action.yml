@@ -30,7 +30,7 @@ runs:
     - name: Install Python dependencies
       working-directory: python
       shell: bash
-      run: uv sync --all-extras --no-extra camel
+      run: uv sync --all-extras
     - name: Set up Node and pnpm
       uses: ./.github/actions/setup-node-pnpm
       with:

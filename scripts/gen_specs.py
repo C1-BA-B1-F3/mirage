@@ -426,7 +426,7 @@ def main() -> None:
             "be missing from the dump:\n  "
             + "\n  ".join(failed)
             + "\n\nInstall the optional dependencies first:\n"
-            "  cd python && uv sync --all-extras --no-extra camel"
+            "  cd python && uv sync --all-extras"
         )
     registry = _collect_registrations()
     OUT.mkdir(parents=True, exist_ok=True)

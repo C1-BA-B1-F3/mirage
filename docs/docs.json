@@ -256,7 +256,6 @@
                   "python/agents/langchain",
                   "python/agents/openhands",
                   "python/agents/pydantic-ai",
-                  "python/agents/camel",
                   "python/agents/agno",
                   "python/agents/haystack",
                   "python/agents/claude-code",

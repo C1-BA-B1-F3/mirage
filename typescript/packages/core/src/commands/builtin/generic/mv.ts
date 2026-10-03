@@ -433,7 +433,7 @@ export async function mvGeneric(
     if (
       !srcIsDir &&
       created.has(keyOf(target)) &&
-      !(flags.noClobber || updateGates(flags.update))
+      !(flags.noClobber || updateGates(flags.update) || flags.backup === 'numbered')
     ) {
       errors.push(`mv: will not overwrite just-created '${target.rawPath}' with '${src.rawPath}'`)
       continue

@@ -97,13 +97,23 @@ async def write_one(
     return data
 
 
-async def open_refusal(stat: StatFn, path: PathSpec) -> OSError | None:
+async def open_refusal(
+    stat: StatFn, path: PathSpec, opened: list[PathSpec]
+) -> OSError | None:
     """The error GNU's open of an output would meet, or None.
+
+    GNU opens the outputs in order, so each earlier one is a regular file
+    by now: an output under one of them is ``Not a directory``.
 
     Args:
         stat (StatFn): Stats a path; raises when missing.
         path (PathSpec): the output operand.
+        opened (list[PathSpec]): the outputs opened before it.
     """
+    if any(
+        path.virtual.startswith(f"{o.virtual.rstrip('/')}/") for o in opened
+    ):
+        return NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR))
     exists, is_dir = await entry_kind(stat, path)
     if is_dir:
         return IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR))
@@ -147,7 +157,8 @@ async def write_output(
     failure aborts before any data is written, the outputs opened before
     it left empty. A mount has no open/write split (``write_bytes`` is one
     call), so with ``stat`` in hand the open is probed first: a missing
-    or non-directory parent, or a directory operand.
+    or non-directory parent, or a directory operand. Emptying an earlier
+    output can fail first, and then it is the one reported.
 
     Args:
         paths (list[PathSpec]): every output operand, in order.
@@ -163,18 +174,24 @@ async def write_output(
     errors: list[bytes] = []
     if parsed.stop_on_error and stat is not None:
         for index, path in enumerate(paths):
-            refusal = await open_refusal(stat, path)
+            refusal = await open_refusal(stat, path, paths[:index])
             if refusal is None:
                 continue
+            failed: PathSpec = path
+            reason: Exception = refusal
             for opened in paths[:index]:
                 if parsed.append and (await entry_kind(stat, opened))[0]:
                     continue
-                await write_bytes(opened, b"")
+                try:
+                    await write_bytes(opened, b"")
+                except Exception as exc:
+                    failed, reason = opened, exc
+                    break
                 writes[opened.mount_path] = b""
                 cache.append(opened.mount_path)
             return None, IOResult(
                 exit_code=1,
-                stderr=error_line(path, refusal),
+                stderr=error_line(failed, reason),
                 writes=writes,
                 cache=cache,
             )

@@ -1401,7 +1401,11 @@ async def cp(
     for src, target in copy_targets(
         sources, dst, dst_is_dir, dst_exists, dst_err
     ):
-        if dst_is_dir and key_of(src) in seen:
+        if (
+            dst_is_dir
+            and key_of(src) in seen
+            and not backup_displaces(flags.backup)
+        ):
             errors.append(
                 f"cp: warning: source file '{src.raw_path}' "
                 "specified more than once"
@@ -1652,7 +1656,9 @@ async def cp(
                 )
             continue
         if key_of(target) in created and not (
-            flags.no_clobber or update_gates(flags.update)
+            flags.no_clobber
+            or update_gates(flags.update)
+            or flags.backup == "numbered"
         ):
             errors.append(
                 f"cp: will not overwrite just-created '{target.raw_path}' "

@@ -12,12 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-// Split text into lines, dropping the terminator's trailing empty entry.
-// Mirrors Python's mirage.commands.builtin.utils.lines.split_lines.
-export function splitLines(text: string): string[] {
+// Split text into lines (or `sep`-terminated records), dropping the
+// terminator's trailing empty entry. Mirrors Python's
+// mirage.commands.builtin.utils.lines.split_lines.
+export function splitLines(text: string, sep = '\n'): string[] {
   if (text === '') return []
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped.split('\n')
+  const stripped = text.endsWith(sep) ? text.slice(0, -sep.length) : text
+  return stripped.split(sep)
 }
 
 // Apply `fn` to each line of `text`, keeping its line ends. A GNU line

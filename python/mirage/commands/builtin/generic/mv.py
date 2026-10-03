@@ -502,7 +502,11 @@ async def mv(
         if (
             not src_is_dir
             and key_of(target) in created
-            and not (flags.no_clobber or update_gates(flags.update))
+            and not (
+                flags.no_clobber
+                or update_gates(flags.update)
+                or flags.backup == "numbered"
+            )
         ):
             errors.append(
                 f"mv: will not overwrite just-created '{target.raw_path}' "

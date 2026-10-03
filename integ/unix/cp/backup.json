@@ -388,6 +388,38 @@
       "flags": [
         "backup"
       ]
+    },
+    {
+      "id": "cp_numbered_backup_lets_a_same_name_source_through",
+      "seq": 991026,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix",
+        "ssh"
+      ],
+      "command": "mkdir -p /data/r10nb/x /data/r10nb/y /data/r10nb/d && echo X > /data/r10nb/x/a && echo Y > /data/r10nb/y/a && cp --backup=numbered /data/r10nb/x/a /data/r10nb/y/a /data/r10nb/d; echo rc=$?; cat /data/r10nb/d/a /data/r10nb/d/a.~1~; cp -b /data/r10nb/x/a /data/r10nb/x/a /data/r10nb/d; echo rc=$?; cat /data/r10nb/d/a /data/r10nb/d/a.~2~; rm -r /data/r10nb",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\nY\nX\nrc=1\nX\nY\n",
+        "stderr": "cp: will not overwrite just-created '/data/r10nb/d/a' with '/data/r10nb/x/a'\n"
+      }
     }
   ]
 }

@@ -84,36 +84,67 @@ export function parseFormat(fmt: string): SeqFormat {
   }
 }
 
-function hexFloat(value: number, upper: boolean): string {
-  const sign = value < 0 || Object.is(value, -0) ? '-' : ''
-  let magnitude = Math.abs(value)
-  let exponent = 0
-  if (magnitude !== 0) {
-    exponent = Math.floor(Math.log2(magnitude))
-    magnitude /= 2 ** exponent
-    if (magnitude >= 2) {
-      magnitude /= 2
-      exponent += 1
+// `value` through a `%a` directive, as glibc renders it: the hex digits
+// round half to even at the precision without renormalizing (`%.0a` of 3
+// is `0x2p+1`), `#` keeps the point and `0` pads after `0x`. GNU's value is
+// a long double, so a value needing more than a double's 53 bits shows
+// fewer digits here. Mirrors Python's _hex_float.
+function hexFloat(value: number, spec: SeqFormat): string {
+  const flags = spec.flags
+  const sign =
+    value < 0 || Object.is(value, -0)
+      ? '-'
+      : flags.includes('+')
+        ? '+'
+        : flags.includes(' ')
+          ? ' '
+          : ''
+  const magnitude = Math.abs(value)
+  let zero = false
+  let body: string
+  if (!Number.isFinite(magnitude)) {
+    body = Number.isNaN(magnitude) ? 'nan' : 'inf'
+  } else {
+    const view = new DataView(new ArrayBuffer(8))
+    view.setFloat64(0, magnitude)
+    const bits = view.getBigUint64(0)
+    const biased = Number(bits >> 52n)
+    const fraction = bits & ((1n << 52n) - 1n)
+    let lead = biased === 0 ? '0' : '1'
+    const exponent = biased === 0 ? (fraction === 0n ? 0 : -1022) : biased - 1023
+    let digits = fraction.toString(16).padStart(13, '0')
+    if (spec.precision === null) {
+      digits = digits.replace(/0+$/, '')
+    } else {
+      const places = Number(spec.precision || '0')
+      if (places >= digits.length) {
+        digits = digits.padEnd(places, '0')
+      } else {
+        let kept = BigInt(`0x${lead}${digits.slice(0, places)}`)
+        const rest = BigInt(`0x${digits.slice(places)}`)
+        const half = 8n << BigInt(4 * (digits.length - places - 1))
+        if (rest > half || (rest === half && kept % 2n === 1n)) kept += 1n
+        const text = kept.toString(16).padStart(places + 1, '0')
+        lead = text.slice(0, text.length - places)
+        digits = text.slice(text.length - places)
+      }
     }
+    const point = digits !== '' || flags.includes('#') ? '.' : ''
+    body = `0x${lead}${point}${digits}p${exponent < 0 ? '-' : '+'}${String(Math.abs(exponent))}`
+    zero = flags.includes('0') && !flags.includes('-')
   }
-  let digits = ''
-  let fraction = magnitude - Math.trunc(magnitude)
-  for (let i = 0; i < 13 && fraction > 0; i++) {
-    fraction *= 16
-    const digit = Math.trunc(fraction)
-    digits += digit.toString(16)
-    fraction -= digit
-  }
-  const mantissa = `${String(Math.trunc(magnitude))}${digits === '' ? '' : '.' + digits}`
-  const shown = `${sign}0x${mantissa}p${exponent < 0 ? '-' : '+'}${String(Math.abs(exponent))}`
-  return upper ? shown.toUpperCase() : shown
+  if (spec.conversion === 'A') body = body.toUpperCase()
+  const width = spec.width === '' ? 0 : Number(spec.width)
+  if (flags.includes('-')) return (sign + body).padEnd(width)
+  if (zero) return sign + body.slice(0, 2) + body.slice(2).padStart(width - sign.length - 2, '0')
+  return (sign + body).padStart(width)
 }
 
 // One value through a `-f` format, as C's printf renders it. Mirrors
 // Python's render.
 export function render(spec: SeqFormat, value: number): string {
   const body = 'aA'.includes(spec.conversion)
-    ? hexFloat(value, spec.conversion === 'A')
+    ? hexFloat(value, spec)
     : formatFloat(
         spec.conversion,
         value,

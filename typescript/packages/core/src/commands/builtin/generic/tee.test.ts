@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { PathSpec } from '../../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { enoent } from '../../../utils/errors.ts'
 import { parseFlags, writeOutput } from './tee.ts'
 
@@ -105,6 +105,31 @@ describe('writeOutput', () => {
     )
     expect(s.written).toEqual({ '/p': 'x' })
     expect(io.exitCode).toBe(1)
+  })
+
+  it('reports the output that fails while being emptied, keeping the records', async () => {
+    const s = sink(new Set(['/denied']))
+    const stat = (p: PathSpec): Promise<FileStat> =>
+      Promise.resolve(
+        new FileStat({
+          name: p.virtual.slice(1),
+          type: p.virtual === '/dir' ? FileType.DIRECTORY : FileType.FILE,
+        }),
+      )
+    const [out, io] = await writeOutput(
+      paths('/good', '/denied', '/dir'),
+      ENC.encode('x'),
+      { append: false, stopOnError: true },
+      noStream,
+      s.write,
+      undefined,
+      stat,
+    )
+    expect(out).toBeNull()
+    expect(s.written).toEqual({ '/good': '' })
+    expect([Object.keys(io.writes), io.cache]).toEqual([['/good'], ['/good']])
+    expect(io.exitCode).toBe(1)
+    expect(DEC.decode(io.stderr as Uint8Array)).toBe('tee: /denied: disk full\n')
   })
 
   it('diagnoses every failing operand', async () => {

@@ -25,6 +25,7 @@ import {
   type FsError,
 } from '../../../utils/errors.ts'
 import { absentDestStrerror, entryKind } from '../utils/paths.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -126,9 +127,23 @@ async function writeOne(
  * written. The two agree whenever the failure is at write time, which is what a
  * remote backend reports.
  */
-// The error GNU's open of an output would meet, or null. Mirrors Python's
-// open_refusal.
-export async function openRefusal(stat: StatFn, path: PathSpec): Promise<FsError | null> {
+// GNU's diagnostic for one unwritable operand. Mirrors Python's error_line.
+function errorLine(path: PathSpec, err: unknown): string {
+  if (isFsError(err)) return fsErrorLine('tee', path, err)
+  return `tee: ${path.mountPath}: ${err instanceof Error ? err.message : String(err)}\n`
+}
+
+// The error GNU's open of an output would meet, or null. GNU opens the
+// outputs in order, so each earlier one is a regular file by now: an output
+// under one of them is `Not a directory`. Mirrors Python's open_refusal.
+export async function openRefusal(
+  stat: StatFn,
+  path: PathSpec,
+  opened: readonly PathSpec[],
+): Promise<FsError | null> {
+  if (opened.some((o) => path.virtual.startsWith(`${rstripSlash(o.virtual)}/`))) {
+    return enotdir(path)
+  }
   const { exists, isDir } = await entryKind(stat, path)
   if (isDir) return eisdir(path)
   if (exists) return null
@@ -151,18 +166,27 @@ export async function writeOutput(
   const errors: string[] = []
   // GNU opens every output before it reads a byte: under exit the first open
   // failure ends the run with nothing written, the outputs before it made
-  // empty. A mount write is one call, so the open is probed first.
+  // empty. A mount write is one call, so the open is probed first. Emptying
+  // an earlier output can fail first, and then it is the one reported.
   if (parsed.stopOnError && stat !== undefined) {
     for (const [index, path] of paths.entries()) {
-      const refusal = await openRefusal(stat, path)
+      const refusal = await openRefusal(stat, path, paths.slice(0, index))
       if (refusal === null) continue
+      let failed = path
+      let reason: unknown = refusal
       for (const opened of paths.slice(0, index)) {
         if (parsed.append && (await entryKind(stat, opened)).exists) continue
-        await write(opened, new Uint8Array(0))
+        try {
+          await write(opened, new Uint8Array(0))
+        } catch (err) {
+          failed = opened
+          reason = err
+          break
+        }
         writes[opened.mountPath] = new Uint8Array(0)
         cache.push(opened.mountPath)
       }
-      const stderr = ENC.encode(fsErrorLine('tee', path, refusal))
+      const stderr = ENC.encode(errorLine(failed, reason))
       return [null, new IOResult({ exitCode: 1, stderr, writes, cache })]
     }
   }
@@ -171,11 +195,7 @@ export async function writeOutput(
     try {
       data = await writeOne(path, raw, parsed, stream, write, append)
     } catch (err) {
-      errors.push(
-        isFsError(err)
-          ? fsErrorLine('tee', path, err)
-          : `tee: ${path.mountPath}: ${err instanceof Error ? err.message : String(err)}\n`,
-      )
+      errors.push(errorLine(path, err))
       if (parsed.stopOnError) break
       continue
     }

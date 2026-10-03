@@ -456,16 +456,13 @@ async def shuf(
         all_lines: list[str] = []
         for p in paths:
             data = (await read(p)).decode(errors="replace")
-            if zero_terminated:
-                all_lines.extend(data.split("\x00"))
-            else:
-                all_lines.extend(split_lines(data))
+            all_lines.extend(split_lines(data, sep))
         result = _sample(all_lines, count, with_replacement)
         rendered = _render(result, sep)
     else:
         raw = await read_stdin_async(stdin) or b""
         text = raw.decode(errors="replace")
-        lines = text.split("\x00") if zero_terminated else split_lines(text)
+        lines = split_lines(text, sep)
         result = _sample(lines, count, with_replacement)
         rendered = _render(result, sep)
     if output is not None:

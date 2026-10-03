@@ -15,7 +15,8 @@ class _Item:
     Args:
         name (str): the token.
         count (int): predecessors not yet printed.
-        successors (list[_Item]): newest relation first, as GNU links them.
+        successors (list[_Item]): oldest relation first; GNU links them
+            newest first, so every walk runs from the end.
         qlink (_Item | None): the next node on a loop being traced.
         printed (bool): whether the node has been output.
     """
@@ -44,7 +45,8 @@ def _break_loop(tree: list[_Item]) -> list[str]:
             if loop is None:
                 loop = k
                 continue
-            for index, successor in enumerate(k.successors):
+            for index in range(len(k.successors) - 1, -1, -1):
+                successor = k.successors[index]
                 if successor is not loop:
                     continue
                 if k.qlink is None:
@@ -83,7 +85,7 @@ def _topological_sort(
         k = items.setdefault(b, _Item(b))
         if a != b:
             k.count += 1
-            j.successors.insert(0, k)
+            j.successors.append(k)
     tree = [items[name] for name in sorted(items)]
     order: list[str] = []
     loops: list[list[str]] = []
@@ -97,7 +99,7 @@ def _topological_sort(
             order.append(head.name)
             head.printed = True
             remaining -= 1
-            for successor in head.successors:
+            for successor in reversed(head.successors):
                 successor.count -= 1
                 if successor.count == 0:
                     queue.append(successor)

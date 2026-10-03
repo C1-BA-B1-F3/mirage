@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -100,12 +101,63 @@ def parse_format(fmt: str) -> SeqFormat:
     return SeqFormat(fmt[:start], flags, width, precision, fmt[end], suffix)
 
 
-def _hex_float(value: float, upper: bool) -> str:
-    mantissa, exponent = float(value).hex().split("p")
-    if "." in mantissa:
-        mantissa = mantissa.rstrip("0").rstrip(".")
-    shown = f"{mantissa}p{exponent}"
-    return shown.upper() if upper else shown
+def _hex_float(value: float, spec: SeqFormat) -> str:
+    """``value`` through a ``%a`` directive, as glibc renders it.
+
+    The hex digits round half to even at the precision without
+    renormalizing (``%.0a`` of 3 is ``0x2p+1``), ``#`` keeps the point
+    and ``0`` pads after ``0x``. GNU's value is a long double, so a value
+    needing more than a double's 53 bits shows fewer digits here.
+
+    Args:
+        value (float): the value to print.
+        spec (SeqFormat): the parsed format.
+    """
+    flags = spec.flags
+    sign = (
+        "-"
+        if math.copysign(1.0, value) < 0
+        else "+"
+        if "+" in flags
+        else " "
+        if " " in flags
+        else ""
+    )
+    magnitude = abs(float(value))
+    zero = False
+    if not math.isfinite(magnitude):
+        body = "nan" if math.isnan(magnitude) else "inf"
+    else:
+        mantissa, exponent = magnitude.hex().split("p")
+        lead, _, digits = mantissa[2:].partition(".")
+        if spec.precision is None:
+            digits = digits.rstrip("0")
+        else:
+            places = int(spec.precision or "0")
+            if places >= len(digits):
+                digits = digits.ljust(places, "0")
+            else:
+                kept = int(lead + digits[:places], 16)
+                rest = int(digits[places:], 16)
+                half = 8 << 4 * (len(digits) - places - 1)
+                if rest > half or (rest == half and kept % 2):
+                    kept += 1
+                text = f"{kept:0{places + 1}x}"
+                lead, digits = (
+                    text[: len(text) - places],
+                    text[len(text) - places :],
+                )
+        point = "." if digits or "#" in flags else ""
+        body = f"0x{lead}{point}{digits}p{int(exponent):+d}"
+        zero = "0" in flags and "-" not in flags
+    if spec.conversion == "A":
+        body = body.upper()
+    width = int(spec.width or "0")
+    if "-" in flags:
+        return (sign + body).ljust(width)
+    if zero:
+        return sign + body[:2] + body[2:].rjust(width - len(sign) - 2, "0")
+    return (sign + body).rjust(width)
 
 
 def render(spec: SeqFormat, value: float) -> str:
@@ -116,7 +168,7 @@ def render(spec: SeqFormat, value: float) -> str:
         value (float): the value to print.
     """
     if spec.conversion in "aA":
-        body = _hex_float(value, spec.conversion == "A")
+        body = _hex_float(value, spec)
     else:
         precision = "" if spec.precision is None else "." + spec.precision
         directive = "%" + spec.flags.replace("'", "") + spec.width + precision

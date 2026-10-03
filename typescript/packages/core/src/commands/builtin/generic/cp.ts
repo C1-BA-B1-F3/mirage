@@ -933,7 +933,7 @@ export async function copyEntries(
           wroteAny = true
           if (opts.writes !== undefined) opts.writes[entryDstSpec.mountPath] = new Uint8Array()
           if (opts.lines !== undefined) {
-            opts.lines.push(`'${entry}' -> '${entryDstSpec.rawPath}'`)
+            opts.lines.push(`'${entrySpec.rawPath}' -> '${entryDstSpec.rawPath}'`)
           }
         }
       } catch (err) {
@@ -1095,7 +1095,7 @@ export async function cpGeneric(
   const seen = new Set<string>()
   const created = new Set<string>()
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
-    if (dstIsDir && seen.has(keyOf(src))) {
+    if (dstIsDir && seen.has(keyOf(src)) && !backupDisplaces(flags.backup)) {
       errors.push(`cp: warning: source file '${src.rawPath}' specified more than once`)
       warned += 1
       continue
@@ -1307,7 +1307,10 @@ export async function cpGeneric(
       }
       continue
     }
-    if (created.has(keyOf(target)) && !(flags.noClobber || updateGates(flags.update))) {
+    if (
+      created.has(keyOf(target)) &&
+      !(flags.noClobber || updateGates(flags.update) || flags.backup === 'numbered')
+    ) {
       errors.push(`cp: will not overwrite just-created '${target.rawPath}' with '${src.rawPath}'`)
       continue
     }

@@ -30,6 +30,37 @@
         "stdout": "ca\ncb\nca\nmissing\nkeep\nsecond\nkeep\nca\nsafe\nsecond\nsecond\nlocal\nsecond\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "xm_cp_rv_names_entries_as_typed",
+      "seq": 756,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "(cd /data && mkdir -p r10xq/s/t && touch r10xq/s/t/f && cp -rv r10xq /data2/r10xq; echo rc=$?); rm -r /data/r10xq /data2/r10xq",
+      "expect": {
+        "exit": 0,
+        "stdout": "'r10xq' -> '/data2/r10xq'\n'r10xq/s' -> '/data2/r10xq/s'\n'r10xq/s/t' -> '/data2/r10xq/s/t'\n'r10xq/s/t/f' -> '/data2/r10xq/s/t/f'\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

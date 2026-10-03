@@ -2,7 +2,7 @@ import pytest
 
 from mirage.commands.builtin.generic.tee import TeeFlags, parse_flags, tee
 from mirage.io.stream import materialize
-from mirage.types import MountMode, PathSpec
+from mirage.types import FileStat, FileType, MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -135,6 +135,30 @@ async def test_output_error_exit_stops_at_the_first_failure():
     )
     assert written == {"/p": b"x"}
     assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_an_output_that_fails_to_empty_is_the_one_reported():
+    written, write = _sink(frozenset({"/denied"}))
+
+    async def _stat(p: PathSpec) -> FileStat:
+        kind = FileType.DIRECTORY if p.virtual == "/dir" else FileType.FILE
+        return FileStat(name=p.virtual[1:], type=kind)
+
+    source, io = await tee(
+        [_spec("/good"), _spec("/denied"), _spec("/dir")],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={"output_error": "exit"},
+        stat=_stat,
+    )
+    assert source is None
+    assert written == {"/good": b""}
+    assert (io.writes, io.cache) == ({"/good": b""}, ["/good"])
+    assert io.exit_code == 1
+    assert await materialize(io.stderr) == b"tee: /denied: disk full\n"
 
 
 @pytest.mark.asyncio

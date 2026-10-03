@@ -1343,10 +1343,10 @@
         "opfs",
         "disk"
       ],
-      "command": "cat; echo cat=$?; head; echo head=$?; tail; echo tail=$?; wc; echo wc=$?; nl; echo nl=$?; cut -f 1; echo cut=$?; rev; echo rev=$?; fold; echo fold=$?; fmt; echo fmt=$?; expand; echo expand=$?; unexpand; echo unexpand=$?; shuf; echo shuf=$?; grep x; echo grep=$?; sed p; echo sed=$?",
+      "command": "cat; echo cat=$?; head; echo head=$?; tail; echo tail=$?; wc; echo wc=$?; nl; echo nl=$?; cut -f 1; echo cut=$?; rev; echo rev=$?; fold; echo fold=$?; fmt; echo fmt=$?; expand; echo expand=$?; unexpand; echo unexpand=$?; shuf; echo shuf=$?; shuf -z; echo shufz=$?; grep x; echo grep=$?; sed p; echo sed=$?",
       "expect": {
         "exit": 0,
-        "stdout": "cat=0\nhead=0\ntail=0\n      0       0       0\nwc=0\nnl=0\ncut=0\nrev=0\nfold=0\nfmt=0\nexpand=0\nunexpand=0\nshuf=0\ngrep=1\nsed=0\n",
+        "stdout": "cat=0\nhead=0\ntail=0\n      0       0       0\nwc=0\nnl=0\ncut=0\nrev=0\nfold=0\nfmt=0\nexpand=0\nunexpand=0\nshuf=0\nshufz=0\ngrep=1\nsed=0\n",
         "stderr": ""
       }
     },

@@ -24,7 +24,8 @@ const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
 
 // One node, GNU tsort's `struct item`: predecessors not yet printed, the
-// successors newest relation first, and the link a loop trace follows.
+// successors oldest relation first (GNU links them newest first, so every walk
+// runs from the end), and the link a loop trace follows.
 // Mirrors Python's _Item.
 interface Item {
   readonly name: string
@@ -46,7 +47,7 @@ function breakLoop(tree: readonly Item[]): string[] {
         loop = k
         continue
       }
-      for (let index = 0; index < k.successors.length; index++) {
+      for (let index = k.successors.length - 1; index >= 0; index--) {
         const successor = k.successors[index]
         if (successor !== loop) continue
         if (k.qlink === null) {
@@ -95,7 +96,7 @@ function topologicalSort(pairs: readonly (readonly [string, string])[]): [string
     const k = itemOf(b)
     if (a !== b) {
       k.count += 1
-      j.successors.unshift(k)
+      j.successors.push(k)
     }
   }
   const tree = [...items.keys()].sort(compareCodePoints).map((name) => itemOf(name))
@@ -108,7 +109,9 @@ function topologicalSort(pairs: readonly (readonly [string, string])[]): [string
       order.push(head.name)
       head.printed = true
       remaining -= 1
-      for (const successor of head.successors) {
+      for (let index = head.successors.length - 1; index >= 0; index--) {
+        const successor = head.successors[index]
+        if (successor === undefined) continue
         successor.count -= 1
         if (successor.count === 0) queue.push(successor)
       }
